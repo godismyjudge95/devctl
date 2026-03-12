@@ -1,0 +1,420 @@
+package api
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/danielgormly/devctl/services"
+)
+
+func (s *Server) handleGetServices(w http.ResponseWriter, r *http.Request) {
+	states := s.poller.CurrentStates()
+	writeJSON(w, states)
+}
+
+func (s *Server) handleServiceStart(w http.ResponseWriter, r *http.Request) {
+	s.runServiceAction(w, r, "start")
+}
+
+func (s *Server) handleServiceStop(w http.ResponseWriter, r *http.Request) {
+	s.runServiceAction(w, r, "stop")
+}
+
+func (s *Server) handleServiceRestart(w http.ResponseWriter, r *http.Request) {
+	s.runServiceAction(w, r, "restart")
+}
+
+func (s *Server) runServiceAction(w http.ResponseWriter, r *http.Request, action string) {
+	id := r.PathValue("id")
+	def, ok := s.registry.Get(id)
+	if !ok {
+		http.Error(w, fmt.Sprintf("service %q not found", id), http.StatusNotFound)
+		return
+	}
+
+	// Required services cannot be stopped.
+	if action == "stop" && def.Required {
+		http.Error(w, fmt.Sprintf("service %q is required and cannot be stopped", id), http.StatusForbidden)
+		return
+	}
+
+	var err error
+	switch action {
+	case "start":
+		err = s.manager.Start(s.mailpitDef(r.Context(), def))
+	case "stop":
+		err = s.manager.Stop(def)
+	case "restart":
+		err = s.manager.Restart(s.mailpitDef(r.Context(), def))
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// When Caddy is started or restarted, wait for the Admin API then push
+	// the HTTP server config and sync all vhosts — same as after install.
+	if id == "caddy" && (action == "start" || action == "restart") {
+		go func() {
+			if err := s.caddy.WaitForAdmin(10 * time.Second); err != nil {
+				log.Printf("caddy start: admin not ready: %v", err)
+				return
+			}
+			if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
+				log.Printf("caddy start: ensure http server: %v", err)
+			}
+			if err := s.siteManager.SyncAll(r.Context()); err != nil {
+				log.Printf("caddy start: sync sites: %v", err)
+			}
+		}()
+	}
+
+	// Immediately re-poll so subscribers see the new state without waiting
+	// for the next scheduled tick.
+	go s.poller.Poll()
+
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// handleServiceEvents streams service status updates as Server-Sent Events.
+func (s *Server) handleServiceEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send current state immediately.
+	sendSSE(w, flusher, "states", s.poller.CurrentStates())
+
+	ch := s.poller.Subscribe()
+	defer s.poller.Unsubscribe(ch)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case update, ok := <-ch:
+			if !ok {
+				return
+			}
+			sendSSE(w, flusher, "states", update.States)
+		}
+	}
+}
+
+// handleServiceLogs streams a service log file as SSE.
+func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	def, ok := s.registry.Get(id)
+	if !ok {
+		http.Error(w, fmt.Sprintf("service %q not found", id), http.StatusNotFound)
+		return
+	}
+
+	if def.Log == "" {
+		http.Error(w, "no log file configured for this service", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	f, err := os.Open(def.Log)
+	if err != nil {
+		sendSSE(w, flusher, "error", map[string]string{"message": err.Error()})
+		return
+	}
+	defer f.Close()
+
+	// Seek to last 16KB for initial tail.
+	if info, err := f.Stat(); err == nil && info.Size() > 16384 {
+		f.Seek(-16384, io.SeekEnd)
+		// Skip the partial first line.
+		buf := make([]byte, 1)
+		for {
+			_, err := f.Read(buf)
+			if err != nil || buf[0] == '\n' {
+				break
+			}
+		}
+	}
+
+	buf := make([]byte, 4096)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			n, err := f.Read(buf)
+			if n > 0 {
+				sendSSE(w, flusher, "log", string(buf[:n]))
+			}
+			if err != nil && err != io.EOF {
+				log.Printf("log stream error: %v", err)
+				return
+			}
+		}
+	}
+}
+
+func sendSSE(w http.ResponseWriter, flusher http.Flusher, event string, data interface{}) {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+	flusher.Flush()
+}
+
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("writeJSON: %v", err)
+	}
+}
+
+func writeError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// handleServiceInstall installs a service, streaming command output as SSE.
+// Events:
+//
+//	output — a chunk of stdout/stderr text (JSON string)
+//	done   — {"status":"ok"} on success
+//	error  — {"error":"..."} on failure
+func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	inst, ok := s.installers[id]
+	if !ok {
+		writeError(w, fmt.Sprintf("no installer registered for service %q", id), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
+	if err := inst.InstallW(r.Context(), pw); err != nil {
+		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Auto-start the service if it is managed (supervised child process).
+	if def, ok := s.registry.Get(id); ok && def.Managed {
+		if err := s.manager.Start(s.mailpitDef(r.Context(), def)); err != nil {
+			log.Printf("install: auto-start %s: %v", id, err)
+		}
+		// For Caddy, wait for the Admin API then push the HTTP server config
+		// and sync all vhosts — otherwise sites won't be routed until restart.
+		if id == "caddy" {
+			go func() {
+				if err := s.caddy.WaitForAdmin(10 * time.Second); err != nil {
+					log.Printf("install: caddy admin not ready: %v", err)
+					return
+				}
+				if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
+					log.Printf("install: caddy ensure http server: %v", err)
+				}
+				if err := s.siteManager.SyncAll(r.Context()); err != nil {
+					log.Printf("install: caddy sync sites: %v", err)
+				}
+			}()
+		}
+	}
+
+	go s.poller.Poll()
+	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
+}
+
+// handleServicePurge removes a service, streaming command output as SSE.
+// Events:
+//
+//	output — a chunk of stdout/stderr text (JSON string)
+//	done   — {"status":"ok"} on success
+//	error  — {"error":"..."} on failure
+func (s *Server) handleServicePurge(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	// Required services cannot be purged.
+	if def, ok := s.registry.Get(id); ok && def.Required {
+		writeError(w, fmt.Sprintf("service %q is required and cannot be purged", id), http.StatusForbidden)
+		return
+	}
+
+	inst, ok := s.installers[id]
+	if !ok {
+		writeError(w, fmt.Sprintf("no installer registered for service %q", id), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
+	if err := inst.PurgeW(r.Context(), pw); err != nil {
+		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
+		return
+	}
+
+	go s.poller.Poll()
+	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
+}
+
+// handleServiceCredentials reads credentials for a service from its config
+// file and returns key=value pairs as a JSON map.
+//
+// It tries two locations in order:
+//  1. $siteHome/sites/server/<id>/config.env  — all pairs returned (server-infra, e.g. meilisearch)
+//  2. $siteHome/sites/<id>/.env               — only pairs whose key starts with
+//     the upper-cased service ID are returned (site services, e.g. reverb)
+//
+// Returns 404 if neither file exists.
+func (s *Server) handleServiceCredentials(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	def, ok := s.registry.Get(id)
+	if !ok {
+		http.Error(w, "credentials not found", http.StatusNotFound)
+		return
+	}
+
+	type candidate struct {
+		path      string
+		filterPfx string // if non-empty, only keys with this prefix are returned
+	}
+	upperID := strings.ToUpper(id)
+
+	var candidates []candidate
+	if def.CredentialsFile != "" {
+		candidates = []candidate{
+			{def.CredentialsFile, ""},
+		}
+	} else {
+		candidates = []candidate{
+			{s.siteHome + "/sites/server/" + id + "/config.env", ""},
+			{s.siteHome + "/sites/" + id + "/.env", upperID + "_"},
+		}
+	}
+
+	var f *os.File
+	var filterPfx string
+	for _, c := range candidates {
+		fh, err := os.Open(c.path)
+		if err == nil {
+			f = fh
+			filterPfx = c.filterPfx
+			break
+		}
+	}
+	if f == nil {
+		http.Error(w, "credentials not found", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if idx := strings.IndexByte(line, '='); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			val := strings.TrimSpace(line[idx+1:])
+			if key == "" {
+				continue
+			}
+			if filterPfx != "" && !strings.HasPrefix(key, filterPfx) {
+				continue
+			}
+			result[key] = val
+		}
+	}
+
+	writeJSON(w, result)
+}
+
+// sseLineWriter forwards writes as SSE "output" events, flushing after each write.
+type sseLineWriter struct {
+	w       http.ResponseWriter
+	flusher http.Flusher
+	event   string
+}
+
+func (p *sseLineWriter) Write(b []byte) (int, error) {
+	sendSSE(p.w, p.flusher, p.event, string(b))
+	return len(b), nil
+}
+
+// mailpitDef returns def unchanged for any service that is not mailpit.
+// For mailpit it patches ManagedArgs with the current port settings from the DB
+// so that start/restart always uses the user-configured ports.
+func (s *Server) mailpitDef(ctx context.Context, def services.Definition) services.Definition {
+	if def.ID != "mailpit" {
+		return def
+	}
+	httpPort, err := s.queries.GetSetting(ctx, "mailpit_http_port")
+	if err != nil || httpPort == "" {
+		httpPort = "8025"
+	}
+	smtpPort, err := s.queries.GetSetting(ctx, "mailpit_smtp_port")
+	if err != nil || smtpPort == "" {
+		smtpPort = "1025"
+	}
+	def.ManagedArgs = fmt.Sprintf("--listen 127.0.0.1:%s --smtp 127.0.0.1:%s --database ./data/mailpit.db", httpPort, smtpPort)
+	return def
+}
+
+// stubHandler returns a 501 Not Implemented for handlers not yet built.
+func stubHandler(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+// Ensure services import is used (compiler will catch unused imports).
+var _ = services.StatusRunning

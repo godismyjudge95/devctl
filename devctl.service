@@ -1,0 +1,17 @@
+# NOTE: This is a template for development use with `make install`.
+# For production, use `sudo devctl install` which generates this file
+# automatically from your system's user configuration.
+[Unit]
+Description=devctl — Local PHP Dev Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/devctl
+Restart=on-failure
+RestartSec=5s
+Environment=HOME=/home/<username>
+Environment=DEVCTL_SITE_USER=<username>
+
+[Install]
+WantedBy=multi-user.target

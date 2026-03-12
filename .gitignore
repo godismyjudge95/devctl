@@ -1,0 +1,20 @@
+# Compiled binary
+devctl
+
+# Frontend dependencies
+frontend/node_modules/
+
+# Accidentally included project data directory
+home/
+
+# Runtime database / SQLite files
+*.db
+*.sqlite
+*.sqlite3
+
+# OS / editor artefacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

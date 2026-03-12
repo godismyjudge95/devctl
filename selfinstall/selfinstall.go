@@ -1,0 +1,637 @@
+// Package selfinstall implements the "devctl install" sub-command, which
+// installs devctl as a systemd system service without any manual steps.
+package selfinstall
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/danielgormly/devctl/db"
+	dbq "github.com/danielgormly/devctl/db/queries"
+)
+
+const serviceDir = "/etc/systemd/system"
+const serviceName = "devctl.service"
+const dbPath = "/etc/devctl/devctl.db"
+const configDir = "/etc/devctl"
+
+// Run is the entry point for `devctl install`. args is os.Args[2:].
+func Run(args []string) error {
+	fs := flag.NewFlagSet("devctl install", flag.ContinueOnError)
+	flagUser := fs.String("user", "", "non-root user whose sites dir devctl will manage (auto-detected from SUDO_USER if omitted)")
+	flagSitesDir := fs.String("sites-dir", "", "directory where sites are stored (default: ~/sites)")
+	flagPath := fs.String("path", "", "directory to install the devctl binary into (default: /usr/local/bin)")
+	flagYes := fs.Bool("yes", false, "skip all confirmation prompts (for scripted installs)")
+	fs.SetOutput(os.Stderr)
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if os.Getuid() != 0 {
+		return errors.New("must be run as root — re-run with: sudo devctl install")
+	}
+
+	// Refuse to self-install from `go run` — the temp binary path is useless.
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("cannot determine executable path: %w", err)
+	}
+	if strings.Contains(exe, "/go-build") || strings.Contains(exe, "/tmp/go-") {
+		return errors.New("cannot self-install when running via `go run`. Build the binary first with `make build`")
+	}
+
+	isTTY := isTerminal()
+	if !isTTY && !*flagYes {
+		return errors.New("non-interactive mode detected — provide --user, --sites-dir, --path, and --yes flags for scripted installs")
+	}
+
+	r := bufio.NewReader(os.Stdin)
+
+	fmt.Println()
+	fmt.Println("devctl self-installer")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+
+	// --- 1. Resolve username ---
+	siteUser, siteHome, err := resolveUser(*flagUser, *flagYes, r)
+	if err != nil {
+		return err
+	}
+
+	// --- 2. Resolve sites directory ---
+	sitesDir, err := resolveSitesDir(*flagSitesDir, siteHome, *flagYes, r)
+	if err != nil {
+		return err
+	}
+
+	// --- 3. Resolve binary install path ---
+	installDir, err := resolveInstallDir(*flagPath, siteHome, sitesDir, *flagYes, r)
+	if err != nil {
+		return err
+	}
+	binaryDest := filepath.Join(installDir, "devctl")
+
+	// --- Check if already installed ---
+	serviceFile := filepath.Join(serviceDir, serviceName)
+	alreadyInstalled := fileExists(binaryDest) && fileExists(serviceFile)
+	if alreadyInstalled && !*flagYes {
+		fmt.Printf("devctl appears to already be installed at %s.\n", binaryDest)
+		fmt.Print("Reinstall / upgrade? [y/N] ")
+		if !confirm(r) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+		fmt.Println()
+	}
+
+	// --- Confirmation summary ---
+	if !*flagYes {
+		fmt.Println("devctl will perform the following steps:")
+		fmt.Printf("  1. Copy binary      → %s\n", binaryDest)
+		fmt.Printf("  2. Write service    → %s\n", serviceFile)
+		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
+		fmt.Println("  4. systemctl daemon-reload")
+		fmt.Println("  5. systemctl enable devctl")
+		fmt.Println("  6. systemctl start devctl")
+		fmt.Println()
+		fmt.Print("Proceed? [y/N] ")
+		if !confirm(r) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+		fmt.Println()
+	}
+
+	steps := []struct {
+		label string
+		fn    func() error
+	}{
+		{"Copying binary", func() error {
+			return copyFile(exe, binaryDest, 0755)
+		}},
+		{"Writing service file", func() error {
+			content := buildServiceFile(binaryDest, siteUser, siteHome)
+			return os.WriteFile(serviceFile, []byte(content), 0644)
+		}},
+		{"Saving sites directory", func() error {
+			return saveSitesDir(sitesDir)
+		}},
+		{"Running daemon-reload", func() error {
+			return systemctl("daemon-reload")
+		}},
+		{"Enabling service", func() error {
+			return systemctl("enable", "devctl")
+		}},
+		{"Starting service", func() error {
+			return systemctl("start", "devctl")
+		}},
+	}
+
+	total := len(steps)
+	for i, s := range steps {
+		fmt.Printf("[%d/%d] %s... ", i+1, total, s.label)
+		if err := s.fn(); err != nil {
+			fmt.Println("✗")
+			return fmt.Errorf("step %d (%s): %w", i+1, s.label, err)
+		}
+		fmt.Println("✓")
+	}
+
+	fmt.Println()
+	fmt.Print("Waiting for devctl to start")
+	if err := waitForActive(5 * time.Second); err != nil {
+		fmt.Println()
+		return fmt.Errorf("service did not become active within 5s: %w", err)
+	}
+	fmt.Println(" active ✓")
+	fmt.Println()
+	fmt.Println("devctl is running. Open http://127.0.0.1:4000")
+	fmt.Println()
+	return nil
+}
+
+// resolveUser prompts the user to confirm or change the detected username.
+func resolveUser(flagVal string, skipPrompt bool, r *bufio.Reader) (username, home string, err error) {
+	if flagVal != "" {
+		return lookupUser(flagVal)
+	}
+
+	detected := os.Getenv("SUDO_USER")
+
+	if skipPrompt {
+		if detected == "" {
+			return "", "", errors.New("--user flag is required in non-interactive mode")
+		}
+		return lookupUser(detected)
+	}
+
+	type option struct {
+		label string
+		value string
+	}
+	var opts []option
+	if detected != "" {
+		opts = append(opts, option{fmt.Sprintf("%s  [detected]", detected), detected})
+	}
+	opts = append(opts, option{"Enter a different username", ""})
+
+	fmt.Println("Which user's sites directory should devctl manage?")
+	for i, o := range opts {
+		fmt.Printf("  %d) %s\n", i+1, o.label)
+	}
+	fmt.Println()
+
+	for {
+		fmt.Print("Choice [1]: ")
+		raw := readLine(r)
+		if raw == "" {
+			raw = "1"
+		}
+
+		var idx int
+		if _, scanErr := fmt.Sscanf(raw, "%d", &idx); scanErr != nil || idx < 1 || idx > len(opts) {
+			fmt.Printf("  Please enter a number between 1 and %d.\n", len(opts))
+			continue
+		}
+
+		chosen := opts[idx-1]
+		if chosen.value == "" {
+			fmt.Print("  Username: ")
+			custom := strings.TrimSpace(readLine(r))
+			if custom == "" {
+				fmt.Println("  Username cannot be empty.")
+				continue
+			}
+			u, h, lookupErr := lookupUser(custom)
+			if lookupErr != nil {
+				fmt.Printf("  %v\n", lookupErr)
+				continue
+			}
+			fmt.Println()
+			return u, h, nil
+		}
+
+		u, h, lookupErr := lookupUser(chosen.value)
+		if lookupErr != nil {
+			fmt.Printf("  %v\n", lookupErr)
+			continue
+		}
+		fmt.Println()
+		return u, h, nil
+	}
+}
+
+// resolveSitesDir prompts for the directory where sites are stored.
+func resolveSitesDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader) (string, error) {
+	if flagVal != "" {
+		return filepath.Clean(flagVal), nil
+	}
+
+	defaultDir := filepath.Join(siteHome, "sites")
+
+	if skipPrompt {
+		return defaultDir, nil
+	}
+
+	opts := []struct {
+		label string
+		path  string
+	}{
+		{defaultDir + "  [default]", defaultDir},
+		{"/var/www", "/var/www"},
+		{"Enter a custom path", ""},
+	}
+
+	fmt.Println("Where are your sites stored?")
+	for i, o := range opts {
+		fmt.Printf("  %d) %s\n", i+1, o.label)
+	}
+	fmt.Println()
+
+	for {
+		fmt.Print("Choice [1]: ")
+		raw := readLine(r)
+		if raw == "" {
+			raw = "1"
+		}
+
+		var idx int
+		if _, err := fmt.Sscanf(raw, "%d", &idx); err != nil || idx < 1 || idx > len(opts) {
+			fmt.Printf("  Please enter a number between 1 and %d.\n", len(opts))
+			continue
+		}
+
+		chosen := opts[idx-1]
+		if chosen.path == "" {
+			fmt.Print("  Path: ")
+			custom := strings.TrimSpace(readLine(r))
+			if custom == "" {
+				fmt.Println("  Path cannot be empty.")
+				continue
+			}
+			fmt.Println()
+			return filepath.Clean(custom), nil
+		}
+
+		fmt.Println()
+		return chosen.path, nil
+	}
+}
+
+// resolveInstallDir prompts the user to choose or type a binary install directory.
+// sitesDir is offered as one of the preset options.
+func resolveInstallDir(flagVal, siteHome, sitesDir string, skipPrompt bool, r *bufio.Reader) (string, error) {
+	if flagVal != "" {
+		return filepath.Clean(flagVal), nil
+	}
+	if skipPrompt {
+		return "/usr/local/bin", nil
+	}
+
+	type opt struct {
+		label string
+		path  string
+	}
+
+	// Build deduplicated preset list.
+	seen := map[string]bool{}
+	var opts []opt
+	add := func(label, path string) {
+		if !seen[path] {
+			seen[path] = true
+			opts = append(opts, opt{label, path})
+		}
+	}
+	add("/usr/local/bin  [recommended]", "/usr/local/bin")
+	add(sitesDir, sitesDir)
+	// Only show ~/sites as a separate option if sitesDir differs from it.
+	defaultSites := filepath.Join(siteHome, "sites")
+	if defaultSites != sitesDir {
+		add(defaultSites, defaultSites)
+	}
+	opts = append(opts, opt{"Enter a custom path", ""})
+
+	fmt.Println("Where should the devctl binary be installed?")
+	for i, o := range opts {
+		fmt.Printf("  %d) %s\n", i+1, o.label)
+	}
+	fmt.Println()
+
+	for {
+		fmt.Print("Choice [1]: ")
+		raw := readLine(r)
+		if raw == "" {
+			raw = "1"
+		}
+
+		var idx int
+		if _, err := fmt.Sscanf(raw, "%d", &idx); err != nil || idx < 1 || idx > len(opts) {
+			fmt.Printf("  Please enter a number between 1 and %d.\n", len(opts))
+			continue
+		}
+
+		chosen := opts[idx-1]
+		if chosen.path == "" {
+			fmt.Print("  Path: ")
+			custom := strings.TrimSpace(readLine(r))
+			if custom == "" {
+				fmt.Println("  Path cannot be empty.")
+				continue
+			}
+			fmt.Println()
+			return filepath.Clean(custom), nil
+		}
+
+		fmt.Println()
+		return chosen.path, nil
+	}
+}
+
+// saveSitesDir opens (or creates) the devctl SQLite DB and persists sites_watch_dir.
+func saveSitesDir(sitesDir string) error {
+	database, err := db.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer database.Close()
+
+	queries := dbq.New(database)
+	return queries.SetSetting(context.Background(), dbq.SetSettingParams{
+		Key:   "sites_watch_dir",
+		Value: sitesDir,
+	})
+}
+
+// buildServiceFile generates the systemd unit file content.
+func buildServiceFile(binaryPath, siteUser, siteHome string) string {
+	return fmt.Sprintf(`[Unit]
+Description=devctl — Local PHP Dev Dashboard
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%s
+Restart=on-failure
+RestartSec=5s
+Environment=HOME=%s
+Environment=DEVCTL_SITE_USER=%s
+
+[Install]
+WantedBy=multi-user.target
+`, binaryPath, siteHome, siteUser)
+}
+
+// waitForActive polls `systemctl is-active devctl` until it returns "active"
+// or the deadline is exceeded.
+func waitForActive(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("systemctl", "is-active", "devctl").Output()
+		if err == nil && strings.TrimSpace(string(out)) == "active" {
+			return nil
+		}
+		fmt.Print(".")
+		time.Sleep(500 * time.Millisecond)
+	}
+	return errors.New("timed out waiting for active status")
+}
+
+func systemctl(args ...string) error {
+	cmd := exec.Command("systemctl", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	tmp := dst + ".tmp"
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp) }()
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+func lookupUser(name string) (username, home string, err error) {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return "", "", fmt.Errorf("user %q not found: %w", name, err)
+	}
+	return u.Username, u.HomeDir, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func confirm(r *bufio.Reader) bool {
+	line := strings.TrimSpace(readLine(r))
+	return strings.EqualFold(line, "y") || strings.EqualFold(line, "yes")
+}
+
+func readLine(r *bufio.Reader) string {
+	line, _ := r.ReadString('\n')
+	return strings.TrimRight(line, "\r\n")
+}
+
+// isTerminal reports whether stdin is a real TTY.
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// Uninstall is the entry point for `devctl uninstall`. args is os.Args[2:].
+func Uninstall(args []string) error {
+	fs := flag.NewFlagSet("devctl uninstall", flag.ContinueOnError)
+	flagYes := fs.Bool("yes", false, "skip all confirmation prompts")
+	fs.SetOutput(os.Stderr)
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if os.Getuid() != 0 {
+		return errors.New("must be run as root — re-run with: sudo devctl uninstall")
+	}
+
+	isTTY := isTerminal()
+	if !isTTY && !*flagYes {
+		return errors.New("non-interactive mode detected — provide --yes flag for scripted uninstall")
+	}
+
+	r := bufio.NewReader(os.Stdin)
+
+	fmt.Println()
+	fmt.Println("devctl uninstaller")
+	fmt.Println("━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+
+	serviceFile := filepath.Join(serviceDir, serviceName)
+
+	// Detect the installed binary path from the service file.
+	binaryPath := detectBinaryPath(serviceFile)
+
+	// Show what will happen.
+	isActive := serviceIsActive()
+	isEnabled := serviceIsEnabled()
+
+	fmt.Println("The following steps will be performed:")
+	if isActive {
+		fmt.Println("  1. systemctl stop devctl")
+	}
+	if isEnabled {
+		fmt.Println("  2. systemctl disable devctl")
+	}
+	fmt.Printf("  3. Remove service file  %s\n", serviceFile)
+	fmt.Println()
+
+	if !*flagYes {
+		fmt.Print("Proceed with service removal? [y/N] ")
+		if !confirm(r) {
+			fmt.Println("Aborted.")
+			return nil
+		}
+		fmt.Println()
+	}
+
+	// Stop and disable the service.
+	if isActive {
+		fmt.Print("Stopping service... ")
+		if err := systemctl("stop", "devctl"); err != nil {
+			fmt.Println("✗")
+			return fmt.Errorf("stop devctl: %w", err)
+		}
+		fmt.Println("✓")
+	}
+	if isEnabled {
+		fmt.Print("Disabling service... ")
+		if err := systemctl("disable", "devctl"); err != nil {
+			fmt.Println("✗")
+			return fmt.Errorf("disable devctl: %w", err)
+		}
+		fmt.Println("✓")
+	}
+
+	fmt.Print("Removing service file... ")
+	if fileExists(serviceFile) {
+		if err := os.Remove(serviceFile); err != nil {
+			fmt.Println("✗")
+			return fmt.Errorf("remove service file: %w", err)
+		}
+	}
+	fmt.Println("✓")
+
+	fmt.Print("Running daemon-reload... ")
+	if err := systemctl("daemon-reload"); err != nil {
+		fmt.Println("✗")
+		return fmt.Errorf("daemon-reload: %w", err)
+	}
+	fmt.Println("✓")
+
+	fmt.Println()
+
+	// --- Optional: remove binary ---
+	if binaryPath != "" && fileExists(binaryPath) {
+		fmt.Printf("Remove binary (%s)? [y/N] ", binaryPath)
+		if *flagYes || confirm(r) {
+			fmt.Print("Removing binary... ")
+			if err := os.Remove(binaryPath); err != nil {
+				fmt.Println("✗")
+				fmt.Printf("  warning: could not remove binary: %v\n", err)
+			} else {
+				fmt.Println("✓")
+			}
+		} else {
+			fmt.Printf("  Binary left in place at %s\n", binaryPath)
+		}
+		fmt.Println()
+	}
+
+	// --- Optional: remove config directory ---
+	if fileExists(configDir) {
+		fmt.Printf("Remove config directory (%s)? [y/N] ", configDir)
+		fmt.Println()
+		fmt.Println("  This contains the database and settings. The sites directory will NOT be touched.")
+		fmt.Print("  Confirm removal? [y/N] ")
+		if *flagYes || confirm(r) {
+			fmt.Print("Removing config directory... ")
+			if err := os.RemoveAll(configDir); err != nil {
+				fmt.Println("✗")
+				fmt.Printf("  warning: could not remove config dir: %v\n", err)
+			} else {
+				fmt.Println("✓")
+			}
+		} else {
+			fmt.Printf("  Config directory left in place at %s\n", configDir)
+		}
+		fmt.Println()
+	}
+
+	fmt.Println("devctl has been uninstalled.")
+	fmt.Println()
+	return nil
+}
+
+// detectBinaryPath reads ExecStart= from the service file to find where the binary lives.
+func detectBinaryPath(serviceFile string) string {
+	data, err := os.ReadFile(serviceFile)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ExecStart=") {
+			return strings.TrimPrefix(line, "ExecStart=")
+		}
+	}
+	return ""
+}
+
+// serviceIsActive returns true if `systemctl is-active devctl` reports "active".
+func serviceIsActive() bool {
+	out, err := exec.Command("systemctl", "is-active", "devctl").Output()
+	return err == nil && strings.TrimSpace(string(out)) == "active"
+}
+
+// serviceIsEnabled returns true if `systemctl is-enabled devctl` reports "enabled".
+func serviceIsEnabled() bool {
+	out, err := exec.Command("systemctl", "is-enabled", "devctl").Output()
+	if err != nil {
+		return false
+	}
+	s := strings.TrimSpace(string(out))
+	return s == "enabled" || s == "enabled-runtime"
+}
