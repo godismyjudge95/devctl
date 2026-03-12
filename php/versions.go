@@ -13,6 +13,17 @@ type Version struct {
 	Version    string   `json:"version"`    // e.g. "8.3"
 	FPMSocket  string   `json:"fpm_socket"` // e.g. "/run/php/php8.3-fpm.sock"
 	Extensions []string `json:"extensions"` // enabled extension names
+	Status     string   `json:"status"`     // "running" | "stopped" | "unknown"
+}
+
+// FPMServiceID returns the canonical service registry ID for a PHP-FPM version.
+func FPMServiceID(ver string) string {
+	return "php-fpm-" + ver
+}
+
+// FPMBinary returns the path to the php-fpmX.Y binary.
+func FPMBinary(ver string) string {
+	return fmt.Sprintf("/usr/sbin/php-fpm%s", ver)
 }
 
 var versionRe = regexp.MustCompile(`^(\d+\.\d+)$`)

@@ -23,6 +23,7 @@ type Server struct {
 	queries     *dbq.Queries
 	registry    *services.Registry
 	manager     *services.Manager
+	supervisor  *services.Supervisor
 	poller      *services.Poller
 	dumps       *dumps.Server
 	caddy       *sites.CaddyClient
@@ -39,6 +40,7 @@ func NewServer(
 	db *sql.DB,
 	registry *services.Registry,
 	manager *services.Manager,
+	supervisor *services.Supervisor,
 	poller *services.Poller,
 	dumpsServer *dumps.Server,
 	caddyClient *sites.CaddyClient,
@@ -53,6 +55,7 @@ func NewServer(
 		queries:     dbq.New(db),
 		registry:    registry,
 		manager:     manager,
+		supervisor:  supervisor,
 		poller:      poller,
 		dumps:       dumpsServer,
 		caddy:       caddyClient,
@@ -92,6 +95,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/php/versions", s.handleGetPHPVersions)
 	s.mux.HandleFunc("POST /api/php/versions/{ver}/install", s.handleInstallPHP)
 	s.mux.HandleFunc("DELETE /api/php/versions/{ver}", s.handleUninstallPHP)
+	s.mux.HandleFunc("POST /api/php/versions/{ver}/start", s.handlePHPFPMStart)
+	s.mux.HandleFunc("POST /api/php/versions/{ver}/stop", s.handlePHPFPMStop)
+	s.mux.HandleFunc("POST /api/php/versions/{ver}/restart", s.handlePHPFPMRestart)
 	s.mux.HandleFunc("GET /api/php/settings", s.handleGetPHPSettings)
 	s.mux.HandleFunc("PUT /api/php/settings", s.handleSetPHPSettings)
 

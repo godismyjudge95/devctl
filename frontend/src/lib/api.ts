@@ -275,6 +275,7 @@ export interface PHPVersion {
   version: string
   fpm_socket: string
   extensions: string[]
+  status: 'running' | 'stopped' | 'unknown'
 }
 
 export interface PHPSettings {
@@ -289,6 +290,12 @@ export const installPHP = (ver: string, extensions?: string[]) =>
   request<PHPVersion[]>('POST', `/api/php/versions/${ver}/install`, { extensions })
 export const uninstallPHP = (ver: string) =>
   request<void>('DELETE', `/api/php/versions/${ver}`)
+export const startPHPVersion = (ver: string) =>
+  request<void>('POST', `/api/php/versions/${ver}/start`)
+export const stopPHPVersion = (ver: string) =>
+  request<void>('POST', `/api/php/versions/${ver}/stop`)
+export const restartPHPVersion = (ver: string) =>
+  request<void>('POST', `/api/php/versions/${ver}/restart`)
 export const getPHPSettings = () => request<PHPSettings>('GET', '/api/php/settings')
 export const setPHPSettings = (data: PHPSettings) =>
   request<PHPSettings>('PUT', '/api/php/settings', data)

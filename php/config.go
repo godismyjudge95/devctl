@@ -40,9 +40,9 @@ func GetSettings(ver string) (GlobalSettings, error) {
 	return readIni(iniPath)
 }
 
-// ApplySettings writes the given settings to all installed PHP-FPM versions
-// and reloads each FPM. This is a best-effort operation — errors are collected
-// but all versions are attempted.
+// ApplySettings writes the given settings to all installed PHP-FPM versions.
+// Callers should restart PHP-FPM processes via the supervisor to apply changes.
+// This is a best-effort operation — errors are collected but all versions are attempted.
 func ApplySettings(ctx context.Context, s GlobalSettings) []error {
 	versions, err := InstalledVersions()
 	if err != nil {
@@ -53,17 +53,14 @@ func ApplySettings(ctx context.Context, s GlobalSettings) []error {
 	for _, v := range versions {
 		if err := writeIni(fpmIniPath(v.Version), s); err != nil {
 			errs = append(errs, fmt.Errorf("write ini for %s: %w", v.Version, err))
-			continue
-		}
-		if err := ReloadFPM(ctx, v.Version); err != nil {
-			errs = append(errs, fmt.Errorf("reload fpm %s: %w", v.Version, err))
 		}
 	}
 	return errs
 }
 
 // ConfigurePrepend writes auto_prepend_file into the FPM php.ini for the
-// given version and reloads FPM. Called after Install and on startup.
+// given version. The FPM process must be restarted by the caller (via the
+// supervisor) to pick up the new setting.
 func ConfigurePrepend(ctx context.Context, ver string) error {
 	path := fpmIniPath(ver)
 	input, err := os.ReadFile(path)
@@ -91,7 +88,7 @@ func ConfigurePrepend(ctx context.Context, ver string) error {
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	return ReloadFPM(ctx, ver)
+	return nil
 }
 
 func fpmIniPath(ver string) string {

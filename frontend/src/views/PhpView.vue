@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getPHPVersions, installPHP, uninstallPHP, getPHPSettings, setPHPSettings, type PHPVersion, type PHPSettings } from '@/lib/api'
-import { Plus, Trash2 } from 'lucide-vue-next'
+import {
+  getPHPVersions, installPHP, uninstallPHP,
+  startPHPVersion, stopPHPVersion, restartPHPVersion,
+  getPHPSettings, setPHPSettings,
+  type PHPVersion, type PHPSettings,
+} from '@/lib/api'
+import { Plus, Trash2, Play, Square, RotateCcw, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogFooter, DialogDescription,
@@ -15,6 +19,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { toast } from 'vue-sonner'
 
 const versions = ref<PHPVersion[]>([])
 const settings = ref<PHPSettings>({ upload_max_filesize: '128M', memory_limit: '256M', max_execution_time: '120', post_max_size: '128M' })
@@ -31,8 +36,10 @@ const installError = ref<string | null>(null)
 const uninstallTarget = ref<string | null>(null)
 const uninstalling = ref(false)
 
+// Per-version pending action: 'start' | 'stop' | 'restart' | null
+const pending = ref<Record<string, string>>({})
+
 const KNOWN_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4']
-const DEFAULT_EXTENSIONS = ['bcmath','curl','gd','imagick','intl','mbstring','mysql','pgsql','redis','sqlite3','xml','zip','opcache']
 
 async function load() {
   loading.value = true
@@ -64,8 +71,9 @@ async function doInstall() {
   installing.value = true
   installError.value = null
   try {
-    versions.value = await installPHP(installVer.value, DEFAULT_EXTENSIONS)
+    versions.value = await installPHP(installVer.value)
     installOpen.value = false
+    toast.success(`PHP ${installVer.value} installed`)
   } catch (e: unknown) {
     installError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -75,16 +83,66 @@ async function doInstall() {
 
 async function doUninstall() {
   if (!uninstallTarget.value) return
+  const ver = uninstallTarget.value
   uninstalling.value = true
   try {
-    await uninstallPHP(uninstallTarget.value)
-    versions.value = versions.value.filter(v => v.version !== uninstallTarget.value)
+    await uninstallPHP(ver)
+    versions.value = versions.value.filter(v => v.version !== ver)
     uninstallTarget.value = null
+    toast.success(`PHP ${ver} uninstalled`)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     uninstalling.value = false
   }
+}
+
+async function doStart(ver: string) {
+  pending.value[ver] = 'start'
+  try {
+    await startPHPVersion(ver)
+    const item = versions.value.find(v => v.version === ver)
+    if (item) item.status = 'running'
+    toast.success(`PHP ${ver} FPM started`)
+  } catch (e: any) {
+    toast.error(`Failed to start PHP ${ver}`, { description: e.message })
+  } finally {
+    delete pending.value[ver]
+  }
+}
+
+async function doStop(ver: string) {
+  pending.value[ver] = 'stop'
+  try {
+    await stopPHPVersion(ver)
+    const item = versions.value.find(v => v.version === ver)
+    if (item) item.status = 'stopped'
+    toast.success(`PHP ${ver} FPM stopped`)
+  } catch (e: any) {
+    toast.error(`Failed to stop PHP ${ver}`, { description: e.message })
+  } finally {
+    delete pending.value[ver]
+  }
+}
+
+async function doRestart(ver: string) {
+  pending.value[ver] = 'restart'
+  try {
+    await restartPHPVersion(ver)
+    const item = versions.value.find(v => v.version === ver)
+    if (item) item.status = 'running'
+    toast.success(`PHP ${ver} FPM restarted`)
+  } catch (e: any) {
+    toast.error(`Failed to restart PHP ${ver}`, { description: e.message })
+  } finally {
+    delete pending.value[ver]
+  }
+}
+
+function statusVariant(status: string): 'success' | 'destructive' | 'secondary' {
+  if (status === 'running') return 'success'
+  if (status === 'stopped') return 'destructive'
+  return 'secondary'
 }
 
 async function saveSettings() {
@@ -95,6 +153,7 @@ async function saveSettings() {
     settings.value = await setPHPSettings(settings.value)
     settingsSaved.value = true
     setTimeout(() => { settingsSaved.value = false }, 2500)
+    toast.success('PHP settings saved')
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -128,11 +187,23 @@ onMounted(load)
       <Card v-for="v in versions" :key="v.version">
         <CardHeader class="pb-3">
           <div class="flex items-center justify-between">
-            <CardTitle class="font-mono text-xl">PHP {{ v.version }}</CardTitle>
+            <div class="flex items-center gap-2">
+              <CardTitle class="font-mono text-xl">PHP {{ v.version }}</CardTitle>
+              <Badge :variant="statusVariant(v.status ?? 'unknown')" class="text-xs">
+                <span class="flex items-center gap-1">
+                  <Loader2 v-if="pending[v.version]" class="w-2.5 h-2.5 animate-spin" />
+                  <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
+                    :class="v.status === 'running' ? 'bg-green-600' : v.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
+                  />
+                  {{ pending[v.version] ? pending[v.version] + 'ing…' : (v.status ?? 'unknown') }}
+                </span>
+              </Badge>
+            </div>
             <Button
               variant="ghost" size="sm"
               class="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
               @click="uninstallTarget = v.version"
+              :disabled="!!pending[v.version]"
             >
               <Trash2 class="w-4 h-4" />
             </Button>
@@ -140,11 +211,36 @@ onMounted(load)
           <CardDescription class="font-mono text-xs">{{ v.fpm_socket }}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="flex flex-wrap gap-1">
-            <Badge v-for="ext in v.extensions" :key="ext" variant="secondary" class="font-mono text-xs font-normal">
-              {{ ext }}
-            </Badge>
-            <span v-if="v.extensions.length === 0" class="text-xs text-muted-foreground italic">no extensions</span>
+          <div class="flex items-center gap-1 flex-wrap">
+            <Button
+              v-if="v.status !== 'running'"
+              variant="outline" size="sm"
+              :disabled="!!pending[v.version]"
+              @click="doStart(v.version)"
+            >
+              <Loader2 v-if="pending[v.version] === 'start'" class="w-3.5 h-3.5 animate-spin" />
+              <Play v-else class="w-3.5 h-3.5" />
+              Start
+            </Button>
+            <Button
+              v-if="v.status === 'running'"
+              variant="outline" size="sm"
+              :disabled="!!pending[v.version]"
+              @click="doStop(v.version)"
+            >
+              <Loader2 v-if="pending[v.version] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
+              <Square v-else class="w-3.5 h-3.5" />
+              Stop
+            </Button>
+            <Button
+              variant="ghost" size="sm"
+              :disabled="!!pending[v.version]"
+              @click="doRestart(v.version)"
+            >
+              <Loader2 v-if="pending[v.version] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
+              <RotateCcw v-else class="w-3.5 h-3.5" />
+              Restart
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -159,7 +255,7 @@ onMounted(load)
     <Card>
       <CardHeader>
         <CardTitle>Global php.ini Settings</CardTitle>
-        <CardDescription>Applied to all installed PHP-FPM versions on save.</CardDescription>
+        <CardDescription>Applied to all installed PHP-FPM versions on save. Restart each version to apply.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="grid gap-4 sm:grid-cols-2">
@@ -195,7 +291,7 @@ onMounted(load)
         <DialogHeader>
           <DialogTitle>Install PHP</DialogTitle>
           <DialogDescription>
-            Installs php{{ installVer }}-fpm plus common extensions via apt-get. Requires passwordless sudo.
+            Installs php{{ installVer }}-fpm plus common extensions via apt-get. Requires root (devctl runs as root).
           </DialogDescription>
         </DialogHeader>
         <div class="grid gap-1.5 py-2">
@@ -227,7 +323,7 @@ onMounted(load)
         <DialogHeader>
           <DialogTitle>Uninstall PHP {{ uninstallTarget }}</DialogTitle>
           <DialogDescription>
-            This will purge <code class="font-mono">php{{ uninstallTarget }}-*</code> packages and stop the FPM service.
+            This will stop the FPM process and purge <code class="font-mono">php{{ uninstallTarget }}-*</code> packages.
             Sites using this version will stop working.
           </DialogDescription>
         </DialogHeader>

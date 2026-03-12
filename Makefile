@@ -21,17 +21,29 @@ build-ui:
 build: build-ui
 	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) .
 
-# Install the binary and systemd system service (requires root)
+# Install the binary and systemd system service (requires root).
+# The service file is only copied if /etc/systemd/system/devctl.service does not
+# already exist, so re-running install does not clobber a configured service.
 install: build
 	sudo install -m 755 $(BINARY) $(INSTALL_DIR)/$(BINARY)
-	sudo install -m 644 devctl.service $(SERVICE_DIR)/devctl.service
+	@if [ ! -f $(SERVICE_DIR)/devctl.service ]; then \
+		sudo install -m 644 devctl.service $(SERVICE_DIR)/devctl.service; \
+		echo "Service file installed."; \
+	else \
+		echo "Service file already exists — skipping (run 'make install-service' to force overwrite)."; \
+	fi
 	sudo systemctl daemon-reload
 	@echo "Installed. Run: systemctl enable --now devctl"
 
-# Deploy without rebuilding (just copy + reload); useful when already built
+# Force-install the service file (use this when you intentionally want to update it).
+install-service:
+	sudo install -m 644 devctl.service $(SERVICE_DIR)/devctl.service
+	sudo systemctl daemon-reload
+
+# Deploy without rebuilding (just copy binary + reload); useful when already built.
+# Does NOT overwrite the service file.
 deploy:
 	sudo install -m 755 $(BINARY) $(INSTALL_DIR)/$(BINARY)
-	sudo install -m 644 devctl.service $(SERVICE_DIR)/devctl.service
 	sudo systemctl daemon-reload
 	sudo systemctl restart devctl
 	@echo "Deployed and restarted devctl."

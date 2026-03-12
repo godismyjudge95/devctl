@@ -148,6 +148,17 @@ func run() error {
 	manager := services.NewManager(registry, supervisor)
 	poller := services.NewPoller(registry, manager, pollInterval)
 
+	// --- PHP-FPM: register installed versions as supervised service definitions ---
+	done = step("php-fpm registry")
+	if phpVersions, err := php.InstalledVersions(); err == nil {
+		for _, v := range phpVersions {
+			registry.Register(phpFPMDefinition(v.Version))
+		}
+	} else {
+		log.Printf("php: scan installed versions: %v", err)
+	}
+	done()
+
 	// Auto-install + auto-start Caddy first so the Admin API is ready before EnsureHTTPServer.
 	// installRegistry isn't built yet at this point, so we instantiate CaddyInstaller directly.
 	caddyInstaller := install.NewCaddyInstaller(supervisor, cfg.SiteHome)
@@ -225,9 +236,20 @@ func run() error {
 		}
 	}
 
+	// Auto-start PHP-FPM supervised services for all registered versions.
+	for _, def := range registry.All() {
+		if def.Managed && isPHPFPMDef(def) {
+			if _, statErr := os.Stat(def.ManagedCmd); statErr == nil {
+				if err := supervisor.Start(def); err != nil {
+					log.Printf("supervisor: auto-start %s: %v", def.ID, err)
+				}
+			}
+		}
+	}
+
 	// --- HTTP Server ---
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, addr)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, addr)
 
 	// --- Start background goroutines ---
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -277,4 +299,23 @@ func parseDuration(s string) time.Duration {
 		return time.Duration(n) * time.Second
 	}
 	return 5 * time.Second
+}
+
+// phpFPMDefinition builds a supervised services.Definition for a PHP-FPM version.
+// The process is run as: php-fpmX.Y --nodaemonize --fpm-config /etc/php/X.Y/fpm/php-fpm.conf
+// --nodaemonize keeps it in the foreground so the supervisor can own the lifecycle.
+func phpFPMDefinition(ver string) services.Definition {
+	return services.Definition{
+		ID:          php.FPMServiceID(ver),
+		Label:       "PHP " + ver + " FPM",
+		Managed:     true,
+		ManagedCmd:  php.FPMBinary(ver),
+		ManagedArgs: fmt.Sprintf("--nodaemonize --fpm-config /etc/php/%s/fpm/php-fpm.conf", ver),
+		ManagedDir:  "/etc/php/" + ver + "/fpm",
+	}
+}
+
+// isPHPFPMDef reports whether a Definition was created by phpFPMDefinition.
+func isPHPFPMDef(def services.Definition) bool {
+	return len(def.ID) > 9 && def.ID[:9] == "php-fpm-"
 }
