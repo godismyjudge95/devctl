@@ -10,10 +10,9 @@ import (
 
 // Version represents an installed PHP-FPM version.
 type Version struct {
-	Version    string   `json:"version"`    // e.g. "8.3"
-	FPMSocket  string   `json:"fpm_socket"` // e.g. "/run/php/php8.3-fpm.sock"
-	Extensions []string `json:"extensions"` // enabled extension names
-	Status     string   `json:"status"`     // "running" | "stopped" | "unknown"
+	Version   string `json:"version"`    // e.g. "8.3"
+	FPMSocket string `json:"fpm_socket"` // unix socket path
+	Status    string `json:"status"`     // "running" | "stopped" | "unknown"
 }
 
 // FPMServiceID returns the canonical service registry ID for a PHP-FPM version.
@@ -21,22 +20,51 @@ func FPMServiceID(ver string) string {
 	return "php-fpm-" + ver
 }
 
-// FPMBinary returns the path to the php-fpmX.Y binary.
-func FPMBinary(ver string) string {
-	return fmt.Sprintf("/usr/sbin/php-fpm%s", ver)
+// PHPDir returns the directory where a PHP version's binaries and config live.
+// e.g. /home/alice/sites/server/php/8.3
+func PHPDir(ver, siteHome string) string {
+	return filepath.Join(siteHome, "sites", "server", "php", ver)
+}
+
+// FPMBinary returns the path to the php-fpm binary for the given version.
+func FPMBinary(ver, siteHome string) string {
+	return filepath.Join(PHPDir(ver, siteHome), "php-fpm")
+}
+
+// FPMSocket returns the conventional unix socket path for the given version.
+// Matches the ondrej/php PPA convention so Caddy/Nginx configs work without changes.
+func FPMSocket(ver string) string {
+	return fmt.Sprintf("/run/php/php%s-fpm.sock", ver)
+}
+
+// FPMConfigPath returns the path to the php-fpm.conf for the given version.
+func FPMConfigPath(ver, siteHome string) string {
+	return filepath.Join(PHPDir(ver, siteHome), "php-fpm.conf")
+}
+
+// PHPIniPath returns the path to the php.ini for the given version.
+func PHPIniPath(ver, siteHome string) string {
+	return filepath.Join(PHPDir(ver, siteHome), "php.ini")
+}
+
+// FPMLogPath returns the path to the php-fpm log file for the given version.
+func FPMLogPath(ver, siteHome string) string {
+	return filepath.Join(PHPDir(ver, siteHome), "php-fpm-www.log")
 }
 
 var versionRe = regexp.MustCompile(`^(\d+\.\d+)$`)
 
-// InstalledVersions scans /etc/php/ for installed PHP-FPM versions.
-// It returns them sorted newest-first.
-func InstalledVersions() ([]Version, error) {
-	entries, err := os.ReadDir("/etc/php")
+// InstalledVersions scans {siteHome}/sites/server/php/ for installed PHP versions.
+// A version is considered installed if its php-fpm binary exists.
+// Returns them sorted newest-first.
+func InstalledVersions(siteHome string) ([]Version, error) {
+	phpBase := filepath.Join(siteHome, "sites", "server", "php")
+	entries, err := os.ReadDir(phpBase)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read /etc/php: %w", err)
+		return nil, fmt.Errorf("read %s: %w", phpBase, err)
 	}
 
 	var versions []Version
@@ -48,16 +76,13 @@ func InstalledVersions() ([]Version, error) {
 		if !versionRe.MatchString(ver) {
 			continue
 		}
-		// Only include if php-fpm is installed for this version.
-		fpmConf := filepath.Join("/etc/php", ver, "fpm")
-		if _, err := os.Stat(fpmConf); os.IsNotExist(err) {
+		// Only include if php-fpm binary is present.
+		if _, err := os.Stat(FPMBinary(ver, siteHome)); os.IsNotExist(err) {
 			continue
 		}
-		exts, _ := EnabledExtensions(ver)
 		versions = append(versions, Version{
-			Version:    ver,
-			FPMSocket:  fmt.Sprintf("/run/php/php%s-fpm.sock", ver),
-			Extensions: exts,
+			Version:   ver,
+			FPMSocket: FPMSocket(ver),
 		})
 	}
 
@@ -69,26 +94,29 @@ func InstalledVersions() ([]Version, error) {
 	return versions, nil
 }
 
-// EnabledExtensions returns the names of extensions that are enabled
-// (have .ini files in /etc/php/{ver}/fpm/conf.d/).
-func EnabledExtensions(ver string) ([]string, error) {
-	confDir := filepath.Join("/etc/php", ver, "fpm", "conf.d")
-	entries, err := os.ReadDir(confDir)
+// UpdateGlobalSymlink points /usr/local/bin/php at the CLI binary for the
+// highest installed PHP version. If no versions are installed the symlink is
+// removed. Errors are non-fatal — callers should log but continue.
+func UpdateGlobalSymlink(siteHome string) error {
+	const globalLink = "/usr/local/bin/php"
+
+	versions, err := InstalledVersions(siteHome)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("update global php symlink: %w", err)
 	}
 
-	extRe := regexp.MustCompile(`^\d+-(.+)\.ini$`)
-	var exts []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		m := extRe.FindStringSubmatch(e.Name())
-		if len(m) == 2 {
-			exts = append(exts, m[1])
-		}
+	// Remove any existing symlink or file.
+	_ = os.Remove(globalLink)
+
+	if len(versions) == 0 {
+		return nil
 	}
-	sort.Strings(exts)
-	return exts, nil
+
+	// Versions are sorted newest-first; use the first one.
+	best := versions[0].Version
+	cliBin := filepath.Join(PHPDir(best, siteHome), "php")
+	if err := os.Symlink(cliBin, globalLink); err != nil {
+		return fmt.Errorf("update global php symlink: %w", err)
+	}
+	return nil
 }

@@ -103,8 +103,10 @@ func (m *MeilisearchInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove the Caddy vhost and DB row.
-	if err := m.siteManager.Delete(ctx, "meilisearch-test"); err != nil {
-		fmt.Fprintf(w, "meilisearch: warning: delete site: %v\n", err)
+	if m.siteManager != nil {
+		if err := m.siteManager.Delete(ctx, "meilisearch-test"); err != nil {
+			fmt.Fprintf(w, "meilisearch: warning: delete site: %v\n", err)
+		}
 	}
 
 	// Remove the directory.

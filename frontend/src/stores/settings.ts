@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getSettings, putSettings } from '@/lib/api'
+import { getResolvedSettings, putSettings } from '@/lib/api'
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Record<string, string>>({})
@@ -10,7 +10,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function load() {
     loading.value = true
     try {
-      settings.value = await getSettings()
+      settings.value = await getResolvedSettings()
     } finally {
       loading.value = false
     }

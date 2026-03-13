@@ -41,6 +41,11 @@ func (m *Manager) SetInstallerCheck(id string, fn func() bool) {
 func (m *Manager) GetStatus(def Definition) Status {
 	if def.Managed {
 		if m.supervisor.IsRunning(def.ID) {
+			if def.HealthCheck != "" {
+				if _, err := runCommand(def.HealthCheck); err != nil {
+					return StatusWarning
+				}
+			}
 			return StatusRunning
 		}
 		return StatusStopped

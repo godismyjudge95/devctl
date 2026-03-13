@@ -80,6 +80,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/services/{id}", s.handleServicePurge)
 	s.mux.HandleFunc("GET /api/services/{id}/logs", s.handleServiceLogs)
 	s.mux.HandleFunc("GET /api/services/{id}/credentials", s.handleServiceCredentials)
+	s.mux.HandleFunc("GET /api/services/{id}/details", s.handleGetServiceDetails)
+	s.mux.HandleFunc("GET /api/services/{id}/settings", s.handleGetServiceSettings)
+	s.mux.HandleFunc("PUT /api/services/{id}/settings", s.handlePutServiceSettings)
+	s.mux.HandleFunc("GET /api/services/{id}/config/{file}", s.handleGetServicePHPConfig)
+	s.mux.HandleFunc("PUT /api/services/{id}/config/{file}", s.handlePutServicePHPConfig)
 	s.mux.HandleFunc("GET /api/services/events", s.handleServiceEvents)
 
 	// Sites
@@ -100,6 +105,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/php/versions/{ver}/restart", s.handlePHPFPMRestart)
 	s.mux.HandleFunc("GET /api/php/settings", s.handleGetPHPSettings)
 	s.mux.HandleFunc("PUT /api/php/settings", s.handleSetPHPSettings)
+	s.mux.HandleFunc("GET /api/php/versions/{ver}/config/{file}", s.handleGetPHPConfig)
+	s.mux.HandleFunc("PUT /api/php/versions/{ver}/config/{file}", s.handleSetPHPConfig)
 
 	// Dumps
 	s.mux.HandleFunc("GET /api/dumps", s.handleGetDumps)
@@ -112,6 +119,7 @@ func (s *Server) registerRoutes() {
 
 	// Settings
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	s.mux.HandleFunc("GET /api/settings/resolved", s.handleGetResolvedSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 
 	// Mail — config must be registered before the catch-all proxy.

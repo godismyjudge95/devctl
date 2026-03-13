@@ -11,8 +11,21 @@ import (
 	"github.com/danielgormly/devctl/services"
 )
 
+// configFilePath resolves the absolute path for an allowed PHP config file.
+// Returns ("", false) if the filename is not in the allowlist.
+func configFilePath(ver, siteHome, file string) (string, bool) {
+	switch file {
+	case "php.ini":
+		return php.PHPIniPath(ver, siteHome), true
+	case "php-fpm.conf":
+		return php.FPMConfigPath(ver, siteHome), true
+	default:
+		return "", false
+	}
+}
+
 func (s *Server) handleGetPHPVersions(w http.ResponseWriter, r *http.Request) {
-	versions, err := php.InstalledVersions()
+	versions, err := php.InstalledVersions(s.siteHome)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -39,20 +52,13 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Extensions []string `json:"extensions"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Extensions) == 0 {
-		body.Extensions = php.DefaultExtensions
-	}
-
-	if err := php.Install(r.Context(), ver, body.Extensions); err != nil {
+	if err := php.Install(r.Context(), ver, s.siteHome); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Register a supervised definition and start FPM for the new version.
-	def := phpFPMServiceDef(ver)
+	def := s.phpFPMServiceDef(ver)
 	s.registry.Register(def)
 	if _, statErr := os.Stat(def.ManagedCmd); statErr == nil {
 		if err := s.supervisor.Start(def); err != nil {
@@ -61,7 +67,7 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	versions, _ := php.InstalledVersions()
+	versions, _ := php.InstalledVersions(s.siteHome)
 	if versions == nil {
 		versions = []php.Version{}
 	}
@@ -88,7 +94,7 @@ func (s *Server) handleUninstallPHP(w http.ResponseWriter, r *http.Request) {
 	_ = s.supervisor.Stop(id)
 	s.registry.Unregister(id)
 
-	if err := php.Uninstall(r.Context(), ver); err != nil {
+	if err := php.Uninstall(r.Context(), ver, s.siteHome); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -102,7 +108,7 @@ func (s *Server) handlePHPFPMStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "version required", http.StatusBadRequest)
 		return
 	}
-	def := phpFPMServiceDef(ver)
+	def := s.phpFPMServiceDef(ver)
 	if err := s.supervisor.Start(def); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -129,7 +135,7 @@ func (s *Server) handlePHPFPMRestart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "version required", http.StatusBadRequest)
 		return
 	}
-	def := phpFPMServiceDef(ver)
+	def := s.phpFPMServiceDef(ver)
 	if err := s.supervisor.Restart(def); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -138,7 +144,7 @@ func (s *Server) handlePHPFPMRestart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetPHPSettings(w http.ResponseWriter, r *http.Request) {
-	versions, err := php.InstalledVersions()
+	versions, err := php.InstalledVersions(s.siteHome)
 	if err != nil || len(versions) == 0 {
 		// Return defaults if no PHP installed.
 		writeJSON(w, php.GlobalSettings{
@@ -150,7 +156,7 @@ func (s *Server) handleGetPHPSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := php.GetSettings(versions[0].Version)
+	settings, err := php.GetSettings(versions[0].Version, s.siteHome)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -165,7 +171,7 @@ func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errs := php.ApplySettings(r.Context(), settings)
+	errs := php.ApplySettings(r.Context(), settings, s.siteHome)
 	if len(errs) > 0 {
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
@@ -179,14 +185,64 @@ func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // phpFPMServiceDef builds the supervised Definition for a PHP-FPM version.
-// Kept here so the API handlers don't need to import main.
-func phpFPMServiceDef(ver string) services.Definition {
+func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 	return services.Definition{
-		ID:          php.FPMServiceID(ver),
-		Label:       "PHP " + ver + " FPM",
-		Managed:     true,
-		ManagedCmd:  php.FPMBinary(ver),
-		ManagedArgs: fmt.Sprintf("--nodaemonize --fpm-config /etc/php/%s/fpm/php-fpm.conf", ver),
-		ManagedDir:  "/etc/php/" + ver + "/fpm",
+		ID:           php.FPMServiceID(ver),
+		Label:        "PHP " + ver + " FPM",
+		Managed:      true,
+		ManagedCmd:   php.FPMBinary(ver, s.siteHome),
+		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, s.siteHome)),
+		ManagedDir:   php.PHPDir(ver, s.siteHome),
+		Log:          php.FPMLogPath(ver, s.siteHome),
+		Version:      php.FPMBinary(ver, s.siteHome) + " -v",
+		VersionRegex: `PHP (?P<version>[\d.]+)`,
 	}
+}
+
+// handleGetPHPConfig reads a PHP config file and returns its content as JSON.
+func (s *Server) handleGetPHPConfig(w http.ResponseWriter, r *http.Request) {
+	ver := r.PathValue("ver")
+	file := r.PathValue("file")
+	if ver == "" || file == "" {
+		writeError(w, "version and file required", http.StatusBadRequest)
+		return
+	}
+	path, ok := configFilePath(ver, s.siteHome, file)
+	if !ok {
+		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"content": string(data)})
+}
+
+// handleSetPHPConfig writes content to a PHP config file.
+func (s *Server) handleSetPHPConfig(w http.ResponseWriter, r *http.Request) {
+	ver := r.PathValue("ver")
+	file := r.PathValue("file")
+	if ver == "" || file == "" {
+		writeError(w, "version and file required", http.StatusBadRequest)
+		return
+	}
+	path, ok := configFilePath(ver, s.siteHome, file)
+	if !ok {
+		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

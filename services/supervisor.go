@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -13,9 +14,10 @@ import (
 
 // managedProc holds state for a single supervised child process.
 type managedProc struct {
-	def    Definition
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
+	def     Definition
+	cmd     *exec.Cmd
+	cancel  context.CancelFunc
+	logFile *os.File // non-nil when def.Log != ""; closed after the process exits
 }
 
 // Supervisor manages devctl-supervised child processes (e.g. Laravel Reverb).
@@ -93,19 +95,37 @@ func (s *Supervisor) startLocked(def Definition) error {
 
 	s.procs[def.ID] = &managedProc{def: def, cmd: cmd, cancel: cancel}
 
+	// Open log file for tee if def.Log is set.
+	var logFile *os.File
+	if def.Log != "" {
+		if err := os.MkdirAll(filepath.Dir(def.Log), 0755); err == nil {
+			logFile, _ = os.OpenFile(def.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		}
+		if logFile != nil {
+			s.procs[def.ID].logFile = logFile
+		}
+	}
+
 	// Log output lines prefixed with the service ID.
 	go func() {
 		buf := make([]byte, 4096)
 		for {
-			n, err := pr.Read(buf)
+			n, errRead := pr.Read(buf)
 			if n > 0 {
-				log.Printf("[%s] %s", def.ID, strings.TrimRight(string(buf[:n]), "\n"))
+				chunk := buf[:n]
+				log.Printf("[%s] %s", def.ID, strings.TrimRight(string(chunk), "\n"))
+				if logFile != nil {
+					_, _ = logFile.Write(chunk)
+				}
 			}
-			if err != nil {
+			if errRead != nil {
 				break
 			}
 		}
 		pr.Close()
+		if logFile != nil {
+			logFile.Close()
+		}
 	}()
 
 	log.Printf("supervisor: started %s (pid %d)", def.ID, cmd.Process.Pid)

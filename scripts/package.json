@@ -1,0 +1,12 @@
+{
+  "name": "devctl-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "screenshots": "node screenshots.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}

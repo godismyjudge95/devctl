@@ -18,6 +18,9 @@ import (
 
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/php"
+	"github.com/danielgormly/devctl/services"
 )
 
 const serviceDir = "/etc/systemd/system"
@@ -477,6 +480,7 @@ func isTerminal() bool {
 func Uninstall(args []string) error {
 	fs := flag.NewFlagSet("devctl uninstall", flag.ContinueOnError)
 	flagYes := fs.Bool("yes", false, "skip all confirmation prompts")
+	flagPurgeServices := fs.Bool("purge-services", false, "remove installed services (Caddy, Valkey, etc.) without prompting")
 	fs.SetOutput(os.Stderr)
 
 	if err := fs.Parse(args); err != nil {
@@ -498,6 +502,11 @@ func Uninstall(args []string) error {
 	fmt.Println("devctl uninstaller")
 	fmt.Println("━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
+
+	// Read siteHome from the config DB early, before we remove anything.
+	// This is needed later for service purge. Errors are non-fatal — siteHome
+	// may be empty if the DB doesn't exist or the setting was never saved.
+	siteHome := readSiteHome()
 
 	serviceFile := filepath.Join(serviceDir, serviceName)
 
@@ -600,9 +609,87 @@ func Uninstall(args []string) error {
 		fmt.Println()
 	}
 
+	// --- Optional: remove installed services ---
+	purgeServices := *flagYes || *flagPurgeServices
+	if siteHome != "" {
+		if !purgeServices {
+			fmt.Println("Remove installed services (Caddy, Valkey, Mailpit, etc.)?")
+			fmt.Println("  This will stop and delete all service binaries under ~/sites/server/.")
+			fmt.Println("  PHP versions and any APT-installed services (PostgreSQL, MySQL) will also be removed.")
+			fmt.Print("  Proceed? [y/N] ")
+			purgeServices = confirm(r)
+			fmt.Println()
+		}
+
+		if purgeServices {
+			ctx := context.Background()
+			purgeInstalledServices(ctx, siteHome, os.Stdout)
+		}
+	}
+
 	fmt.Println("devctl has been uninstalled.")
 	fmt.Println()
 	return nil
+}
+
+// readSiteHome opens the config DB and returns the site_home setting value.
+// Returns an empty string if the DB does not exist or the setting is missing.
+func readSiteHome() string {
+	database, err := db.Open(dbPath)
+	if err != nil {
+		return ""
+	}
+	defer database.Close()
+	queries := dbq.New(database)
+	val, err := queries.GetSetting(context.Background(), "site_home")
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+// purgeInstalledServices removes all devctl-managed service binaries that are
+// currently installed. It stops supervised processes (best-effort — they are
+// already stopped because devctl itself has been stopped) and removes their
+// data directories. APT-installed services (PostgreSQL, MySQL) are fully purged
+// via apt-get.
+func purgeInstalledServices(ctx context.Context, siteHome string, w io.Writer) {
+	supervisor := services.NewSupervisor(siteHome)
+	// siteManager and queries are not available here; pass nil — the installers
+	// that use them (Reverb, Meilisearch, Typesense) will emit warnings for the
+	// site-cleanup step but will still remove their directories.
+	registry := install.NewRegistry(nil, nil, supervisor, "", siteHome)
+
+	// Ordered list — stop Caddy first so it releases ports before we remove it.
+	serviceOrder := []string{"caddy", "redis", "mailpit", "meilisearch", "typesense", "reverb", "postgres", "mysql"}
+
+	for _, id := range serviceOrder {
+		installer, ok := registry[id]
+		if !ok || !installer.IsInstalled() {
+			continue
+		}
+		fmt.Fprintf(w, "Removing %s... ", id)
+		if err := installer.PurgeW(ctx, w); err != nil {
+			fmt.Fprintf(w, "warning: %v\n", err)
+		} else {
+			fmt.Fprintf(w, "✓\n")
+		}
+	}
+
+	// PHP versions — remove all installed versions and the global symlink.
+	phpVersions, err := php.InstalledVersions(siteHome)
+	if err != nil {
+		fmt.Fprintf(w, "warning: list PHP versions: %v\n", err)
+		return
+	}
+	for _, v := range phpVersions {
+		fmt.Fprintf(w, "Removing PHP %s... ", v.Version)
+		if err := php.Uninstall(ctx, v.Version, siteHome); err != nil {
+			fmt.Fprintf(w, "warning: %v\n", err)
+		} else {
+			fmt.Fprintf(w, "✓\n")
+		}
+	}
 }
 
 // detectBinaryPath reads ExecStart= from the service file to find where the binary lives.

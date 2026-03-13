@@ -8,6 +8,17 @@ import (
 	dbq "github.com/danielgormly/devctl/db/queries"
 )
 
+// settingDefaults maps setting keys to their runtime fallback values,
+// matching the logic in main.go's getSetting() calls.
+var settingDefaults = map[string]string{
+	"devctl_host":           "127.0.0.1",
+	"devctl_port":           "4000",
+	"dump_tcp_port":         "9912",
+	"service_poll_interval": "5",
+	"mailpit_http_port":     "8025",
+	"mailpit_smtp_port":     "1025",
+}
+
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.queries.GetAllSettings(context.Background())
 	if err != nil {
@@ -37,6 +48,28 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// handleGetResolvedSettings returns all settings with runtime fallback defaults
+// applied — inputs on the Settings page always show real values.
+func (s *Server) handleGetResolvedSettings(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.queries.GetAllSettings(context.Background())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Start with defaults, then overlay whatever is stored in the DB.
+	out := make(map[string]string, len(settingDefaults))
+	for k, v := range settingDefaults {
+		out[k] = v
+	}
+	for _, row := range rows {
+		if row.Value != "" {
+			out[row.Key] = row.Value
+		}
+	}
+	writeJSON(w, out)
 }
 
 // GetSetting is a helper for reading a single setting from the DB.

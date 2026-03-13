@@ -3,7 +3,7 @@
 export interface ServiceState {
   id: string
   label: string
-  status: 'running' | 'stopped' | 'pending' | 'unknown'
+  status: 'running' | 'stopped' | 'pending' | 'unknown' | 'warning'
   version: string
   log: string
   installed: boolean
@@ -52,6 +52,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export type ServiceCredentials = Record<string, string>
+export type ServiceDetails = Record<string, string>
 
 // --- Services ---
 export const getServices = () => request<ServiceState[]>('GET', '/api/services')
@@ -60,6 +61,8 @@ export const stopService = (id: string) => request<void>('POST', `/api/services/
 export const restartService = (id: string) => request<void>('POST', `/api/services/${id}/restart`)
 export const getServiceCredentials = (id: string) =>
   request<ServiceCredentials>('GET', `/api/services/${id}/credentials`)
+export const getServiceDetails = (id: string) =>
+  request<ServiceDetails>('GET', `/api/services/${id}/details`)
 
 export interface StreamCallbacks {
   onOutput: (chunk: string) => void
@@ -179,7 +182,26 @@ export const clearDumps = () => request<void>('DELETE', '/api/dumps')
 
 // --- Settings ---
 export const getSettings = () => request<Settings>('GET', '/api/settings')
+export const getResolvedSettings = () => request<Settings>('GET', '/api/settings/resolved')
 export const putSettings = (data: Settings) => request<void>('PUT', '/api/settings', data)
+
+// --- Service settings (mailpit and php-fpm-* only) ---
+export interface MailpitServiceSettings {
+  http_port: string
+  smtp_port: string
+}
+export type PHPServiceSettings = PHPSettings
+
+export const getServiceSettings = (id: string) =>
+  request<MailpitServiceSettings | PHPServiceSettings>('GET', `/api/services/${id}/settings`)
+export const putServiceSettings = (id: string, data: MailpitServiceSettings | PHPServiceSettings) =>
+  request<{ status: string }>('PUT', `/api/services/${id}/settings`, data)
+
+// --- Service PHP config (php-fpm-* only) ---
+export const getServicePHPConfig = (id: string, file: string) =>
+  request<{ content: string }>('GET', `/api/services/${id}/config/${file}`)
+export const putServicePHPConfig = (id: string, file: string, content: string) =>
+  request<void>('PUT', `/api/services/${id}/config/${file}`, { content })
 
 // --- Mail ---
 export const getMailConfig = () =>
@@ -274,7 +296,6 @@ export const mailPartUrl = (id: string, partID: string) => `/api/mail/api/v1/mes
 export interface PHPVersion {
   version: string
   fpm_socket: string
-  extensions: string[]
   status: 'running' | 'stopped' | 'unknown'
 }
 
@@ -286,8 +307,8 @@ export interface PHPSettings {
 }
 
 export const getPHPVersions = () => request<PHPVersion[]>('GET', '/api/php/versions')
-export const installPHP = (ver: string, extensions?: string[]) =>
-  request<PHPVersion[]>('POST', `/api/php/versions/${ver}/install`, { extensions })
+export const installPHP = (ver: string) =>
+  request<PHPVersion[]>('POST', `/api/php/versions/${ver}/install`, {})
 export const uninstallPHP = (ver: string) =>
   request<void>('DELETE', `/api/php/versions/${ver}`)
 export const startPHPVersion = (ver: string) =>
@@ -299,6 +320,12 @@ export const restartPHPVersion = (ver: string) =>
 export const getPHPSettings = () => request<PHPSettings>('GET', '/api/php/settings')
 export const setPHPSettings = (data: PHPSettings) =>
   request<PHPSettings>('PUT', '/api/php/settings', data)
+
+// --- PHP Config ---
+export const getPHPConfig = (ver: string, file: string) =>
+  request<{ content: string }>('GET', `/api/php/versions/${ver}/config/${file}`)
+export const setPHPConfig = (ver: string, file: string, content: string) =>
+  request<void>('PUT', `/api/php/versions/${ver}/config/${file}`, { content })
 
 // --- TLS ---
 export const getTLSCertURL = () => '/api/tls/cert'

@@ -34,6 +34,9 @@ type ServiceDef struct {
 	// ManagedEnvFile is a path to a key=value file whose values are appended
 	// as CLI flags at process start (used to inject secrets known only after install).
 	ManagedEnvFile string `yaml:"managed_env_file"`
+	// HealthCheck is an optional shell command run when the service is running.
+	// A non-zero exit code causes the status to be reported as "warning".
+	HealthCheck string `yaml:"health_check"`
 }
 
 // DefaultServices returns the built-in service definitions.
@@ -57,6 +60,8 @@ func DefaultServices(siteHome string) []ServiceDef {
 			ManagedEnvFile: caddyDir + "/caddy.env",
 			Version:        caddyDir + "/caddy version",
 			VersionRegex:   `v(?P<version>[\d.]+)`,
+			Log:            caddyDir + "/caddy.log",
+			HealthCheck:    "curl -sf http://localhost:2019/config/",
 		},
 		{
 			ID:              "redis",
@@ -69,6 +74,7 @@ func DefaultServices(siteHome string) []ServiceDef {
 			Version:         valkeyDir + "/valkey-server --version",
 			VersionRegex:    `v=(?P<version>[\d.]+)`,
 			CredentialsFile: valkeyDir + "/config.env",
+			Log:             valkeyDir + "/valkey.log",
 		},
 		{
 			ID:           "postgres",
@@ -107,6 +113,7 @@ func DefaultServices(siteHome string) []ServiceDef {
 			ManagedEnvFile: meiliDir + "/config.env",
 			Version:        meiliDir + "/meilisearch --version",
 			VersionRegex:   `meilisearch (?P<version>[\d.]+)`,
+			Log:            meiliDir + "/meilisearch.log",
 		},
 		{
 			ID:             "typesense",
@@ -119,6 +126,7 @@ func DefaultServices(siteHome string) []ServiceDef {
 			ManagedEnvFile: tsDir + "/config.env",
 			Version:        tsDir + "/typesense-server --version",
 			VersionRegex:   `Typesense (?P<version>[\d.]+)`,
+			Log:            tsDir + "/typesense.log",
 		},
 		{
 			ID:              "mailpit",
@@ -131,15 +139,18 @@ func DefaultServices(siteHome string) []ServiceDef {
 			Version:         mailpitDir + "/mailpit version",
 			VersionRegex:    `v(?P<version>[\d.]+)`,
 			CredentialsFile: mailpitDir + "/config.env",
+			Log:             mailpitDir + "/mailpit.log",
 		},
 		{
-			ID:          "reverb",
-			Label:       "Laravel Reverb",
-			Installable: true,
-			Managed:     true,
-			ManagedCmd:  "php",
-			ManagedArgs: "artisan reverb:start --host=127.0.0.1 --port=7383",
-			// Log path is $HOME/sites/reverb/storage/logs/laravel.log — expanded at runtime.
+			ID:           "reverb",
+			Label:        "Laravel Reverb",
+			Installable:  true,
+			Managed:      true,
+			ManagedCmd:   "php",
+			ManagedArgs:  "artisan reverb:start --host=127.0.0.1 --port=7383",
+			Version:      `grep -m1 '"version"' ` + siteHome + `/sites/reverb/vendor/laravel/reverb/composer.json`,
+			VersionRegex: `"version": "(?P<version>[^"]+)"`,
+			Log:          siteHome + "/sites/reverb/storage/logs/laravel.log",
 			// Start/Stop/Restart/Status are handled by the Supervisor, not shell commands.
 		},
 	}

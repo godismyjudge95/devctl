@@ -150,9 +150,9 @@ func run() error {
 
 	// --- PHP-FPM: register installed versions as supervised service definitions ---
 	done = step("php-fpm registry")
-	if phpVersions, err := php.InstalledVersions(); err == nil {
+	if phpVersions, err := php.InstalledVersions(cfg.SiteHome); err == nil {
 		for _, v := range phpVersions {
-			registry.Register(phpFPMDefinition(v.Version))
+			registry.Register(phpFPMDefinition(v.Version, cfg.SiteHome))
 		}
 	} else {
 		log.Printf("php: scan installed versions: %v", err)
@@ -302,16 +302,19 @@ func parseDuration(s string) time.Duration {
 }
 
 // phpFPMDefinition builds a supervised services.Definition for a PHP-FPM version.
-// The process is run as: php-fpmX.Y --nodaemonize --fpm-config /etc/php/X.Y/fpm/php-fpm.conf
+// The process is run as: php-fpm --nodaemonize --fpm-config {dir}/php-fpm.conf
 // --nodaemonize keeps it in the foreground so the supervisor can own the lifecycle.
-func phpFPMDefinition(ver string) services.Definition {
+func phpFPMDefinition(ver, siteHome string) services.Definition {
 	return services.Definition{
-		ID:          php.FPMServiceID(ver),
-		Label:       "PHP " + ver + " FPM",
-		Managed:     true,
-		ManagedCmd:  php.FPMBinary(ver),
-		ManagedArgs: fmt.Sprintf("--nodaemonize --fpm-config /etc/php/%s/fpm/php-fpm.conf", ver),
-		ManagedDir:  "/etc/php/" + ver + "/fpm",
+		ID:           php.FPMServiceID(ver),
+		Label:        "PHP " + ver + " FPM",
+		Managed:      true,
+		ManagedCmd:   php.FPMBinary(ver, siteHome),
+		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, siteHome)),
+		ManagedDir:   php.PHPDir(ver, siteHome),
+		Log:          php.FPMLogPath(ver, siteHome),
+		Version:      php.FPMBinary(ver, siteHome) + " -v",
+		VersionRegex: `PHP (?P<version>[\d.]+)`,
 	}
 }
 

@@ -109,8 +109,10 @@ func (t *TypesenseInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove the Caddy vhost and DB row.
-	if err := t.siteManager.Delete(ctx, "typesense-test"); err != nil {
-		fmt.Fprintf(w, "typesense: warning: delete site: %v\n", err)
+	if t.siteManager != nil {
+		if err := t.siteManager.Delete(ctx, "typesense-test"); err != nil {
+			fmt.Fprintf(w, "typesense: warning: delete site: %v\n", err)
+		}
 	}
 
 	// Remove the directory.

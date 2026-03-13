@@ -8,6 +8,7 @@ const (
 	StatusStopped Status = "stopped"
 	StatusUnknown Status = "unknown"
 	StatusPending Status = "pending" // transitional: activating / deactivating / reloading
+	StatusWarning Status = "warning" // process is up but health check failed
 )
 
 // Definition holds the configuration for a single managed service.
@@ -47,6 +48,10 @@ type Definition struct {
 	// appended to ManagedArgs at process start (used to inject secrets
 	// that are only known after installation, e.g. a Meilisearch master key).
 	ManagedEnvFile string
+	// HealthCheck is an optional shell command run after the service is
+	// confirmed running. A non-zero exit code causes the status to be
+	// reported as StatusWarning instead of StatusRunning.
+	HealthCheck string
 }
 
 // ServiceState is the live status of a service returned by the API.

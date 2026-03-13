@@ -10,9 +10,9 @@ devctl manages Caddy (TLS proxy), PHP-FPM processes, and optional dev services (
 
 ## Features
 
-- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb)
+- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) and PHP-FPM versions — all from one tab
 - **Sites** — auto-discovers PHP projects in your sites directory and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA
-- **PHP** — install and manage multiple PHP-FPM versions side by side; start/stop/restart each version independently
+- **PHP CLI** — a global `/usr/local/bin/php` symlink always points at the highest installed PHP version; per-version symlinks (`php8.3`, `php8.4`, …) are also created
 - **Global php.ini** — set `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time` across all installed PHP versions at once
 - **Dumps** — receive and display `php_dd()` / `dd()` variable dumps from any site over TCP (no browser extension needed)
 - **TLS** — download or auto-trust Caddy's root CA certificate so `*.test` sites work without browser warnings
@@ -71,13 +71,25 @@ sudo devctl uninstall
 
 Stops and disables the service, removes the unit file, and optionally removes the binary and `/etc/devctl/` data directory. Your sites directory is never touched.
 
+To also remove all installed services (Caddy, Valkey, Mailpit, PHP versions, etc.) in one step, use `--purge-services`:
+
+```sh
+sudo devctl uninstall --purge-services
+```
+
+Or combine with `--yes` to skip all confirmation prompts entirely:
+
+```sh
+sudo devctl uninstall --yes --purge-services
+```
+
 ---
 
 ## Screenshots
 
 ### Services
 
-Manage dev services. Caddy is always running. Other services can be installed and started on demand. PHP-FPM versions installed via the PHP tab also appear here.
+Manage dev services and PHP-FPM versions. Caddy is always running. Other services can be installed and started on demand. Expand any row to see connection info (socket path, credentials).
 
 ![Services page](docs/screenshot-services.png)
 
@@ -87,11 +99,11 @@ Auto-discovered sites from your watch directory. Each site gets a `*.test` vhost
 
 ![Sites page](docs/screenshot-sites.png)
 
-### PHP
+### Dumps
 
-Install PHP-FPM versions and control each one independently. Configure global php.ini settings applied across all versions.
+Receive and display `php_dd()` variable dumps from any PHP site in real time.
 
-![PHP page](docs/screenshot-php.png)
+![Dumps page](docs/screenshot-dumps.png)
 
 ### Settings
 
@@ -121,15 +133,16 @@ Supervised services run as direct child processes of devctl. Valkey's service ID
 
 ## PHP
 
-PHP versions are installed from the [ondrej/php](https://launchpad.net/~ondrej/+archive/ubuntu/php) PPA. Any version available in that PPA can be installed from the UI.
-
-**Default extensions installed with every version:**
-`bcmath`, `curl`, `gd`, `imagick`, `intl`, `mbstring`, `mysql`, `pgsql`, `redis`, `sqlite3`, `xml`, `xmlwriter`, `zip`, `opcache`, `readline`, `soap`
+PHP versions are installed from the [static-php-cli](https://github.com/crazywhalecc/static-php-cli) project as self-contained static binaries — no PPA or system packages required. Any version available on that index can be installed from the Services tab.
 
 Each version runs as:
 ```
-/usr/sbin/php-fpmX.Y --nodaemonize --fpm-config /etc/php/X.Y/fpm/php-fpm.conf
+{siteHome}/sites/server/php/{version}/php-fpm --nodaemonize --fpm-config {siteHome}/sites/server/php/{version}/php-fpm.conf
 ```
+
+**CLI symlinks created on install:**
+- `/usr/local/bin/php{version}` — points at the version-specific CLI binary (e.g. `php8.4`)
+- `/usr/local/bin/php` — always points at the highest installed version
 
 ---
 

@@ -34,24 +34,23 @@ type GlobalSettings struct {
 }
 
 // GetSettings reads the global settings from the first installed FPM php.ini.
-// All installed versions should have the same values after ApplySettings is called.
-func GetSettings(ver string) (GlobalSettings, error) {
-	iniPath := fpmIniPath(ver)
+func GetSettings(ver, siteHome string) (GlobalSettings, error) {
+	iniPath := fpmIniPath(ver, siteHome)
 	return readIni(iniPath)
 }
 
 // ApplySettings writes the given settings to all installed PHP-FPM versions.
 // Callers should restart PHP-FPM processes via the supervisor to apply changes.
 // This is a best-effort operation — errors are collected but all versions are attempted.
-func ApplySettings(ctx context.Context, s GlobalSettings) []error {
-	versions, err := InstalledVersions()
+func ApplySettings(ctx context.Context, s GlobalSettings, siteHome string) []error {
+	versions, err := InstalledVersions(siteHome)
 	if err != nil {
 		return []error{fmt.Errorf("list versions: %w", err)}
 	}
 
 	var errs []error
 	for _, v := range versions {
-		if err := writeIni(fpmIniPath(v.Version), s); err != nil {
+		if err := writeIni(fpmIniPath(v.Version, siteHome), s); err != nil {
 			errs = append(errs, fmt.Errorf("write ini for %s: %w", v.Version, err))
 		}
 	}
@@ -61,8 +60,8 @@ func ApplySettings(ctx context.Context, s GlobalSettings) []error {
 // ConfigurePrepend writes auto_prepend_file into the FPM php.ini for the
 // given version. The FPM process must be restarted by the caller (via the
 // supervisor) to pick up the new setting.
-func ConfigurePrepend(ctx context.Context, ver string) error {
-	path := fpmIniPath(ver)
+func ConfigurePrepend(ctx context.Context, ver, siteHome string) error {
+	path := fpmIniPath(ver, siteHome)
 	input, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
@@ -91,8 +90,52 @@ func ConfigurePrepend(ctx context.Context, ver string) error {
 	return nil
 }
 
-func fpmIniPath(ver string) string {
-	return filepath.Join("/etc/php", ver, "fpm", "php.ini")
+// WriteConfigs generates php-fpm.conf and php.ini for the given version.
+// Called during Install to create the initial config files.
+func WriteConfigs(ver, siteHome string) error {
+	phpDir := PHPDir(ver, siteHome)
+	socketPath := FPMSocket(ver)
+	iniPath := fpmIniPath(ver, siteHome)
+	fpmConfPath := FPMConfigPath(ver, siteHome)
+
+	// Write php.ini with sensible defaults.
+	ini := fmt.Sprintf(`; devctl-managed php.ini for PHP %s
+upload_max_filesize = 128M
+memory_limit = 256M
+max_execution_time = 120
+post_max_size = 128M
+`, ver)
+	if err := os.WriteFile(iniPath, []byte(ini), 0644); err != nil {
+		return fmt.Errorf("write php.ini: %w", err)
+	}
+
+	// Write php-fpm.conf.
+	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
+[global]
+error_log = %s/php-fpm.log
+
+[www]
+listen = %s
+listen.owner = root
+listen.group = root
+listen.mode = 0660
+pm = dynamic
+pm.max_children = 10
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 4
+php_admin_value[error_log] = %s/php-fpm-www.log
+php_admin_flag[log_errors] = on
+`, ver, phpDir, socketPath, phpDir)
+	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
+		return fmt.Errorf("write php-fpm.conf: %w", err)
+	}
+
+	return nil
+}
+
+func fpmIniPath(ver, siteHome string) string {
+	return filepath.Join(PHPDir(ver, siteHome), "php.ini")
 }
 
 func readIni(path string) (GlobalSettings, error) {

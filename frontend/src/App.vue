@@ -6,7 +6,7 @@ import { useMailStore } from '@/stores/mail'
 import { useSitesStore } from '@/stores/sites'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { onMounted, watch, computed } from 'vue'
-import { Settings, Globe, Server, Code2, Mail, Bug, Sun, Moon } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,7 +48,6 @@ watch(() => servicesStore.mailpitInstalled, (installed) => {
 const allNavItems = [
   { path: '/services', label: 'Services', icon: Server },
   { path: '/sites',    label: 'Sites',    icon: Globe },
-  { path: '/php',      label: 'PHP',      icon: Code2 },
   { path: '/dumps',    label: 'Dumps',    icon: Bug },
   { path: '/mail',     label: 'Mail',     icon: Mail, requiresMailpit: true },
   { path: '/settings', label: 'Settings', icon: Settings },

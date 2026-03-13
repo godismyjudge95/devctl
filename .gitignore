@@ -4,6 +4,9 @@ devctl
 # Frontend dependencies
 frontend/node_modules/
 
+# Scripts dependencies
+scripts/node_modules/
+
 # Accidentally included project data directory
 home/
 

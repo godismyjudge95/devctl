@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ServiceState, ServiceCredentials } from '@/lib/api'
-import { startService, stopService, restartService, getServiceCredentials } from '@/lib/api'
+import type { ServiceState, ServiceCredentials, ServiceDetails } from '@/lib/api'
+import { startService, stopService, restartService, getServiceCredentials, getServiceDetails } from '@/lib/api'
 
 export const useServicesStore = defineStore('services', () => {
   const states = ref<ServiceState[]>([])
   const credentials = ref<Record<string, ServiceCredentials>>({})
+  const details = ref<Record<string, ServiceDetails>>({})
   let eventSource: EventSource | null = null
 
   const stoppedCount = computed(() =>
@@ -44,6 +45,15 @@ export const useServicesStore = defineStore('services', () => {
     }
   }
 
+  async function fetchDetails(id: string) {
+    try {
+      const d = await getServiceDetails(id)
+      details.value[id] = d
+    } catch {
+      delete details.value[id]
+    }
+  }
+
   async function start(id: string) {
     await startService(id)
   }
@@ -54,5 +64,5 @@ export const useServicesStore = defineStore('services', () => {
     await restartService(id)
   }
 
-  return { states, credentials, stoppedCount, mailpitInstalled, connectSSE, start, stop, restart, fetchCredentials }
+  return { states, credentials, details, stoppedCount, mailpitInstalled, connectSSE, start, stop, restart, fetchCredentials, fetchDetails }
 })

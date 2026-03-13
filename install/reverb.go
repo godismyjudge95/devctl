@@ -125,8 +125,10 @@ func (r *ReverbInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove the Caddy vhost and DB row.
-	if err := r.siteManager.Delete(ctx, "reverb-test"); err != nil {
-		fmt.Fprintf(w, "reverb: warning: delete site: %v\n", err)
+	if r.siteManager != nil {
+		if err := r.siteManager.Delete(ctx, "reverb-test"); err != nil {
+			fmt.Fprintf(w, "reverb: warning: delete site: %v\n", err)
+		}
 	}
 
 	// Remove the directory.
