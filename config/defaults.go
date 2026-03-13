@@ -47,6 +47,7 @@ func DefaultServices(siteHome string) []ServiceDef {
 	tsDir := siteHome + "/sites/server/typesense"
 	valkeyDir := siteHome + "/sites/server/valkey"
 	mailpitDir := siteHome + "/sites/server/mailpit"
+	mysqlDir := siteHome + "/sites/server/mysql"
 	return []ServiceDef{
 		{
 			ID:             "caddy",
@@ -90,17 +91,17 @@ func DefaultServices(siteHome string) []ServiceDef {
 			Installable:  true,
 		},
 		{
-			ID:           "mysql",
-			Label:        "MySQL",
-			Start:        "systemctl start mysql",
-			Stop:         "systemctl stop mysql",
-			Restart:      "systemctl restart mysql",
-			Status:       "systemctl is-active mysql",
-			StatusRegex:  `(?P<status>active|inactive|failed)`,
-			Version:      "mysql --version",
-			VersionRegex: `(?P<version>[\d.]+)`,
-			Log:          "/var/log/mysql/error.log",
-			Installable:  true,
+			ID:              "mysql",
+			Label:           "MySQL",
+			Installable:     true,
+			Managed:         true,
+			ManagedCmd:      mysqlDir + "/bin/mysqld",
+			ManagedArgs:     "--defaults-file=./my.cnf --user=root",
+			ManagedDir:      mysqlDir,
+			Version:         mysqlDir + "/bin/mysql --version",
+			VersionRegex:    `(?P<version>[\d.]+)`,
+			CredentialsFile: mysqlDir + "/config.env",
+			Log:             mysqlDir + "/mysql-error.log",
 		},
 		{
 			ID:             "meilisearch",

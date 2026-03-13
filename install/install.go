@@ -49,7 +49,6 @@ type Installer interface {
 // Deprecated: use NewRegistry for installers that require dependencies.
 var Registry = map[string]Installer{
 	"postgres": &PostgresInstaller{},
-	"mysql":    &MySQLInstaller{},
 }
 
 // NewRegistry builds the full installer map, injecting dependencies into
@@ -82,6 +81,10 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		siteHome:   siteHome,
 	}
 	m["mailpit"] = &MailpitInstaller{
+		supervisor: supervisor,
+		siteHome:   siteHome,
+	}
+	m["mysql"] = &MySQLInstaller{
 		supervisor: supervisor,
 		siteHome:   siteHome,
 	}

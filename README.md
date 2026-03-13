@@ -120,7 +120,7 @@ Configure the dashboard host/port, sites watch directory, TLS certificate trust,
 | Caddy | Supervised (always on) | `:80`, `:443` |
 | Valkey (Redis-compatible) | Supervised | `127.0.0.1:6379` |
 | PostgreSQL | systemd | — |
-| MySQL | systemd | — |
+| MySQL | Supervised | `127.0.0.1:3306` |
 | Meilisearch | Supervised | `127.0.0.1:7700` (also `meilisearch.test`) |
 | Typesense | Supervised | `127.0.0.1:8108` (also `typesense.test`) |
 | Mailpit | Supervised | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) |
@@ -167,6 +167,7 @@ No browser extension or Xdebug configuration required.
 | `127.0.0.1:2019` | Caddy Admin API | Yes (Settings) |
 | `127.0.0.1:9912` | PHP dump receiver | Yes (Settings → PHP Dump Server) |
 | `127.0.0.1:6379` | Valkey | No |
+| `127.0.0.1:3306` | MySQL | No |
 | `127.0.0.1:7700` | Meilisearch | No |
 | `127.0.0.1:8108` | Typesense | No |
 | `127.0.0.1:8025` | Mailpit (web) | Yes |
@@ -182,7 +183,7 @@ No browser extension or Xdebug configuration required.
 | `/etc/devctl/devctl.db` | SQLite database (sites, settings, dumps) |
 | `/etc/devctl/prepend.php` | PHP auto-prepend for `php_dd()` |
 | `/etc/systemd/system/devctl.service` | Systemd unit file |
-| `~/sites/server/` | Service binaries and data (Caddy, Valkey, etc.) |
+| `~/sites/server/` | Service binaries and data (Caddy, Valkey, MySQL, etc.) |
 
 ---
 

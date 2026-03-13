@@ -6,19 +6,40 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/danielgormly/devctl/services"
 )
 
-// MySQLInstaller installs MySQL 8.4 LTS from the official MySQL APT
-// repository.  We download the mysql-apt-config deb, pre-seed debconf to
-// select mysql-8.4-lts, install it, then install the server.
+// mysqlVersion is the MySQL 8.4 LTS version to download.
+// Update this constant to pick up a newer release.
+const mysqlVersion = "8.4.7"
+
+// mysqlTarURL returns the download URL for the MySQL minimal generic Linux
+// tarball. The "minimal" variant strips debug symbols and reduces the download
+// to ~65 MB instead of ~875 MB for the full build.
+func mysqlTarURL() string {
+	return fmt.Sprintf(
+		"https://cdn.mysql.com/archives/mysql-8.4/mysql-%s-linux-glibc2.28-x86_64-minimal.tar.xz",
+		mysqlVersion,
+	)
+}
+
+// MySQLInstaller downloads the MySQL 8.4 LTS "Linux Generic" minimal binary
+// tarball to $HOME/sites/server/mysql/, initialises the data directory, and
+// runs mysqld as a supervised child process of devctl.
 //
-// Ref: https://dev.mysql.com/doc/mysql-installation-excerpt/8.4/en/linux-installation-apt-repo.html
-type MySQLInstaller struct{}
+// No PPA, no APT packages, no systemd unit for MySQL itself.
+// libaio (required by the generic binary) is installed via APT as a lightweight
+// system dependency.
+type MySQLInstaller struct {
+	supervisor *services.Supervisor
+	siteHome   string // home directory of the non-root site user (e.g. "/home/alice")
+}
 
 func (m *MySQLInstaller) ServiceID() string { return "mysql" }
 
 func (m *MySQLInstaller) IsInstalled() bool {
-	return fileExists("/usr/sbin/mysqld") || fileExists("/usr/bin/mysqld_safe")
+	return fileExists(filepath.Join(m.siteHome, "sites", "server", "mysql", "bin", "mysqld"))
 }
 
 func (m *MySQLInstaller) Install(ctx context.Context) error {
@@ -27,44 +48,79 @@ func (m *MySQLInstaller) Install(ctx context.Context) error {
 
 func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if m.IsInstalled() {
+		fmt.Fprintln(w, "mysql: already installed")
 		return nil
 	}
 
-	if err := aptInstallW(ctx, w, "wget", "lsb-release"); err != nil {
-		return err
+	mysqlDir := filepath.Join(m.siteHome, "sites", "server", "mysql")
+	dataDir := filepath.Join(mysqlDir, "data")
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-%s-minimal.tar.xz", mysqlVersion))
+	defer os.Remove(tmpTar)
+
+	// 1. Install libaio — required by the MySQL generic binary.
+	//    Ubuntu 24.04 (Noble) ships libaio1t64; Ubuntu 22.04 and Debian ship libaio1.
+	fmt.Fprintln(w, "mysql: installing libaio system dependency...")
+	if err := aptInstallW(ctx, w, "libaio1t64"); err != nil {
+		fmt.Fprintln(w, "mysql: libaio1t64 not found, trying libaio1...")
+		if err2 := aptInstallW(ctx, w, "libaio1"); err2 != nil {
+			return fmt.Errorf("mysql: install libaio: %w", err2)
+		}
 	}
 
-	// Download the apt-config deb to a temp file.
-	tmp := filepath.Join(os.TempDir(), "mysql-apt-config.deb")
-	defer os.Remove(tmp)
-
-	const aptConfigURL = "https://dev.mysql.com/get/mysql-apt-config_0.8.36-1_all.deb"
-	if err := curlDownloadW(ctx, w, aptConfigURL, tmp); err != nil {
-		return err
+	// 2. Create directories.
+	fmt.Fprintln(w, "mysql: creating directories...")
+	if err := os.MkdirAll(dataDir, 0750); err != nil {
+		return fmt.Errorf("mysql: create data dir: %w", err)
 	}
 
-	// Pre-seed debconf to avoid the interactive prompt.
-	if err := debconfSeedW(ctx, w,
-		"mysql-apt-config mysql-apt-config/select-server select mysql-8.4-lts",
-		"mysql-apt-config mysql-apt-config/select-product select Ok",
-	); err != nil {
-		return err
+	// 3. Download the minimal tarball.
+	fmt.Fprintf(w, "mysql: downloading %s...\n", mysqlVersion)
+	if err := curlDownloadW(ctx, w, mysqlTarURL(), tmpTar); err != nil {
+		return fmt.Errorf("mysql: download: %w", err)
 	}
 
-	// Install the apt-config deb.
-	if err := dpkgInstallW(ctx, w, tmp); err != nil {
-		return err
+	// 4. Extract the full tarball into mysqlDir, stripping the versioned top-level dir.
+	fmt.Fprintln(w, "mysql: extracting tarball...")
+	if err := extractFromTarXz(tmpTar, mysqlDir); err != nil {
+		return fmt.Errorf("mysql: extract: %w", err)
 	}
 
-	if err := aptUpdateW(ctx, w); err != nil {
-		return err
+	// 5. Write my.cnf so mysqld knows where everything lives.
+	fmt.Fprintln(w, "mysql: writing my.cnf...")
+	myCnf := fmt.Sprintf(
+		"[mysqld]\nbasedir=%s\ndatadir=%s\nsocket=%s\npid-file=%s\nlog-error=%s\nport=3306\nbind-address=127.0.0.1\n",
+		mysqlDir,
+		dataDir,
+		filepath.Join(mysqlDir, "mysql.sock"),
+		filepath.Join(mysqlDir, "mysql.pid"),
+		filepath.Join(mysqlDir, "mysql-error.log"),
+	)
+	if err := os.WriteFile(filepath.Join(mysqlDir, "my.cnf"), []byte(myCnf), 0644); err != nil {
+		return fmt.Errorf("mysql: write my.cnf: %w", err)
 	}
 
-	if err := aptInstallW(ctx, w, "mysql-server", "mysql-client"); err != nil {
-		return err
+	// 6. Initialise the data directory (creates system tables, no root password).
+	fmt.Fprintln(w, "mysql: initialising data directory...")
+	initCmd := fmt.Sprintf(
+		"%s --initialize-insecure --user=root --datadir=%s --basedir=%s",
+		filepath.Join(mysqlDir, "bin", "mysqld"),
+		dataDir,
+		mysqlDir,
+	)
+	out, err := runShellW(ctx, w, initCmd)
+	if err != nil {
+		return fmt.Errorf("mysql: initialize: %w\n%s", err, out)
 	}
 
-	return enableAndStartW(ctx, w, "mysql")
+	// 7. Write config.env with connection info for the credentials panel.
+	fmt.Fprintln(w, "mysql: writing config.env...")
+	envContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=\nDB_USERNAME=root\nDB_PASSWORD=\n"
+	if err := os.WriteFile(filepath.Join(mysqlDir, "config.env"), []byte(envContent), 0600); err != nil {
+		return fmt.Errorf("mysql: write config.env: %w", err)
+	}
+
+	fmt.Fprintln(w, "mysql: install complete")
+	return nil
 }
 
 func (m *MySQLInstaller) Purge(ctx context.Context) error {
@@ -72,46 +128,17 @@ func (m *MySQLInstaller) Purge(ctx context.Context) error {
 }
 
 func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer) error {
-	stopAndDisableW(ctx, w, "mysql")
-	if err := aptPurgeW(ctx, w, "mysql-server", "mysql-client", "mysql-common", "mysql-apt-config"); err != nil {
-		return err
+	// Stop the supervised process first.
+	if err := m.supervisor.Stop("mysql"); err != nil {
+		fmt.Fprintf(w, "mysql: warning: stop process: %v\n", err)
 	}
-	removeFiles(
-		"/etc/apt/sources.list.d/mysql.list",
-		"/usr/share/keyrings/mysql-archive-keyring.gpg",
-	)
-	_ = os.RemoveAll("/var/lib/mysql")
-	_ = os.RemoveAll("/etc/mysql")
-	return nil
-}
 
-// debconfSeed pre-seeds debconf answers. Each entry is a full debconf line
-// like "pkg key type value".
-func debconfSeed(ctx context.Context, entries ...string) error {
-	return debconfSeedW(ctx, io.Discard, entries...)
-}
-
-// debconfSeedW is like debconfSeed but streams output to w.
-func debconfSeedW(ctx context.Context, w io.Writer, entries ...string) error {
-	for _, entry := range entries {
-		out, err := runShellW(ctx, w, fmt.Sprintf(`echo "%s" | debconf-set-selections`, entry))
-		if err != nil {
-			return wrapOutput("debconf-set-selections", err, out)
-		}
+	// Remove the entire mysql directory (binary tree + data + config).
+	mysqlDir := filepath.Join(m.siteHome, "sites", "server", "mysql")
+	if err := os.RemoveAll(mysqlDir); err != nil {
+		return fmt.Errorf("mysql: remove dir: %w", err)
 	}
-	return nil
-}
 
-// dpkgInstall runs dpkg -i <path>.
-func dpkgInstall(ctx context.Context, path string) error {
-	return dpkgInstallW(ctx, io.Discard, path)
-}
-
-// dpkgInstallW is like dpkgInstall but streams output to w.
-func dpkgInstallW(ctx context.Context, w io.Writer, path string) error {
-	out, err := runShellW(ctx, w, fmt.Sprintf("dpkg -i %s", path))
-	if err != nil {
-		return wrapOutput("dpkg -i "+path, err, out)
-	}
+	fmt.Fprintln(w, "mysql: purge complete")
 	return nil
 }

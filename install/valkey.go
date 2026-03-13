@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/danielgormly/devctl/services"
+	"github.com/ulikunitz/xz"
 )
 
 const valkeyVersion = "9.0.3"
@@ -110,6 +111,70 @@ func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "valkey: purge complete")
+	return nil
+}
+
+// extractFromTarXz extracts all files from a .tar.xz archive into destDir,
+// stripping the first path component (the versioned top-level directory).
+// For example: mysql-8.4.7-.../bin/mysqld → destDir/bin/mysqld.
+func extractFromTarXz(tarXzPath, destDir string) error {
+	f, err := os.Open(tarXzPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	xzr, err := xz.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("xz reader: %w", err)
+	}
+
+	tr := tar.NewReader(xzr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("tar next: %w", err)
+		}
+
+		// Strip the leading path component (e.g. "mysql-8.4.7-.../").
+		parts := strings.SplitN(hdr.Name, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			continue // skip the top-level directory entry itself
+		}
+		relPath := parts[1]
+		destPath := filepath.Join(destDir, relPath)
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(destPath, os.FileMode(hdr.Mode)|0755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", destPath, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				return fmt.Errorf("mkdir parent %s: %w", destPath, err)
+			}
+			out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+			if err != nil {
+				return fmt.Errorf("create %s: %w", destPath, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return fmt.Errorf("write %s: %w", destPath, err)
+			}
+			out.Close()
+		case tar.TypeSymlink:
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				return fmt.Errorf("mkdir parent for symlink %s: %w", destPath, err)
+			}
+			_ = os.Remove(destPath) // remove stale symlink if it exists
+			if err := os.Symlink(hdr.Linkname, destPath); err != nil {
+				return fmt.Errorf("symlink %s: %w", destPath, err)
+			}
+		}
+	}
 	return nil
 }
 
