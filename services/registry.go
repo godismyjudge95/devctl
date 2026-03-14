@@ -2,8 +2,6 @@ package services
 
 import (
 	"sync"
-
-	"github.com/danielgormly/devctl/config"
 )
 
 // Registry holds the active set of service definitions.
@@ -15,33 +13,10 @@ type Registry struct {
 	defs []Definition
 }
 
-// NewRegistry converts a slice of config.ServiceDef into an in-memory Registry.
-func NewRegistry(defs []config.ServiceDef) *Registry {
-	out := make([]Definition, 0, len(defs))
-	for _, d := range defs {
-		out = append(out, Definition{
-			ID:              d.ID,
-			Label:           d.Label,
-			Start:           d.Start,
-			Stop:            d.Stop,
-			Restart:         d.Restart,
-			Status:          d.Status,
-			StatusRegex:     d.StatusRegex,
-			Version:         d.Version,
-			VersionRegex:    d.VersionRegex,
-			Log:             d.Log,
-			CredentialsFile: d.CredentialsFile,
-			Installable:     d.Installable,
-			Required:        d.Required,
-			Managed:         d.Managed,
-			ManagedCmd:      d.ManagedCmd,
-			ManagedArgs:     d.ManagedArgs,
-			ManagedDir:      d.ManagedDir,
-			ManagedEnvFile:  d.ManagedEnvFile,
-			ManagedUser:     d.ManagedUser,
-			HealthCheck:     d.HealthCheck,
-		})
-	}
+// NewRegistry creates an in-memory Registry from a slice of Definitions.
+func NewRegistry(defs []Definition) *Registry {
+	out := make([]Definition, len(defs))
+	copy(out, defs)
 	return &Registry{defs: out}
 }
 

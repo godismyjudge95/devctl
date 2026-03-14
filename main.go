@@ -308,6 +308,7 @@ func phpFPMDefinition(ver, siteHome string) services.Definition {
 	return services.Definition{
 		ID:           php.FPMServiceID(ver),
 		Label:        "PHP " + ver + " FPM",
+		Description:  "PHP " + ver + " FastCGI Process Manager",
 		Managed:      true,
 		ManagedCmd:   php.FPMBinary(ver, siteHome),
 		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, siteHome)),

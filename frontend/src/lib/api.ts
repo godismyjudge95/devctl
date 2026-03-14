@@ -3,12 +3,15 @@
 export interface ServiceState {
   id: string
   label: string
+  description: string
+  install_version: string
   status: 'running' | 'stopped' | 'pending' | 'unknown' | 'warning'
   version: string
   log: string
   installed: boolean
   installable: boolean
   required: boolean
+  has_credentials: boolean
 }
 
 export interface Site {
@@ -202,10 +205,10 @@ export const getServiceSettings = (id: string) =>
 export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings) =>
   request<{ status: string }>('PUT', `/api/services/${id}/settings`, data)
 
-// --- Service PHP config (php-fpm-* only) ---
-export const getServicePHPConfig = (id: string, file: string) =>
+// --- Service config (php-fpm-* and mysql only) ---
+export const getServiceConfig = (id: string, file: string) =>
   request<{ content: string }>('GET', `/api/services/${id}/config/${file}`)
-export const putServicePHPConfig = (id: string, file: string, content: string) =>
+export const putServiceConfig = (id: string, file: string, content: string) =>
   request<void>('PUT', `/api/services/${id}/config/${file}`, { content })
 
 // --- Mail ---

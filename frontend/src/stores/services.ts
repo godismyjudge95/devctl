@@ -1,12 +1,26 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ServiceState, ServiceCredentials, ServiceDetails } from '@/lib/api'
-import { startService, stopService, restartService, getServiceCredentials, getServiceDetails } from '@/lib/api'
+import {
+  startService,
+  stopService,
+  restartService,
+  getServiceCredentials,
+  getServiceDetails,
+  installServiceStream,
+  purgeServiceStream,
+} from '@/lib/api'
 
 export const useServicesStore = defineStore('services', () => {
   const states = ref<ServiceState[]>([])
   const credentials = ref<Record<string, ServiceCredentials>>({})
   const details = ref<Record<string, ServiceDetails>>({})
+
+  /** true while an install/purge stream is active for a given service id */
+  const installing = ref<Record<string, boolean>>({})
+  /** accumulated output lines per service id (reset on each new install/purge) */
+  const installOutput = ref<Record<string, string[]>>({})
+
   let eventSource: EventSource | null = null
 
   const stoppedCount = computed(() =>
@@ -64,5 +78,71 @@ export const useServicesStore = defineStore('services', () => {
     await restartService(id)
   }
 
-  return { states, credentials, details, stoppedCount, mailpitInstalled, connectSSE, start, stop, restart, fetchCredentials, fetchDetails }
+  /**
+   * Stream the install of a service.
+   * Returns a Promise that resolves on success and rejects with an Error on failure.
+   * The raw output lines are accumulated in installOutput[id].
+   */
+  function install(id: string): Promise<void> {
+    installing.value[id] = true
+    installOutput.value[id] = []
+    return new Promise((resolve, reject) => {
+      installServiceStream(id, {
+        onOutput(chunk) {
+          installOutput.value[id] = [...(installOutput.value[id] ?? []), chunk]
+        },
+        onDone() {
+          installing.value[id] = false
+          resolve()
+        },
+        onError(message) {
+          installing.value[id] = false
+          reject(new Error(message))
+        },
+      })
+    })
+  }
+
+  /**
+   * Stream the purge of a service.
+   * Returns a Promise that resolves on success and rejects with an Error on failure.
+   * The raw output lines are accumulated in installOutput[id].
+   */
+  function purge(id: string): Promise<void> {
+    installing.value[id] = true
+    installOutput.value[id] = []
+    return new Promise((resolve, reject) => {
+      purgeServiceStream(id, {
+        onOutput(chunk) {
+          installOutput.value[id] = [...(installOutput.value[id] ?? []), chunk]
+        },
+        onDone() {
+          installing.value[id] = false
+          resolve()
+        },
+        onError(message) {
+          installing.value[id] = false
+          reject(new Error(message))
+        },
+      })
+    })
+  }
+
+  return {
+    states,
+    credentials,
+    details,
+    installing,
+    installOutput,
+    stoppedCount,
+    mailpitInstalled,
+    connectSSE,
+    start,
+    stop,
+    restart,
+    fetchCredentials,
+    fetchDetails,
+    install,
+    purge,
+  }
 })

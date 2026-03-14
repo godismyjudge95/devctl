@@ -58,16 +58,29 @@ type Definition struct {
 	// confirmed running. A non-zero exit code causes the status to be
 	// reported as StatusWarning instead of StatusRunning.
 	HealthCheck string
+	// Description is a short one-liner shown in the install picker UI
+	// (e.g. "Redis-compatible in-memory data store").
+	Description string
+	// InstallVersion is the pinned version string that will be installed
+	// (e.g. "v2.10.0", "9.0.3"). Shown in the install picker card.
+	InstallVersion string
+	// HasCredentials indicates that this service writes a credentials file
+	// (config.env) during installation and the credentials panel should be
+	// shown in the UI. When false, the frontend skips the /credentials fetch.
+	HasCredentials bool
 }
 
 // ServiceState is the live status of a service returned by the API.
 type ServiceState struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Status      Status `json:"status"`
-	Version     string `json:"version"`
-	Log         string `json:"log"`
-	Installed   bool   `json:"installed"`
-	Installable bool   `json:"installable"`
-	Required    bool   `json:"required"`
+	ID             string `json:"id"`
+	Label          string `json:"label"`
+	Status         Status `json:"status"`
+	Version        string `json:"version"`
+	Log            string `json:"log"`
+	Installed      bool   `json:"installed"`
+	Installable    bool   `json:"installable"`
+	Required       bool   `json:"required"`
+	Description    string `json:"description"`
+	InstallVersion string `json:"install_version"`
+	HasCredentials bool   `json:"has_credentials"`
 }

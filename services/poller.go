@@ -68,11 +68,14 @@ func (p *Poller) CurrentStates() []ServiceState {
 		} else {
 			// No poll result yet — return static fields only, status unknown.
 			states = append(states, ServiceState{
-				ID:          def.ID,
-				Label:       def.Label,
-				Status:      StatusUnknown,
-				Log:         def.Log,
-				Installable: def.Installable,
+				ID:             def.ID,
+				Label:          def.Label,
+				Description:    def.Description,
+				InstallVersion: def.InstallVersion,
+				HasCredentials: def.HasCredentials,
+				Status:         StatusUnknown,
+				Log:            def.Log,
+				Installable:    def.Installable,
 			})
 		}
 	}

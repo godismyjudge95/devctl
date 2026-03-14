@@ -172,14 +172,17 @@ func (m *Manager) GetState(def Definition) ServiceState {
 		version = m.GetVersion(def)
 	}
 	return ServiceState{
-		ID:          def.ID,
-		Label:       def.Label,
-		Status:      m.GetStatus(def),
-		Version:     version,
-		Log:         def.Log,
-		Installed:   installed,
-		Installable: def.Installable,
-		Required:    def.Required,
+		ID:             def.ID,
+		Label:          def.Label,
+		Status:         m.GetStatus(def),
+		Version:        version,
+		Log:            def.Log,
+		Installed:      installed,
+		Installable:    def.Installable,
+		Required:       def.Required,
+		Description:    def.Description,
+		InstallVersion: def.InstallVersion,
+		HasCredentials: def.HasCredentials,
 	}
 }
 

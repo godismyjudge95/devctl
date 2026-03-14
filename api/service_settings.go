@@ -173,9 +173,9 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 	writeError(w, fmt.Sprintf("service %q has no configurable settings", id), http.StatusNotFound)
 }
 
-// handleGetServicePHPConfig reads a config file for a service.
+// handleGetServiceConfig reads a config file for a service.
 // Supported: php-fpm-* (php.ini, php-fpm.conf) and mysql (my.cnf).
-func (s *Server) handleGetServicePHPConfig(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	file := r.PathValue("file")
 	if file == "" {
@@ -216,9 +216,9 @@ func (s *Server) handleGetServicePHPConfig(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]string{"content": string(content)})
 }
 
-// handlePutServicePHPConfig writes a config file for a service and restarts it.
+// handlePutServiceConfig writes a config file for a service and restarts it.
 // Supported: php-fpm-* (php.ini, php-fpm.conf) and mysql (my.cnf).
-func (s *Server) handlePutServicePHPConfig(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	file := r.PathValue("file")
 	if file == "" {

@@ -1,53 +1,12 @@
 package config
 
-// ServiceDef mirrors the structure for a service definition.
-// Commands are shell strings executed via sh -c.
-// Services with Managed:true are run as child processes of devctl (not systemctl).
-type ServiceDef struct {
-	ID           string `yaml:"id"`
-	Label        string `yaml:"label"`
-	Start        string `yaml:"start"`
-	Stop         string `yaml:"stop"`
-	Restart      string `yaml:"restart"`
-	Status       string `yaml:"status"`
-	StatusRegex  string `yaml:"status_regex"`
-	Version      string `yaml:"version"`
-	VersionRegex string `yaml:"version_regex"`
-	Log          string `yaml:"log"`
-	// CredentialsFile overrides the default config.env path for the credentials
-	// endpoint. If empty, $siteHome/sites/server/<id>/config.env is used.
-	CredentialsFile string `yaml:"credentials_file"`
-	Installable     bool   `yaml:"installable"`
-	// Required marks that devctl depends on this service to function correctly.
-	// Required services cannot be purged and are always auto-started on boot.
-	Required bool `yaml:"required"`
-	// Managed marks that devctl supervises this service as a child process
-	// instead of delegating to systemctl.
-	Managed bool `yaml:"managed"`
-	// ManagedCmd is the executable to run (e.g. "php").
-	ManagedCmd string `yaml:"managed_cmd"`
-	// ManagedArgs are the arguments passed to ManagedCmd (e.g. "artisan reverb:start --host=127.0.0.1 --port=7383").
-	ManagedArgs string `yaml:"managed_args"`
-	// ManagedDir overrides the working directory for the supervised process.
-	// If empty, $HOME/sites/<id> is used by convention.
-	ManagedDir string `yaml:"managed_dir"`
-	// ManagedEnvFile is a path to a key=value file whose values are appended
-	// as CLI flags at process start (used to inject secrets known only after install).
-	ManagedEnvFile string `yaml:"managed_env_file"`
-	// ManagedUser is the OS username the supervisor drops privileges to before
-	// exec-ing the managed process. Required for services that refuse to run as root
-	// (e.g. PostgreSQL). When empty, the process inherits devctl's root privileges.
-	ManagedUser string `yaml:"managed_user"`
-	// HealthCheck is an optional shell command run when the service is running.
-	// A non-zero exit code causes the status to be reported as "warning".
-	HealthCheck string `yaml:"health_check"`
-}
+import "github.com/danielgormly/devctl/services"
 
 // DefaultServices returns the built-in service definitions.
 // siteHome is the home directory of the non-root site user (e.g. "/home/alice").
 // siteUser is the username of that user (e.g. "alice") — required for services
 // that must not run as root (e.g. PostgreSQL uses ManagedUser to drop privs).
-func DefaultServices(siteHome, siteUser string) []ServiceDef {
+func DefaultServices(siteHome, siteUser string) []services.Definition {
 	caddyDir := siteHome + "/sites/server/caddy"
 	meiliDir := siteHome + "/sites/server/meilisearch"
 	tsDir := siteHome + "/sites/server/typesense"
@@ -55,10 +14,12 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 	mailpitDir := siteHome + "/sites/server/mailpit"
 	mysqlDir := siteHome + "/sites/server/mysql"
 	postgresDir := siteHome + "/sites/server/postgres"
-	return []ServiceDef{
+	return []services.Definition{
 		{
 			ID:             "caddy",
 			Label:          "Caddy",
+			Description:    "Fast, production-ready reverse proxy and TLS terminator",
+			InstallVersion: "v2.10.0",
 			Installable:    true,
 			Required:       true,
 			Managed:        true,
@@ -74,7 +35,10 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 		{
 			ID:              "redis",
 			Label:           "Valkey",
+			Description:     "High-performance Redis-compatible in-memory data store",
+			InstallVersion:  "9.0.3",
 			Installable:     true,
+			HasCredentials:  true,
 			Managed:         true,
 			ManagedCmd:      valkeyDir + "/valkey-server",
 			ManagedArgs:     "--bind 127.0.0.1 --port 6379 --daemonize no",
@@ -87,7 +51,10 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 		{
 			ID:              "postgres",
 			Label:           "PostgreSQL",
+			Description:     "Powerful open-source relational database",
+			InstallVersion:  "18.3",
 			Installable:     true,
+			HasCredentials:  true,
 			Managed:         true,
 			ManagedCmd:      postgresDir + "/bin/postgres",
 			ManagedArgs:     "-D " + postgresDir + "/data",
@@ -102,7 +69,10 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 		{
 			ID:              "mysql",
 			Label:           "MySQL",
+			Description:     "Popular open-source relational database",
+			InstallVersion:  "8.4.7",
 			Installable:     true,
+			HasCredentials:  true,
 			Managed:         true,
 			ManagedCmd:      mysqlDir + "/bin/mysqld",
 			ManagedArgs:     "--defaults-file=./my.cnf --user=root",
@@ -116,7 +86,10 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 		{
 			ID:             "meilisearch",
 			Label:          "Meilisearch",
+			Description:    "Lightning-fast search engine with instant results",
+			InstallVersion: "v1.37.0",
 			Installable:    true,
+			HasCredentials: true,
 			Managed:        true,
 			ManagedCmd:     meiliDir + "/meilisearch",
 			ManagedArgs:    "--http-addr 127.0.0.1:7700 --no-analytics --db-path ./data.ms",
@@ -129,7 +102,10 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 		{
 			ID:             "typesense",
 			Label:          "Typesense",
+			Description:    "Open-source typo-tolerant search engine",
+			InstallVersion: "30.1",
 			Installable:    true,
+			HasCredentials: true,
 			Managed:        true,
 			ManagedCmd:     tsDir + "/typesense-server",
 			ManagedArgs:    "--data-dir ./data --listen-port 8108 --enable-cors",
@@ -142,7 +118,10 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 		{
 			ID:              "mailpit",
 			Label:           "Mailpit",
+			Description:     "Email testing tool with SMTP server and web UI",
+			InstallVersion:  "v1.29.2",
 			Installable:     true,
+			HasCredentials:  true,
 			Managed:         true,
 			ManagedCmd:      mailpitDir + "/mailpit",
 			ManagedArgs:     "--listen 127.0.0.1:8025 --smtp 127.0.0.1:1025 --database ./data/mailpit.db",
@@ -153,15 +132,17 @@ func DefaultServices(siteHome, siteUser string) []ServiceDef {
 			Log:             mailpitDir + "/mailpit.log",
 		},
 		{
-			ID:           "reverb",
-			Label:        "Laravel Reverb",
-			Installable:  true,
-			Managed:      true,
-			ManagedCmd:   "php",
-			ManagedArgs:  "artisan reverb:start --host=127.0.0.1 --port=7383",
-			Version:      `grep -m1 '"version"' ` + siteHome + `/sites/reverb/vendor/laravel/reverb/composer.json`,
-			VersionRegex: `"version": "(?P<version>[^"]+)"`,
-			Log:          siteHome + "/sites/reverb/storage/logs/laravel.log",
+			ID:             "reverb",
+			Label:          "Laravel Reverb",
+			Description:    "First-party WebSocket server for Laravel applications",
+			InstallVersion: "latest",
+			Installable:    true,
+			Managed:        true,
+			ManagedCmd:     "php",
+			ManagedArgs:    "artisan reverb:start --host=127.0.0.1 --port=7383",
+			Version:        `grep -m1 '"version"' ` + siteHome + `/sites/reverb/vendor/laravel/reverb/composer.json`,
+			VersionRegex:   `"version": "(?P<version>[^"]+)"`,
+			Log:            siteHome + "/sites/reverb/storage/logs/laravel.log",
 			// Start/Stop/Restart/Status are handled by the Supervisor, not shell commands.
 		},
 	}
