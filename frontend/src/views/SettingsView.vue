@@ -49,7 +49,7 @@ async function trustCert() {
           <CardTitle>Dashboard</CardTitle>
           <CardDescription>Network binding for the devctl web UI.</CardDescription>
         </CardHeader>
-        <CardContent class="grid grid-cols-2 gap-4">
+        <CardContent class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="grid gap-1.5">
             <Label for="devctl_host">Bind Host</Label>
             <Input
@@ -101,7 +101,7 @@ async function trustCert() {
           <CardTitle>TLS</CardTitle>
           <CardDescription>Caddy internal CA root certificate management.</CardDescription>
         </CardHeader>
-        <CardContent class="flex gap-2">
+        <CardContent class="flex flex-wrap gap-2">
           <Button variant="outline" @click="downloadCert">
             <Download class="w-4 h-4" />
             Download Root Certificate

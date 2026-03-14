@@ -18,7 +18,7 @@ function formatTime(ts: number) {
 <template>
   <Card class="overflow-hidden">
     <!-- Header -->
-    <div class="flex items-center gap-3 px-4 py-2.5 bg-muted/50 border-b border-border text-xs">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 bg-muted/50 border-b border-border text-xs">
       <span class="font-mono font-semibold text-foreground">#{{ dump.id }}</span>
       <span v-if="dump.file" class="font-mono text-muted-foreground truncate max-w-xs">
         {{ dump.file?.split('/').slice(-2).join('/') }}:{{ dump.line }}

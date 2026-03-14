@@ -383,7 +383,7 @@ function worktreeCount(siteId: string): number {
             <Label for="root_path">Root Path</Label>
             <Input id="root_path" v-model="form.root_path" placeholder="/home/user/sites/myapp" class="font-mono" />
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="grid gap-1.5">
               <Label for="php_version">PHP Version</Label>
               <Select v-model="form.php_version">

@@ -11,10 +11,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import {
   Search, Trash2, Mail, MailOpen, Paperclip, ChevronLeft, ChevronRight,
-  Inbox, Download
+  Inbox, Download, ArrowLeft
 } from 'lucide-vue-next'
 
 const store = useMailStore()
+
+// Mobile: show detail panel instead of list
+const showDetail = ref(false)
 
 // Search debounce
 const searchInput = ref('')
@@ -91,6 +94,7 @@ async function handleDeleteAll() {
 async function handleDeleteCurrent() {
   if (!store.selectedMessage) return
   await store.deleteMessage(store.selectedMessage.ID)
+  showDetail.value = false
 }
 
 async function handleMarkUnread() {
@@ -131,13 +135,25 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
   if (!addrs?.length) return ''
   return addrs.map(a => a.Name || a.Address).join(', ')
 }
+
+function selectMessage(id: string) {
+  store.selectMessage(id)
+  showDetail.value = true
+}
 </script>
 
 <template>
   <div class="flex h-full overflow-hidden">
 
     <!-- Left panel: message list -->
-    <div class="w-96 shrink-0 flex flex-col border-r border-border">
+    <!-- On mobile: full-width when not showing detail; hidden when showing detail -->
+    <!-- On md+: always shown at fixed w-96 -->
+    <div
+      class="flex flex-col border-r border-border"
+      :class="showDetail
+        ? 'hidden md:flex md:w-96 md:shrink-0'
+        : 'flex-1 md:flex-initial md:w-96 md:shrink-0'"
+    >
 
       <!-- Search -->
       <div class="p-3 border-b border-border">
@@ -223,7 +239,7 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
             'bg-accent': store.selectedMessage?.ID === msg.ID,
             'border-l-2 border-l-primary': store.selectedMessage?.ID === msg.ID,
           }"
-          @click="store.selectMessage(msg.ID)"
+          @click="selectMessage(msg.ID)"
         >
           <!-- Unread dot / checkbox -->
           <div class="flex items-center gap-1.5 pt-0.5 shrink-0">
@@ -274,7 +290,20 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
     </div>
 
     <!-- Right panel: message detail -->
-    <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- On mobile: full-width when showDetail; hidden otherwise -->
+    <!-- On md+: always shown as flex-1 -->
+    <div
+      class="flex flex-col overflow-hidden"
+      :class="showDetail ? 'flex-1' : 'hidden md:flex md:flex-1'"
+    >
+
+      <!-- Mobile back button -->
+      <div class="flex md:hidden items-center px-3 py-2 border-b border-border shrink-0">
+        <Button variant="ghost" size="sm" class="gap-1.5 -ml-1" @click="showDetail = false">
+          <ArrowLeft class="w-4 h-4" />
+          Back
+        </Button>
+      </div>
 
       <!-- Empty state -->
       <div
@@ -288,9 +317,9 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
       <!-- Detail view -->
       <template v-else>
         <!-- Header -->
-        <div class="px-6 pt-5 pb-3 border-b border-border shrink-0">
-          <div class="flex items-start justify-between gap-4 mb-3">
-            <h2 class="text-lg font-semibold leading-tight">
+        <div class="px-4 md:px-6 pt-4 md:pt-5 pb-3 border-b border-border shrink-0">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <h2 class="text-base md:text-lg font-semibold leading-tight">
               {{ store.selectedMessage.Subject || '(no subject)' }}
             </h2>
             <div class="flex items-center gap-1.5 shrink-0">
@@ -307,7 +336,7 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
           <div class="space-y-0.5 text-sm">
             <div class="flex gap-2">
               <span class="text-muted-foreground w-8 shrink-0">From</span>
-              <span>{{ store.selectedMessage.From.Name || store.selectedMessage.From.Address }}
+              <span class="break-all">{{ store.selectedMessage.From.Name || store.selectedMessage.From.Address }}
                 <span v-if="store.selectedMessage.From.Name" class="text-muted-foreground text-xs">
                   &lt;{{ store.selectedMessage.From.Address }}&gt;
                 </span>
@@ -315,11 +344,11 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
             </div>
             <div class="flex gap-2">
               <span class="text-muted-foreground w-8 shrink-0">To</span>
-              <span>{{ addressList(store.selectedMessage.To) }}</span>
+              <span class="break-all">{{ addressList(store.selectedMessage.To) }}</span>
             </div>
             <div v-if="store.selectedMessage.Cc?.length" class="flex gap-2">
               <span class="text-muted-foreground w-8 shrink-0">Cc</span>
-              <span>{{ addressList(store.selectedMessage.Cc) }}</span>
+              <span class="break-all">{{ addressList(store.selectedMessage.Cc) }}</span>
             </div>
             <div class="flex gap-2">
               <span class="text-muted-foreground w-8 shrink-0">Date</span>
@@ -337,8 +366,8 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
         </div>
 
         <!-- Tabs -->
-          <Tabs v-model="activeTab" class="flex-1 flex flex-col overflow-hidden" @update:model-value="(v) => onTabChange(String(v))">
-          <TabsList class="mx-6 mt-3 mb-0 shrink-0 self-start">
+        <Tabs v-model="activeTab" class="flex-1 flex flex-col overflow-hidden" @update:model-value="(v) => onTabChange(String(v))">
+          <TabsList class="mx-4 md:mx-6 mt-3 mb-0 shrink-0 self-start">
             <TabsTrigger value="html">HTML</TabsTrigger>
             <TabsTrigger value="text">Text</TabsTrigger>
             <TabsTrigger value="headers">Headers</TabsTrigger>
@@ -360,7 +389,7 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
 
           <TabsContent value="text" class="flex-1 overflow-hidden m-0 mt-2">
             <ScrollArea class="h-full">
-              <pre class="text-sm p-6 whitespace-pre-wrap font-mono">{{ store.selectedMessage.Text || '(no plain text content)' }}</pre>
+              <pre class="text-sm p-4 md:p-6 whitespace-pre-wrap font-mono">{{ store.selectedMessage.Text || '(no plain text content)' }}</pre>
             </ScrollArea>
           </TabsContent>
 
@@ -373,7 +402,7 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
                     :key="i"
                     class="border-b border-border/40 hover:bg-accent/30"
                   >
-                    <td class="px-4 py-1.5 text-muted-foreground font-semibold align-top w-44 shrink-0">{{ h.key }}</td>
+                    <td class="px-4 py-1.5 text-muted-foreground font-semibold align-top w-32 md:w-44 shrink-0">{{ h.key }}</td>
                     <td class="px-4 py-1.5 break-all">{{ h.value }}</td>
                   </tr>
                 </tbody>
@@ -383,7 +412,7 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
 
           <TabsContent value="source" class="flex-1 overflow-hidden m-0 mt-2">
             <ScrollArea class="h-full">
-              <pre class="text-xs p-6 whitespace-pre-wrap font-mono">{{ store.selectedRaw ?? 'Loading...' }}</pre>
+              <pre class="text-xs p-4 md:p-6 whitespace-pre-wrap font-mono">{{ store.selectedRaw ?? 'Loading...' }}</pre>
             </ScrollArea>
           </TabsContent>
         </Tabs>
@@ -391,7 +420,7 @@ function addressList(addrs: { Name: string; Address: string }[] | null): string 
         <!-- Attachments -->
         <div
           v-if="Array.isArray(store.selectedMessage.Attachments) && store.selectedMessage.Attachments.length > 0"
-          class="shrink-0 border-t border-border px-6 py-3"
+          class="shrink-0 border-t border-border px-4 md:px-6 py-3"
         >
           <p class="text-xs text-muted-foreground mb-2">Attachments</p>
           <div class="flex flex-wrap gap-2">

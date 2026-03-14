@@ -133,6 +133,16 @@ Configure the dashboard host/port, sites watch directory, TLS certificate trust,
 
 ![Settings page](docs/screenshot-settings.png)
 
+### Mobile
+
+The dashboard is fully responsive. On narrow viewports the sidebar collapses into a slide-in drawer (hamburger button top-left) and the services list switches to a card layout.
+
+<p align="center">
+  <img src="docs/screenshot-mobile-services.png" width="260" alt="Services page on mobile">
+  <img src="docs/screenshot-mobile-sites.png" width="260" alt="Sites page on mobile">
+  <img src="docs/screenshot-mobile-mail.png" width="260" alt="Mail page on mobile">
+</p>
+
 ---
 
 ## Services

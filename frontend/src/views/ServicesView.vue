@@ -9,6 +9,7 @@ import {
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Table, TableBody, TableCell, TableHead,
   TableHeader, TableRow, TableEmpty,
@@ -220,7 +221,165 @@ async function doPHPUninstall() {
       </Button>
     </div>
 
-    <div class="rounded-lg border border-border overflow-hidden">
+    <!-- ── Mobile card list (< md) ─────────────────────────────────── -->
+    <div class="md:hidden space-y-3">
+      <template v-for="svc in installedServices" :key="svc.id">
+        <Card>
+          <CardContent class="p-4">
+            <!-- Name + status row -->
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="font-medium text-sm truncate">{{ svc.label }}</span>
+                <Badge :variant="statusVariant(svc.status)" class="shrink-0 text-xs">
+                  <span class="flex items-center gap-1">
+                    <Loader2
+                      v-if="pending[svc.id] || store.installing[svc.id] || svc.status === 'pending'"
+                      class="w-2.5 h-2.5 animate-spin"
+                    />
+                    <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
+                      :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
+                    />
+                    {{ store.installing[svc.id] ? 'working…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
+                  </span>
+                </Badge>
+              </div>
+              <span class="font-mono text-xs text-muted-foreground shrink-0">{{ svc.version || '—' }}</span>
+            </div>
+
+            <!-- Action buttons (icon-only) + expand toggle -->
+            <div class="flex items-center gap-1 flex-wrap">
+              <Button
+                v-if="svc.status !== 'running'"
+                variant="outline" size="icon" class="h-8 w-8"
+                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                :title="`Start ${svc.label}`"
+                @click="start(svc.id, svc.label)"
+              >
+                <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
+                <Play v-else class="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                v-if="svc.status === 'running' && !svc.required"
+                variant="outline" size="icon" class="h-8 w-8"
+                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                :title="`Stop ${svc.label}`"
+                @click="stop(svc.id, svc.label)"
+              >
+                <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
+                <Square v-else class="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="ghost" size="icon" class="h-8 w-8"
+                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                :title="`Restart ${svc.label}`"
+                @click="restart(svc.id, svc.label)"
+              >
+                <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
+                <RotateCcw v-else class="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="ghost" size="icon" class="h-8 w-8"
+                :disabled="!!store.installing[svc.id]"
+                :title="`Logs for ${svc.label}`"
+                @click="openLog(svc.id, svc.label)"
+              >
+                <ScrollText class="w-3.5 h-3.5" />
+              </Button>
+              <!-- PHP FPM uninstall -->
+              <Button
+                v-if="svc.id.startsWith('php-fpm-')"
+                variant="ghost" size="icon" class="h-8 w-8 text-destructive hover:text-destructive"
+                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                :title="`Uninstall ${svc.label}`"
+                @click="confirmPHPUninstall(svc.id)"
+              >
+                <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-3.5 h-3.5 animate-spin" />
+                <Trash2 v-else class="w-3.5 h-3.5" />
+              </Button>
+              <!-- Non-PHP installable uninstall -->
+              <Button
+                v-else-if="svc.installable && !svc.required"
+                variant="ghost" size="icon" class="h-8 w-8 text-destructive hover:text-destructive"
+                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                :title="`Uninstall ${svc.label}`"
+                @click="confirmPurge(svc.id, svc.label)"
+              >
+                <Trash2 class="w-3.5 h-3.5" />
+              </Button>
+              <!-- Settings gear -->
+              <Button
+                v-if="hasSettingsGear(svc.id)"
+                variant="ghost" size="icon" class="h-8 w-8"
+                :title="`${svc.label} settings`"
+                @click="openServiceSettings(svc.id, svc.label)"
+              >
+                <Settings2 class="w-3.5 h-3.5" />
+              </Button>
+              <!-- Expand credentials toggle -->
+              <Button
+                v-if="hasExpandable(svc.id)"
+                variant="ghost" size="icon" class="h-8 w-8 ml-auto"
+                :title="expandedCredentials.has(svc.id) ? 'Hide connection info' : 'Show connection info'"
+                @click="toggleCredentials(svc.id)"
+              >
+                <ChevronDown v-if="expandedCredentials.has(svc.id)" class="w-3.5 h-3.5" />
+                <ChevronRight v-else class="w-3.5 h-3.5" />
+              </Button>
+            </div>
+
+            <!-- Expanded credentials (mobile stacked) -->
+            <div
+              v-if="hasExpandable(svc.id) && expandedCredentials.has(svc.id)"
+              class="mt-3 pt-3 border-t border-border space-y-2"
+            >
+              <p class="text-xs font-medium text-muted-foreground">Connection Info</p>
+              <template v-if="hasCredentials(svc.id)">
+                <div
+                  v-for="(value, key) in store.credentials[svc.id]"
+                  :key="key"
+                  class="space-y-1"
+                >
+                  <p class="text-xs text-muted-foreground">{{ key }}</p>
+                  <div class="flex items-center gap-2">
+                    <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-1 truncate"
+                      :class="value === '' ? 'text-muted-foreground italic' : ''"
+                    >{{ value !== '' ? value : '(empty)' }}</code>
+                    <Button variant="ghost" size="icon" class="w-7 h-7 shrink-0" @click="copyToClipboard(value ?? '')">
+                      <Copy class="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
+              </template>
+              <template v-if="hasDetails(svc.id) && store.details[svc.id]">
+                <div
+                  v-for="(value, key) in store.details[svc.id]"
+                  :key="key"
+                  class="space-y-1"
+                >
+                  <p class="text-xs text-muted-foreground">{{ key }}</p>
+                  <div class="flex items-center gap-2">
+                    <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-1 truncate">{{ value }}</code>
+                    <Button variant="ghost" size="icon" class="w-7 h-7 shrink-0" @click="copyToClipboard(value ?? '')">
+                      <Copy class="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </CardContent>
+        </Card>
+      </template>
+
+      <div
+        v-if="installedServices.length === 0"
+        class="rounded-lg border border-dashed border-border py-12 text-center text-muted-foreground text-sm"
+      >
+        No services installed yet — tap "Add Service" to get started.
+      </div>
+    </div>
+
+    <!-- ── Desktop table (md+) ─────────────────────────────────────── -->
+    <div class="hidden md:block rounded-lg border border-border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
