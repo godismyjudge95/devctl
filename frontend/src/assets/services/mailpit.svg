@@ -1,0 +1,11 @@
+<!-- Mailpit: mail envelope icon on dark teal background -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="20" fill="#0D9488"/>
+  <!-- envelope body -->
+  <rect x="18" y="38" width="92" height="58" rx="6" fill="white"/>
+  <!-- envelope flap V -->
+  <polyline points="18,38 64,76 110,38" fill="none" stroke="#0D9488" stroke-width="7" stroke-linejoin="round"/>
+  <!-- bottom fold lines -->
+  <line x1="18" y1="96" x2="46" y2="68" stroke="#0D9488" stroke-width="5"/>
+  <line x1="110" y1="96" x2="82" y2="68" stroke="#0D9488" stroke-width="5"/>
+</svg>

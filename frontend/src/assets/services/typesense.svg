@@ -1,0 +1,7 @@
+<!-- Typesense: purple/indigo background with T letter -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="20" fill="#D4136B"/>
+  <!-- search magnifier shape -->
+  <circle cx="54" cy="56" r="22" fill="none" stroke="white" stroke-width="10"/>
+  <line x1="70" y1="72" x2="102" y2="104" stroke="white" stroke-width="10" stroke-linecap="round"/>
+</svg>

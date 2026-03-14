@@ -1,0 +1,8 @@
+<!-- Valkey: Redis-fork, dark background with V letter in red tones -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="20" fill="#1a1a1a"/>
+  <!-- V shape -->
+  <polygon points="20,28 48,28 64,72 80,28 108,28 64,108" fill="#CC2222"/>
+  <!-- highlight -->
+  <polygon points="20,28 48,28 64,72 80,28 108,28 88,28 64,68 40,28" fill="#FF4444"/>
+</svg>
