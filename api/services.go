@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -455,6 +456,56 @@ func (s *Server) mysqlDef(ctx context.Context, def services.Definition) services
 func (s *Server) serviceDef(ctx context.Context, def services.Definition) services.Definition {
 	def = s.mailpitDef(ctx, def)
 	def = s.mysqlDef(ctx, def)
+	def = s.dnsDef(ctx, def)
+	return def
+}
+
+// ServiceDef is the exported version of serviceDef, used by main.go so the
+// auto-start loop at startup applies DB settings (e.g. DNS port, target IP).
+func (s *Server) ServiceDef(ctx context.Context, def services.Definition) services.Definition {
+	return s.serviceDef(ctx, def)
+}
+
+// dnsDef returns def unchanged for any service that is not dns.
+// For dns it builds a RunFunc using the current port/target-ip/tld settings
+// from the DB so that start/restart always uses the user-configured values.
+func (s *Server) dnsDef(ctx context.Context, def services.Definition) services.Definition {
+	if def.ID != "dns" {
+		return def
+	}
+	port, err := s.queries.GetSetting(ctx, "dns_port")
+	if err != nil || port == "" {
+		port = "5354"
+	}
+	targetIP, err := s.queries.GetSetting(ctx, "dns_target_ip")
+	if err != nil || targetIP == "" {
+		targetIP = dnsserver.DetectLANIP()
+	}
+	tldStr, err := s.queries.GetSetting(ctx, "dns_tld")
+	if err != nil || tldStr == "" {
+		tldStr = ".test"
+	}
+	// Parse comma-separated TLD list.
+	var tlds []string
+	for _, t := range strings.Split(tldStr, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tlds = append(tlds, t)
+		}
+	}
+	if len(tlds) == 0 {
+		tlds = []string{".test"}
+	}
+
+	cfg := dnsserver.Config{
+		Port:     port,
+		TargetIP: targetIP,
+		TLDs:     tlds,
+		Upstream: dnsserver.SystemUpstream(),
+	}
+	def.RunFunc = func(ctx context.Context, logW io.Writer) error {
+		return dnsserver.New(cfg).Run(ctx, logW)
+	}
 	return def
 }
 

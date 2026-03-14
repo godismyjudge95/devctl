@@ -1,6 +1,12 @@
 package config
 
-import "github.com/danielgormly/devctl/services"
+import (
+	"context"
+	"io"
+
+	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/services"
+)
 
 // DefaultServices returns the built-in service definitions.
 // siteHome is the home directory of the non-root site user (e.g. "/home/alice").
@@ -144,6 +150,24 @@ func DefaultServices(siteHome, siteUser string) []services.Definition {
 			VersionRegex:   `"version": "(?P<version>[^"]+)"`,
 			Log:            siteHome + "/sites/reverb/storage/logs/laravel.log",
 			// Start/Stop/Restart/Status are handled by the Supervisor, not shell commands.
+		},
+		{
+			ID:          "dns",
+			Label:       "DNS Server",
+			Description: "Intercepts .test TLD queries and returns your machine's LAN IP",
+			Required:    true,
+			Managed:     true,
+			Installable: true,
+			// Default RunFunc uses hardcoded defaults; dnsDef() in the API layer
+			// overwrites this with DB-configured values at runtime.
+			RunFunc: func(ctx context.Context, logW io.Writer) error {
+				return dnsserver.New(dnsserver.Config{
+					Port:     "5354",
+					TargetIP: dnsserver.DetectLANIP(),
+					TLDs:     []string{".test"},
+					Upstream: dnsserver.SystemUpstream(),
+				}).Run(ctx, logW)
+			},
 		},
 	}
 }

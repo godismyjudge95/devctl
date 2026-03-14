@@ -130,6 +130,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/settings/resolved", s.handleGetResolvedSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 
+	// DNS
+	s.mux.HandleFunc("GET /api/dns/detect-ip", s.handleDNSDetectIP)
+	s.mux.HandleFunc("GET /api/dns/setup", s.handleDNSCheckSetup)
+	s.mux.HandleFunc("POST /api/dns/setup", s.handleDNSSetup)
+	s.mux.HandleFunc("DELETE /api/dns/setup", s.handleDNSTeardown)
+
 	// Mail — config must be registered before the catch-all proxy.
 	s.mux.HandleFunc("GET /api/mail/config", s.handleMailConfig)
 	s.mux.HandleFunc("/api/mail/", s.handleMailProxy)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/php"
 )
 
@@ -80,6 +81,30 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 			return
 		}
 		writeJSON(w, settings)
+		return
+	}
+
+	if id == "dns" {
+		port, _ := s.queries.GetSetting(r.Context(), "dns_port")
+		if port == "" {
+			port = "5354"
+		}
+		targetIP, _ := s.queries.GetSetting(r.Context(), "dns_target_ip")
+		if targetIP == "" {
+			targetIP = dnsserver.DetectLANIP()
+		}
+		tld, _ := s.queries.GetSetting(r.Context(), "dns_tld")
+		if tld == "" {
+			tld = ".test"
+		}
+		// Check whether the systemd-resolved drop-in is configured.
+		configured := dnsSystemConfigured()
+		writeJSON(w, map[string]interface{}{
+			"port":                  port,
+			"target_ip":             targetIP,
+			"tld":                   tld,
+			"system_dns_configured": configured,
+		})
 		return
 	}
 
@@ -166,6 +191,39 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 		// Restart this specific FPM version.
 		def := s.phpFPMServiceDef(ver)
 		_ = s.supervisor.Restart(def)
+		writeJSON(w, map[string]string{"status": "ok"})
+		return
+	}
+
+	if id == "dns" {
+		var input struct {
+			Port     string `json:"port"`
+			TargetIP string `json:"target_ip"`
+			TLD      string `json:"tld"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "dns_port", Value: input.Port}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "dns_target_ip", Value: input.TargetIP}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "dns_tld", Value: input.TLD}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Restart with updated settings.
+		def, ok := s.registry.Get("dns")
+		if ok {
+			def = s.dnsDef(ctx, def)
+			_ = s.manager.Restart(def)
+		}
 		writeJSON(w, map[string]string{"status": "ok"})
 		return
 	}

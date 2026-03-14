@@ -223,7 +223,7 @@ export const getSettings = () => request<Settings>('GET', '/api/settings')
 export const getResolvedSettings = () => request<Settings>('GET', '/api/settings/resolved')
 export const putSettings = (data: Settings) => request<void>('PUT', '/api/settings', data)
 
-// --- Service settings (mailpit, mysql, and php-fpm-* only) ---
+// --- Service settings (mailpit, mysql, dns, and php-fpm-* only) ---
 export interface MailpitServiceSettings {
   http_port: string
   smtp_port: string
@@ -233,11 +233,23 @@ export interface MySQLServiceSettings {
   bind_address: string
 }
 export type PHPServiceSettings = PHPSettings
+export interface DNSServiceSettings {
+  port: string
+  target_ip: string
+  tld: string
+  system_dns_configured: boolean
+}
 
 export const getServiceSettings = (id: string) =>
-  request<MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings>('GET', `/api/services/${id}/settings`)
-export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings) =>
+  request<MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings | DNSServiceSettings>('GET', `/api/services/${id}/settings`)
+export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings | DNSServiceSettings) =>
   request<{ status: string }>('PUT', `/api/services/${id}/settings`, data)
+
+// --- DNS system integration ---
+export const detectDNSIP = () => request<{ ip: string }>('GET', '/api/dns/detect-ip')
+export const checkSystemDNS = () => request<{ configured: boolean }>('GET', '/api/dns/setup')
+export const setupSystemDNS = () => request<{ status: string }>('POST', '/api/dns/setup')
+export const teardownSystemDNS = () => request<{ status: string }>('DELETE', '/api/dns/setup')
 
 // --- Service config (php-fpm-* and mysql only) ---
 export const getServiceConfig = (id: string, file: string) =>

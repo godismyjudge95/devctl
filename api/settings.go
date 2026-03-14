@@ -17,6 +17,9 @@ var settingDefaults = map[string]string{
 	"service_poll_interval": "5",
 	"mailpit_http_port":     "8025",
 	"mailpit_smtp_port":     "1025",
+	"dns_port":              "5354",
+	"dns_target_ip":         "",
+	"dns_tld":               ".test",
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

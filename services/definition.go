@@ -1,5 +1,10 @@
 package services
 
+import (
+	"context"
+	"io"
+)
+
 // Status represents the running state of a service.
 type Status string
 
@@ -68,6 +73,10 @@ type Definition struct {
 	// (config.env) during installation and the credentials panel should be
 	// shown in the UI. When false, the frontend skips the /credentials fetch.
 	HasCredentials bool
+	// RunFunc, when non-nil, causes the Supervisor to run this service as an
+	// in-process goroutine instead of a child process. The function receives a
+	// cancellable context and a log writer and must block until ctx is done.
+	RunFunc func(ctx context.Context, logW io.Writer) error
 }
 
 // ServiceState is the live status of a service returned by the API.

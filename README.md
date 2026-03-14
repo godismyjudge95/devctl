@@ -2,7 +2,7 @@
 
 A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.
 
-devctl manages Caddy (TLS proxy), PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) — all from a single dashboard without touching config files.
+devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) — all from a single dashboard without touching config files.
 
 ![Services page showing Caddy running and available services](docs/screenshot-services.png)
 
@@ -11,6 +11,7 @@ devctl manages Caddy (TLS proxy), PHP-FPM processes, and optional dev services (
 ## Features
 
 - **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) and PHP-FPM versions — all from one tab
+- **DNS** — built-in DNS server intercepts configurable TLDs (default `.test`) and returns a configurable target IP; all other queries are forwarded upstream. One-click integration with `systemd-resolved` to route `.test` queries system-wide without any router config
 - **Sites** — auto-discovers PHP projects in your sites directory and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA
 - **Git Worktrees** — create and remove git worktrees for any site directly from the UI; each worktree gets its own `*.test` domain, Caddy vhost, and inherits the parent's PHP version
 - **PHP CLI** — a global `/usr/local/bin/php` symlink always points at the highest installed PHP version; per-version symlinks (`php8.3`, `php8.4`, …) are also created
@@ -25,7 +26,7 @@ devctl manages Caddy (TLS proxy), PHP-FPM processes, and optional dev services (
 - **OS**: Ubuntu 22.04+ or Debian 12+ (amd64)
 - **Root access**: devctl runs as a systemd system service (root)
 - A non-root user whose `~/sites` directory devctl will manage
-- DNS: the `.test` TLD must resolve to your machine. The recommended approach is a router-level wildcard DNS entry pointing `*.test` at your local IP. No `/etc/hosts` entries are needed.
+- DNS: the `.test` TLD must resolve to your machine. The easiest approach is to use devctl's built-in DNS server with its `systemd-resolved` integration (see [DNS](#dns) below). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
 
 ---
 
@@ -139,6 +140,7 @@ Configure the dashboard host/port, sites watch directory, TLS certificate trust,
 | Service | Type | Default port |
 |---|---|---|
 | Caddy | Supervised (always on) | `:80`, `:443` |
+| DNS Server | Embedded goroutine (always on) | `127.0.0.1:5354` (UDP+TCP) |
 | Valkey (Redis-compatible) | Supervised | `127.0.0.1:6379` |
 | PostgreSQL | systemd | — |
 | MySQL | Supervised | `127.0.0.1:3306` |
@@ -149,6 +151,42 @@ Configure the dashboard host/port, sites watch directory, TLS certificate trust,
 | PHP-FPM (per version) | Supervised | Unix socket `/run/php/phpX.Y-fpm.sock` |
 
 Supervised services run as direct child processes of devctl. Valkey's service ID is `redis` for Laravel `.env` compatibility.
+
+---
+
+## DNS
+
+devctl includes a built-in DNS server that runs as an in-process goroutine (no separate binary). It intercepts queries for configurable TLDs and returns a fixed A record, forwarding everything else to the system upstream resolver.
+
+**Default behaviour:**
+- Listens on `127.0.0.1:5354` (UDP and TCP)
+- Intercepts `*.test` queries and returns your primary LAN IP
+- Forwards all other queries to the upstream nameserver (read from `/run/systemd/resolve/resolv.conf`, falling back to `/etc/resolv.conf`, then `8.8.8.8`)
+
+**Configuring via the dashboard:**
+
+Open the gear icon on the DNS Server row in the Services tab to configure:
+
+| Setting | Description |
+|---|---|
+| Port | UDP/TCP port the server listens on (default `5354`) |
+| TLD(s) | Comma-separated list of TLDs to intercept (default `.test`) |
+| Target IP | IP address returned for intercepted queries. Click **Auto-detect** to use your primary LAN IP. |
+| System DNS | Writes a `systemd-resolved` drop-in so `.test` queries are routed to devctl system-wide |
+
+**System DNS integration:**
+
+Click **Configure** in the DNS settings dialog to write `/etc/systemd/resolved.conf.d/99-devctl-dns.conf` and restart `systemd-resolved`. This routes all `.test` queries on the machine to devctl's DNS server — no router configuration or `/etc/hosts` entries needed.
+
+The generated drop-in looks like:
+
+```ini
+[Resolve]
+DNS=127.0.0.1:5354
+Domains=~test
+```
+
+Click **Remove** to delete the drop-in and restore the previous resolver behaviour.
 
 ---
 
@@ -186,6 +224,7 @@ No browser extension or Xdebug configuration required.
 | `127.0.0.1:4000` | devctl dashboard | Yes (Settings → Dashboard) |
 | `:80` / `:443` | Caddy | No |
 | `127.0.0.1:2019` | Caddy Admin API | Yes (Settings) |
+| `127.0.0.1:5354` | DNS server (UDP+TCP) | Yes (Services → DNS → Settings) |
 | `127.0.0.1:9912` | PHP dump receiver | Yes (Settings → PHP Dump Server) |
 | `127.0.0.1:6379` | Valkey | No |
 | `127.0.0.1:3306` | MySQL | No |

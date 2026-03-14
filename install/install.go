@@ -84,6 +84,7 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		supervisor: supervisor,
 		siteHome:   siteHome,
 	}
+	m["dns"] = &DNSInstaller{}
 	return m
 }
 

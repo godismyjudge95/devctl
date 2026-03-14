@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -16,17 +17,17 @@ import (
 	"time"
 )
 
-// managedProc holds state for a single supervised child process.
+// managedProc holds state for a single supervised child process or goroutine.
 type managedProc struct {
 	def     Definition
-	cmd     *exec.Cmd
+	cmd     *exec.Cmd // non-nil for exec-based services
 	cancel  context.CancelFunc
-	logFile *os.File // non-nil when def.Log != ""; closed after the process exits
+	logFile *os.File      // non-nil when def.Log != ""; closed after the process exits
+	done    chan struct{} // non-nil for goroutine-based services; closed when RunFunc returns
 }
 
-// Supervisor manages devctl-supervised child processes (e.g. Laravel Reverb).
-// It forks each managed service as a child process, auto-restarts on crash,
-// and stops all children cleanly on shutdown.
+// Supervisor manages devctl-supervised services (child processes or embedded goroutines).
+// It auto-restarts on crash and stops all children cleanly on shutdown.
 type Supervisor struct {
 	mu       sync.Mutex
 	procs    map[string]*managedProc
@@ -44,23 +45,67 @@ func NewSupervisor(siteHome string) *Supervisor {
 	}
 }
 
-// Start forks a managed service as a child process.
+// Start forks a managed service as a child process (or launches it as an
+// embedded goroutine if def.RunFunc is non-nil).
 // It is a no-op if the service is already running.
-// ManagedDir is always $HOME/sites/<id> by convention.
 func (s *Supervisor) Start(def Definition) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if p, ok := s.procs[def.ID]; ok && p.cmd.ProcessState == nil {
-		// Already running (ProcessState is nil until the process exits).
-		return nil
+	if p, ok := s.procs[def.ID]; ok {
+		// Check if still running.
+		if p.done != nil {
+			// Goroutine proc: still alive if done is not closed.
+			select {
+			case <-p.done:
+				// exited — fall through to restart
+			default:
+				return nil // still running
+			}
+		} else if p.cmd != nil && p.cmd.ProcessState == nil {
+			// Process proc: still alive.
+			return nil
+		}
 	}
 
 	return s.startLocked(def)
 }
 
-// startLocked launches the process. Must be called with s.mu held.
+// startLocked launches the service. Must be called with s.mu held.
 func (s *Supervisor) startLocked(def Definition) error {
+	if def.RunFunc != nil {
+		return s.startEmbedded(def)
+	}
+	return s.startProcess(def)
+}
+
+// startEmbedded launches def.RunFunc as a supervised goroutine.
+// Must be called with s.mu held.
+func (s *Supervisor) startEmbedded(def Definition) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	logW := s.newServiceLogWriter(def)
+
+	proc := &managedProc{def: def, cancel: cancel, done: done}
+	s.procs[def.ID] = proc
+
+	go func() {
+		defer close(done)
+		if err := def.RunFunc(ctx, logW); err != nil && ctx.Err() == nil {
+			log.Printf("[%s] exited with error: %v", def.ID, err)
+		}
+		if f, ok := logW.(*serviceLogWriter); ok && f.file != nil {
+			f.file.Close()
+		}
+	}()
+
+	log.Printf("supervisor: started embedded service %s", def.ID)
+	return nil
+}
+
+// startProcess launches a child process. Must be called with s.mu held.
+func (s *Supervisor) startProcess(def Definition) error {
 	managedDir := def.ManagedDir
 	if managedDir == "" {
 		managedDir = s.siteHome + "/sites/" + def.ID
@@ -91,8 +136,7 @@ func (s *Supervisor) startLocked(def Definition) error {
 	}
 
 	// If ManagedEnvFile is set, load key=value pairs as extra environment
-	// variables for the child process. This allows secrets (e.g.
-	// MEILI_MASTER_KEY) to be injected from a file written at install time.
+	// variables for the child process.
 	if def.ManagedEnvFile != "" {
 		extra := loadEnvFile(def.ManagedEnvFile)
 		cmd.Env = append(os.Environ(), extra...)
@@ -154,8 +198,40 @@ func (s *Supervisor) startLocked(def Definition) error {
 	return nil
 }
 
-// Stop sends SIGTERM to the managed process and waits up to 10 s before
-// sending SIGKILL.
+// newServiceLogWriter builds an io.Writer that writes to both journald (via
+// log.Printf) and optionally to the service's log file.
+func (s *Supervisor) newServiceLogWriter(def Definition) io.Writer {
+	w := &serviceLogWriter{id: def.ID}
+	if def.Log != "" {
+		if err := os.MkdirAll(filepath.Dir(def.Log), 0755); err == nil {
+			f, _ := os.OpenFile(def.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			w.file = f
+		}
+	}
+	return w
+}
+
+// serviceLogWriter implements io.Writer. Each Write call is split on newlines
+// and each line is sent to log.Printf prefixed with the service ID.
+// Raw bytes are also tee'd to file when non-nil.
+type serviceLogWriter struct {
+	id   string
+	file *os.File
+}
+
+func (w *serviceLogWriter) Write(p []byte) (int, error) {
+	if w.file != nil {
+		_, _ = w.file.Write(p)
+	}
+	msg := strings.TrimRight(string(p), "\n")
+	if msg != "" {
+		log.Printf("[%s] %s", w.id, msg)
+	}
+	return len(p), nil
+}
+
+// Stop sends SIGTERM (or cancels the context for goroutine procs) and waits
+// up to 10 s before force-killing.
 func (s *Supervisor) Stop(id string) error {
 	s.mu.Lock()
 	p, ok := s.procs[id]
@@ -165,24 +241,34 @@ func (s *Supervisor) Stop(id string) error {
 	}
 	cancel := p.cancel
 	cmd := p.cmd
+	done := p.done
 	delete(s.procs, id)
 	s.mu.Unlock()
 
-	cancel() // sends SIGTERM via context (exec.CommandContext)
+	cancel() // cancel context — triggers SIGTERM for exec procs, stops RunFunc for goroutines
 
-	done := make(chan struct{})
-	go func() {
-		cmd.Wait() //nolint:errcheck
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		if cmd.Process != nil {
-			cmd.Process.Kill() //nolint:errcheck
+	if done != nil {
+		// Goroutine proc — wait for RunFunc to return.
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			log.Printf("supervisor: %s goroutine did not stop within 10s", id)
 		}
-		<-done
+	} else if cmd != nil {
+		// Exec proc — wait with optional force-kill.
+		waitDone := make(chan struct{})
+		go func() {
+			cmd.Wait() //nolint:errcheck
+			close(waitDone)
+		}()
+		select {
+		case <-waitDone:
+		case <-time.After(10 * time.Second):
+			if cmd.Process != nil {
+				cmd.Process.Kill() //nolint:errcheck
+			}
+			<-waitDone
+		}
 	}
 
 	log.Printf("supervisor: stopped %s", id)
@@ -197,7 +283,7 @@ func (s *Supervisor) Restart(def Definition) error {
 	return s.Start(def)
 }
 
-// IsRunning returns true when the process exists and has not yet exited.
+// IsRunning returns true when the service exists and has not yet exited.
 func (s *Supervisor) IsRunning(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -205,10 +291,18 @@ func (s *Supervisor) IsRunning(id string) bool {
 	if !ok {
 		return false
 	}
-	return p.cmd.ProcessState == nil
+	if p.done != nil {
+		select {
+		case <-p.done:
+			return false
+		default:
+			return true
+		}
+	}
+	return p.cmd != nil && p.cmd.ProcessState == nil
 }
 
-// Run watches for unexpected process exits and auto-restarts them.
+// Run watches for unexpected exits and auto-restarts them.
 // It also stops all processes when ctx is cancelled.
 // Call as a goroutine: go supervisor.Run(ctx).
 func (s *Supervisor) Run(ctx context.Context) {
@@ -226,14 +320,24 @@ func (s *Supervisor) Run(ctx context.Context) {
 	}
 }
 
-// restartCrashed finds processes that have exited unexpectedly and restarts them.
+// restartCrashed finds services that have exited unexpectedly and restarts them.
 func (s *Supervisor) restartCrashed() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for id, p := range s.procs {
-		if p.cmd.ProcessState != nil {
-			// Process has exited; restart it.
+		crashed := false
+		if p.done != nil {
+			select {
+			case <-p.done:
+				crashed = true
+			default:
+			}
+		} else if p.cmd != nil && p.cmd.ProcessState != nil {
+			crashed = true
+		}
+
+		if crashed {
 			log.Printf("supervisor: %s exited unexpectedly, restarting", id)
 			def := p.def
 			delete(s.procs, id)
@@ -244,7 +348,7 @@ func (s *Supervisor) restartCrashed() {
 	}
 }
 
-// stopAll stops every managed process. Called on shutdown.
+// stopAll stops every managed service. Called on shutdown.
 func (s *Supervisor) stopAll() {
 	s.mu.Lock()
 	ids := make([]string, 0, len(s.procs))

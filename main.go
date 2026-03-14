@@ -225,11 +225,17 @@ func run() error {
 		manager.SetInstallerCheck(id, inst.IsInstalled)
 	}
 
+	// --- HTTP Server ---
+	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
+	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
+	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, addr)
+
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {
 		if def.Managed && def.ID != "caddy" {
 			if inst, ok := installRegistry[def.ID]; ok && inst.IsInstalled() {
-				if err := supervisor.Start(def); err != nil {
+				if err := supervisor.Start(srv.ServiceDef(ctx, def)); err != nil {
 					log.Printf("supervisor: auto-start %s: %v", def.ID, err)
 				}
 			}
@@ -246,10 +252,6 @@ func run() error {
 			}
 		}
 	}
-
-	// --- HTTP Server ---
-	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, addr)
 
 	// --- Start background goroutines ---
 	runCtx, cancel := context.WithCancel(context.Background())
