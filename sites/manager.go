@@ -38,6 +38,10 @@ type CreateSiteInput struct {
 	// WSUpstream is the dial address used when SiteType == "ws",
 	// e.g. "127.0.0.1:7383".
 	WSUpstream string
+	// ParentSiteID links this site to its parent when it is a git worktree.
+	ParentSiteID string
+	// WorktreeBranch is the branch this worktree is on.
+	WorktreeBranch string
 }
 
 // Create inserts a site into the DB and provisions its Caddy vhost.
@@ -66,6 +70,15 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 	}
 	settingsJSON, _ := json.Marshal(settingsMap)
 
+	var parentID *string
+	if input.ParentSiteID != "" {
+		parentID = &input.ParentSiteID
+	}
+	var worktreeBranch *string
+	if input.WorktreeBranch != "" {
+		worktreeBranch = &input.WorktreeBranch
+	}
+
 	id := DomainToID(input.Domain)
 	site, err := m.db.CreateSite(ctx, dbq.CreateSiteParams{
 		ID:             id,
@@ -77,6 +90,8 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		Https:          httpsVal,
 		AutoDiscovered: autoVal,
 		Settings:       string(settingsJSON),
+		ParentSiteID:   parentID,
+		WorktreeBranch: worktreeBranch,
 	})
 	if err != nil {
 		return dbq.Site{}, fmt.Errorf("create site db: %w", err)
@@ -123,6 +138,8 @@ func (m *Manager) SyncAll(ctx context.Context) error {
 // AutoDiscover creates a site entry for a newly discovered directory.
 // The domain is derived from the directory name (e.g. "myapp" → "myapp.test").
 // The "server" directory is excluded — it is reserved for devctl's own binaries.
+// If the directory is a git linked worktree whose main repo is already tracked,
+// the new site's parent_site_id and worktree_branch are set automatically.
 func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 	name := filepath.Base(dirPath)
 
@@ -138,15 +155,128 @@ func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 		return nil // already tracked
 	}
 
-	_, err := m.Create(ctx, CreateSiteInput{
+	input := CreateSiteInput{
 		Domain:         domain,
 		RootPath:       dirPath,
 		PHPVersion:     "8.3",
 		Aliases:        nil,
 		HTTPS:          true,
 		AutoDiscovered: true,
-	})
+	}
+
+	// Check if this directory is a git linked worktree whose parent is already tracked.
+	if IsLinkedWorktree(dirPath) {
+		if parentPath, err := GetMainWorktreePath(dirPath); err == nil {
+			if parentSite, err := m.db.GetSiteByRootPath(ctx, parentPath); err == nil {
+				input.ParentSiteID = parentSite.ID
+				input.WorktreeBranch = GetCurrentBranch(dirPath)
+				fmt.Printf("sites: auto-discovered %s as worktree of %s (branch: %s)\n",
+					domain, parentSite.Domain, input.WorktreeBranch)
+			}
+		}
+	}
+
+	_, err := m.Create(ctx, input)
 	return err
+}
+
+// CreateWorktree creates a new git worktree for the given parent site on the specified branch,
+// places it as a sibling of the parent site directory, registers it as a site in devctl,
+// and sets up symlinks/copies per the provided config.
+func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, createBranch bool, config WorktreeSetupConfig) (dbq.Site, error) {
+	parent, err := m.db.GetSite(ctx, parentID)
+	if err != nil {
+		return dbq.Site{}, fmt.Errorf("parent site not found: %w", err)
+	}
+
+	// Find the git root for the parent site.
+	if !IsGitRepo(parent.RootPath) {
+		return dbq.Site{}, fmt.Errorf("site %q is not a git repository", parent.Domain)
+	}
+	gitRoot, err := GetGitRoot(parent.RootPath)
+	if err != nil {
+		return dbq.Site{}, fmt.Errorf("get git root: %w", err)
+	}
+
+	// Compute worktree directory and domain from parent name + branch slug.
+	parentName := filepath.Base(parent.RootPath)
+	branchSlug := SlugifyBranch(branch)
+	worktreeDirName := parentName + "-" + branchSlug
+	worktreePath := filepath.Join(filepath.Dir(parent.RootPath), worktreeDirName)
+	worktreeDomain := worktreeDirName + ".test"
+
+	// Guard: ensure the worktree path is not inside the git root.
+	if strings.HasPrefix(worktreePath+string(filepath.Separator), gitRoot+string(filepath.Separator)) {
+		return dbq.Site{}, fmt.Errorf("computed worktree path %q is inside git root %q", worktreePath, gitRoot)
+	}
+
+	// Check for domain / path conflicts.
+	if _, err := m.db.GetSiteByDomain(ctx, worktreeDomain); err == nil {
+		return dbq.Site{}, fmt.Errorf("a site with domain %q already exists", worktreeDomain)
+	}
+
+	// Determine PHP version from parent settings (inherit).
+	phpVersion := parent.PhpVersion
+
+	// Register the site in the DB BEFORE creating the git worktree so that the
+	// filesystem watcher (AutoDiscover) sees the domain as already tracked and
+	// skips it — avoiding a UNIQUE constraint race when the watcher fires while
+	// git is still populating the worktree directory.
+	site, err := m.Create(ctx, CreateSiteInput{
+		Domain:         worktreeDomain,
+		RootPath:       worktreePath,
+		PHPVersion:     phpVersion,
+		HTTPS:          true,
+		AutoDiscovered: false,
+		ParentSiteID:   parentID,
+		WorktreeBranch: branch,
+	})
+	if err != nil {
+		return dbq.Site{}, fmt.Errorf("register worktree site: %w", err)
+	}
+
+	// Create the git worktree on disk.
+	if err := CreateGitWorktree(gitRoot, worktreePath, branch, createBranch, config); err != nil {
+		// Roll back the DB registration.
+		_ = m.Delete(ctx, site.ID)
+		return dbq.Site{}, fmt.Errorf("create git worktree: %w", err)
+	}
+
+	return site, nil
+}
+
+// RemoveWorktree removes a git worktree site: deletes the directory, prunes git,
+// and removes the site record from devctl.
+func (m *Manager) RemoveWorktree(ctx context.Context, worktreeID string) error {
+	worktree, err := m.db.GetSite(ctx, worktreeID)
+	if err != nil {
+		return fmt.Errorf("worktree site not found: %w", err)
+	}
+	if worktree.ParentSiteID == nil {
+		return fmt.Errorf("site %q is not a worktree (no parent_site_id)", worktreeID)
+	}
+
+	parent, err := m.db.GetSite(ctx, *worktree.ParentSiteID)
+	if err != nil {
+		// Parent may have been deleted; still attempt to clean up.
+		fmt.Printf("sites: parent site not found for worktree %s, cleaning up anyway\n", worktreeID)
+		// Remove just the site record; skip git cleanup since we can't find the repo.
+		return m.Delete(ctx, worktreeID)
+	}
+
+	gitRoot, err := GetGitRoot(parent.RootPath)
+	if err != nil {
+		// Git root not accessible; remove site record only.
+		fmt.Printf("sites: could not get git root for worktree removal: %v\n", err)
+		return m.Delete(ctx, worktreeID)
+	}
+
+	if err := RemoveGitWorktree(gitRoot, worktree.RootPath); err != nil {
+		fmt.Printf("sites: git worktree remove warning: %v\n", err)
+		// Continue to remove the site record even if git cleanup failed.
+	}
+
+	return m.Delete(ctx, worktreeID)
 }
 
 func (m *Manager) syncCaddy(site dbq.Site) error {

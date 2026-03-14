@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS sites (
     https            INTEGER NOT NULL DEFAULT 1,
     auto_discovered  INTEGER NOT NULL DEFAULT 0,
     settings         TEXT NOT NULL DEFAULT '{}',
+    parent_site_id   TEXT DEFAULT NULL,
+    worktree_branch  TEXT DEFAULT NULL,
     created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
 );

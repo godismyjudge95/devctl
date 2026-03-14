@@ -1,7 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Site, SiteInput } from '@/lib/api'
-import { getSites, createSite, updateSite, deleteSite, enableSPX, disableSPX } from '@/lib/api'
+import type { Site, SiteInput, CreateWorktreeInput } from '@/lib/api'
+import {
+  getSites,
+  createSite,
+  updateSite,
+  deleteSite,
+  enableSPX,
+  disableSPX,
+  createWorktree,
+  removeWorktree,
+} from '@/lib/api'
 
 export const useSitesStore = defineStore('sites', () => {
   const sites = ref<Site[]>([])
@@ -45,7 +54,20 @@ export const useSitesStore = defineStore('sites', () => {
     if (site) site.spx_enabled = enabled ? 1 : 0
   }
 
+  /** Add a new git worktree for the given parent site. */
+  async function addWorktree(parentId: string, data: CreateWorktreeInput) {
+    const site = await createWorktree(parentId, data)
+    sites.value.push(site)
+    return site
+  }
+
+  /** Remove a git worktree site (cleans up git + site record). */
+  async function deleteWorktree(parentId: string, worktreeId: string) {
+    await removeWorktree(parentId, worktreeId)
+    sites.value = sites.value.filter((s: Site) => s.id !== worktreeId)
+  }
+
   const count = computed(() => sites.value.length)
 
-  return { sites, count, loading, error, load, create, update, remove, toggleSPX }
+  return { sites, count, loading, error, load, create, update, remove, toggleSPX, addWorktree, deleteWorktree }
 })

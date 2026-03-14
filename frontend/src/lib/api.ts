@@ -23,8 +23,28 @@ export interface Site {
   spx_enabled: number
   https: number
   auto_discovered: number
+  parent_site_id: string | null
+  worktree_branch: string | null
   created_at: string
   updated_at: string
+}
+
+export interface Branch {
+  name: string
+  is_remote: boolean
+  is_current: boolean
+}
+
+export interface WorktreeConfig {
+  symlinks: string[]
+  copies: string[]
+}
+
+export interface CreateWorktreeInput {
+  branch: string
+  create_branch: boolean
+  symlinks: string[]
+  copies: string[]
 }
 
 export interface Dump {
@@ -173,6 +193,20 @@ export const updateSite = (id: string, data: SiteInput) =>
 export const deleteSite = (id: string) => request<void>('DELETE', `/api/sites/${id}`)
 export const enableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/enable`)
 export const disableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/disable`)
+
+// --- Worktrees ---
+export const getSiteBranches = (id: string) =>
+  request<Branch[]>('GET', `/api/sites/${id}/branches`)
+export const getWorktreeConfig = (id: string) =>
+  request<WorktreeConfig>('GET', `/api/sites/${id}/worktree-config`)
+export const putWorktreeConfig = (id: string, data: WorktreeConfig) =>
+  request<WorktreeConfig>('PUT', `/api/sites/${id}/worktree-config`, data)
+export const getSiteWorktrees = (id: string) =>
+  request<Site[]>('GET', `/api/sites/${id}/worktrees`)
+export const createWorktree = (id: string, data: CreateWorktreeInput) =>
+  request<Site>('POST', `/api/sites/${id}/worktrees`, data)
+export const removeWorktree = (parentId: string, worktreeId: string) =>
+  request<void>('DELETE', `/api/sites/${parentId}/worktrees/${worktreeId}`)
 
 // --- Dumps ---
 export const getDumps = (params?: { page?: number; limit?: number; site?: string }) => {

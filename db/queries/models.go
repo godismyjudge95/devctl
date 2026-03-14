@@ -32,6 +32,8 @@ type Site struct {
 	Https          int64     `db:"https" json:"https"`
 	AutoDiscovered int64     `db:"auto_discovered" json:"auto_discovered"`
 	Settings       string    `db:"settings" json:"settings"`
+	ParentSiteID   *string   `db:"parent_site_id" json:"parent_site_id"`
+	WorktreeBranch *string   `db:"worktree_branch" json:"worktree_branch"`
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }

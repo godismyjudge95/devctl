@@ -12,6 +12,7 @@ devctl manages Caddy (TLS proxy), PHP-FPM processes, and optional dev services (
 
 - **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) and PHP-FPM versions — all from one tab
 - **Sites** — auto-discovers PHP projects in your sites directory and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA
+- **Git Worktrees** — create and remove git worktrees for any site directly from the UI; each worktree gets its own `*.test` domain, Caddy vhost, and inherits the parent's PHP version
 - **PHP CLI** — a global `/usr/local/bin/php` symlink always points at the highest installed PHP version; per-version symlinks (`php8.3`, `php8.4`, …) are also created
 - **Global php.ini** — set `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time` across all installed PHP versions at once
 - **Dumps** — receive and display `php_dd()` / `dd()` variable dumps from any site over TCP (no browser extension needed)
@@ -98,6 +99,26 @@ Manage dev services and PHP-FPM versions. Caddy is always running. Other service
 Auto-discovered sites from your watch directory. Each site gets a `*.test` vhost with HTTPS. Assign a PHP version per site.
 
 ![Sites page](docs/screenshot-sites.png)
+
+### Git Worktrees
+
+Any git-backed site can have worktrees added to it. Click the fork icon on a site card, pick a branch (or create a new one), configure which paths to symlink or copy from the parent, and click **Create Worktree**. The worktree is created as a sibling directory (`~/sites/myapp-feature-x/`) and immediately gets its own Caddy vhost (`myapp-feature-x.test`).
+
+**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase, `/` and `_` become `-`, and the `origin-` prefix is stripped from remote-tracking refs (so `origin/my-branch` → `myapp-my-branch.test`).
+
+**Shared resources:** devctl detects the project type (Laravel, Statamic, WordPress, or generic) and pre-fills sensible defaults:
+
+| Project type | Symlinked from parent | Copied from parent |
+|---|---|---|
+| Laravel / Statamic | `vendor`, `node_modules` | `.env` |
+| WordPress | — | `.env`, `wp-config.php` |
+| Generic | `vendor`, `node_modules` | — |
+
+Check **Save as default for this site** to persist your symlink/copy config in the site's settings for next time.
+
+Worktree cards on the Sites page show a dashed border, a parent-site link, and the branch name. The parent card shows an active-worktree count badge. Remove a worktree via its **Remove worktree** button — this deletes the directory, prunes the git worktree entry, and removes the Caddy vhost.
+
+**Auto-detection:** If a linked worktree directory appears in your watch folder through other means (e.g. `git worktree add` from the terminal), devctl will auto-discover it, recognise the `.git` file pointer, and automatically link it to its parent site in the dashboard.
 
 ### Dumps
 

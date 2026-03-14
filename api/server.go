@@ -96,6 +96,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/sites/{id}", s.handleDeleteSite)
 	s.mux.HandleFunc("POST /api/sites/{id}/spx/enable", s.handleSPXEnable)
 	s.mux.HandleFunc("POST /api/sites/{id}/spx/disable", s.handleSPXDisable)
+	// Worktrees
+	s.mux.HandleFunc("GET /api/sites/{id}/branches", s.handleGetSiteBranches)
+	s.mux.HandleFunc("GET /api/sites/{id}/worktree-config", s.handleGetWorktreeConfig)
+	s.mux.HandleFunc("PUT /api/sites/{id}/worktree-config", s.handlePutWorktreeConfig)
+	s.mux.HandleFunc("GET /api/sites/{id}/worktrees", s.handleGetSiteWorktrees)
+	s.mux.HandleFunc("POST /api/sites/{id}/worktrees", s.handleCreateWorktree)
+	s.mux.HandleFunc("DELETE /api/sites/{id}/worktrees/{worktreeId}", s.handleRemoveWorktree)
 
 	// PHP
 	s.mux.HandleFunc("GET /api/php/versions", s.handleGetPHPVersions)

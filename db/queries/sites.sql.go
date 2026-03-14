@@ -10,21 +10,23 @@ import (
 )
 
 const createSite = `-- name: CreateSite :one
-INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, created_at, updated_at
+INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at
 `
 
 type CreateSiteParams struct {
-	ID             string `db:"id" json:"id"`
-	Domain         string `db:"domain" json:"domain"`
-	RootPath       string `db:"root_path" json:"root_path"`
-	PhpVersion     string `db:"php_version" json:"php_version"`
-	Aliases        string `db:"aliases" json:"aliases"`
-	SpxEnabled     int64  `db:"spx_enabled" json:"spx_enabled"`
-	Https          int64  `db:"https" json:"https"`
-	AutoDiscovered int64  `db:"auto_discovered" json:"auto_discovered"`
-	Settings       string `db:"settings" json:"settings"`
+	ID             string  `db:"id" json:"id"`
+	Domain         string  `db:"domain" json:"domain"`
+	RootPath       string  `db:"root_path" json:"root_path"`
+	PhpVersion     string  `db:"php_version" json:"php_version"`
+	Aliases        string  `db:"aliases" json:"aliases"`
+	SpxEnabled     int64   `db:"spx_enabled" json:"spx_enabled"`
+	Https          int64   `db:"https" json:"https"`
+	AutoDiscovered int64   `db:"auto_discovered" json:"auto_discovered"`
+	Settings       string  `db:"settings" json:"settings"`
+	ParentSiteID   *string `db:"parent_site_id" json:"parent_site_id"`
+	WorktreeBranch *string `db:"worktree_branch" json:"worktree_branch"`
 }
 
 func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error) {
@@ -38,6 +40,8 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		arg.Https,
 		arg.AutoDiscovered,
 		arg.Settings,
+		arg.ParentSiteID,
+		arg.WorktreeBranch,
 	)
 	var i Site
 	err := row.Scan(
@@ -50,6 +54,8 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		&i.Https,
 		&i.AutoDiscovered,
 		&i.Settings,
+		&i.ParentSiteID,
+		&i.WorktreeBranch,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -66,7 +72,7 @@ func (q *Queries) DeleteSite(ctx context.Context, id string) error {
 }
 
 const getAllSites = `-- name: GetAllSites :many
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, created_at, updated_at FROM sites ORDER BY created_at ASC
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at FROM sites ORDER BY created_at ASC
 `
 
 func (q *Queries) GetAllSites(ctx context.Context) ([]Site, error) {
@@ -88,6 +94,8 @@ func (q *Queries) GetAllSites(ctx context.Context) ([]Site, error) {
 			&i.Https,
 			&i.AutoDiscovered,
 			&i.Settings,
+			&i.ParentSiteID,
+			&i.WorktreeBranch,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -105,7 +113,7 @@ func (q *Queries) GetAllSites(ctx context.Context) ([]Site, error) {
 }
 
 const getSite = `-- name: GetSite :one
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, created_at, updated_at FROM sites WHERE id = ? LIMIT 1
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at FROM sites WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetSite(ctx context.Context, id string) (Site, error) {
@@ -121,6 +129,8 @@ func (q *Queries) GetSite(ctx context.Context, id string) (Site, error) {
 		&i.Https,
 		&i.AutoDiscovered,
 		&i.Settings,
+		&i.ParentSiteID,
+		&i.WorktreeBranch,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -128,7 +138,7 @@ func (q *Queries) GetSite(ctx context.Context, id string) (Site, error) {
 }
 
 const getSiteByDomain = `-- name: GetSiteByDomain :one
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, created_at, updated_at FROM sites WHERE domain = ? LIMIT 1
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at FROM sites WHERE domain = ? LIMIT 1
 `
 
 func (q *Queries) GetSiteByDomain(ctx context.Context, domain string) (Site, error) {
@@ -144,10 +154,78 @@ func (q *Queries) GetSiteByDomain(ctx context.Context, domain string) (Site, err
 		&i.Https,
 		&i.AutoDiscovered,
 		&i.Settings,
+		&i.ParentSiteID,
+		&i.WorktreeBranch,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getSiteByRootPath = `-- name: GetSiteByRootPath :one
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at FROM sites WHERE root_path = ? LIMIT 1
+`
+
+func (q *Queries) GetSiteByRootPath(ctx context.Context, rootPath string) (Site, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByRootPath, rootPath)
+	var i Site
+	err := row.Scan(
+		&i.ID,
+		&i.Domain,
+		&i.RootPath,
+		&i.PhpVersion,
+		&i.Aliases,
+		&i.SpxEnabled,
+		&i.Https,
+		&i.AutoDiscovered,
+		&i.Settings,
+		&i.ParentSiteID,
+		&i.WorktreeBranch,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWorktreesBySite = `-- name: GetWorktreesBySite :many
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at FROM sites WHERE parent_site_id = ? ORDER BY created_at ASC
+`
+
+func (q *Queries) GetWorktreesBySite(ctx context.Context, parentSiteID *string) ([]Site, error) {
+	rows, err := q.db.QueryContext(ctx, getWorktreesBySite, parentSiteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Site{}
+	for rows.Next() {
+		var i Site
+		if err := rows.Scan(
+			&i.ID,
+			&i.Domain,
+			&i.RootPath,
+			&i.PhpVersion,
+			&i.Aliases,
+			&i.SpxEnabled,
+			&i.Https,
+			&i.AutoDiscovered,
+			&i.Settings,
+			&i.ParentSiteID,
+			&i.WorktreeBranch,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setSiteSPX = `-- name: SetSiteSPX :exec
@@ -164,11 +242,26 @@ func (q *Queries) SetSiteSPX(ctx context.Context, arg SetSiteSPXParams) error {
 	return err
 }
 
+const setSiteWorktreeInfo = `-- name: SetSiteWorktreeInfo :exec
+UPDATE sites SET parent_site_id = ?, worktree_branch = ?, updated_at = datetime('now') WHERE id = ?
+`
+
+type SetSiteWorktreeInfoParams struct {
+	ParentSiteID   *string `db:"parent_site_id" json:"parent_site_id"`
+	WorktreeBranch *string `db:"worktree_branch" json:"worktree_branch"`
+	ID             string  `db:"id" json:"id"`
+}
+
+func (q *Queries) SetSiteWorktreeInfo(ctx context.Context, arg SetSiteWorktreeInfoParams) error {
+	_, err := q.db.ExecContext(ctx, setSiteWorktreeInfo, arg.ParentSiteID, arg.WorktreeBranch, arg.ID)
+	return err
+}
+
 const updateSite = `-- name: UpdateSite :one
 UPDATE sites
 SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, created_at, updated_at
+RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, created_at, updated_at
 `
 
 type UpdateSiteParams struct {
@@ -204,8 +297,24 @@ func (q *Queries) UpdateSite(ctx context.Context, arg UpdateSiteParams) (Site, e
 		&i.Https,
 		&i.AutoDiscovered,
 		&i.Settings,
+		&i.ParentSiteID,
+		&i.WorktreeBranch,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateSiteSettings = `-- name: UpdateSiteSettings :exec
+UPDATE sites SET settings = ?, updated_at = datetime('now') WHERE id = ?
+`
+
+type UpdateSiteSettingsParams struct {
+	Settings string `db:"settings" json:"settings"`
+	ID       string `db:"id" json:"id"`
+}
+
+func (q *Queries) UpdateSiteSettings(ctx context.Context, arg UpdateSiteSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, updateSiteSettings, arg.Settings, arg.ID)
+	return err
 }
