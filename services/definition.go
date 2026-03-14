@@ -48,6 +48,12 @@ type Definition struct {
 	// appended to ManagedArgs at process start (used to inject secrets
 	// that are only known after installation, e.g. a Meilisearch master key).
 	ManagedEnvFile string
+	// ManagedUser is the OS username the supervisor drops privileges to before
+	// exec-ing the managed process. When set, the supervisor resolves the
+	// user's UID/GID and sets SysProcAttr.Credential so the process runs as
+	// that user instead of as root. Required for services (like PostgreSQL)
+	// that refuse to start as root.
+	ManagedUser string
 	// HealthCheck is an optional shell command run after the service is
 	// confirmed running. A non-zero exit code causes the status to be
 	// reported as StatusWarning instead of StatusRunning.

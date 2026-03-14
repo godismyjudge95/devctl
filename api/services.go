@@ -49,11 +49,11 @@ func (s *Server) runServiceAction(w http.ResponseWriter, r *http.Request, action
 	var err error
 	switch action {
 	case "start":
-		err = s.manager.Start(s.mailpitDef(r.Context(), def))
+		err = s.manager.Start(s.serviceDef(r.Context(), def))
 	case "stop":
 		err = s.manager.Stop(def)
 	case "restart":
-		err = s.manager.Restart(s.mailpitDef(r.Context(), def))
+		err = s.manager.Restart(s.serviceDef(r.Context(), def))
 	}
 
 	if err != nil {
@@ -183,6 +183,25 @@ func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleClearServiceLogs truncates a service's log file.
+func (s *Server) handleClearServiceLogs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	def, ok := s.registry.Get(id)
+	if !ok {
+		http.Error(w, fmt.Sprintf("service %q not found", id), http.StatusNotFound)
+		return
+	}
+	if def.Log == "" {
+		http.Error(w, "no log file configured for this service", http.StatusNotFound)
+		return
+	}
+	if err := os.Truncate(def.Log, 0); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func sendSSE(w http.ResponseWriter, flusher http.Flusher, event string, data interface{}) {
 	b, err := json.Marshal(data)
 	if err != nil {
@@ -238,7 +257,7 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-start the service if it is managed (supervised child process).
 	if def, ok := s.registry.Get(id); ok && def.Managed {
-		if err := s.manager.Start(s.mailpitDef(r.Context(), def)); err != nil {
+		if err := s.manager.Start(s.serviceDef(r.Context(), def)); err != nil {
 			log.Printf("install: auto-start %s: %v", id, err)
 		}
 		// For Caddy, wait for the Admin API then push the HTTP server config
@@ -408,6 +427,34 @@ func (s *Server) mailpitDef(ctx context.Context, def services.Definition) servic
 		smtpPort = "1025"
 	}
 	def.ManagedArgs = fmt.Sprintf("--listen 127.0.0.1:%s --smtp 127.0.0.1:%s --database ./data/mailpit.db", httpPort, smtpPort)
+	return def
+}
+
+// mysqlDef returns def unchanged for any service that is not mysql.
+// For mysql it patches ManagedArgs with the current port and bind-address
+// settings from the DB so that start/restart always uses the configured values.
+func (s *Server) mysqlDef(ctx context.Context, def services.Definition) services.Definition {
+	if def.ID != "mysql" {
+		return def
+	}
+	port, err := s.queries.GetSetting(ctx, "mysql_port")
+	if err != nil || port == "" {
+		port = "3306"
+	}
+	bindAddr, err := s.queries.GetSetting(ctx, "mysql_bind_address")
+	if err != nil || bindAddr == "" {
+		bindAddr = "127.0.0.1"
+	}
+	def.ManagedArgs = fmt.Sprintf("--defaults-file=./my.cnf --user=root --port=%s --bind-address=%s", port, bindAddr)
+	return def
+}
+
+// serviceDef applies any per-service runtime argument patching (e.g. port
+// overrides stored in the DB) before the definition is passed to the
+// supervisor. Add a new case here whenever a service gains configurable args.
+func (s *Server) serviceDef(ctx context.Context, def services.Definition) services.Definition {
+	def = s.mailpitDef(ctx, def)
+	def = s.mysqlDef(ctx, def)
 	return def
 }
 

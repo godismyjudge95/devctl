@@ -59,6 +59,7 @@ export const getServices = () => request<ServiceState[]>('GET', '/api/services')
 export const startService = (id: string) => request<void>('POST', `/api/services/${id}/start`)
 export const stopService = (id: string) => request<void>('POST', `/api/services/${id}/stop`)
 export const restartService = (id: string) => request<void>('POST', `/api/services/${id}/restart`)
+export const clearServiceLogs = (id: string) => request<void>('DELETE', `/api/services/${id}/logs`)
 export const getServiceCredentials = (id: string) =>
   request<ServiceCredentials>('GET', `/api/services/${id}/credentials`)
 export const getServiceDetails = (id: string) =>
@@ -185,16 +186,20 @@ export const getSettings = () => request<Settings>('GET', '/api/settings')
 export const getResolvedSettings = () => request<Settings>('GET', '/api/settings/resolved')
 export const putSettings = (data: Settings) => request<void>('PUT', '/api/settings', data)
 
-// --- Service settings (mailpit and php-fpm-* only) ---
+// --- Service settings (mailpit, mysql, and php-fpm-* only) ---
 export interface MailpitServiceSettings {
   http_port: string
   smtp_port: string
 }
+export interface MySQLServiceSettings {
+  port: string
+  bind_address: string
+}
 export type PHPServiceSettings = PHPSettings
 
 export const getServiceSettings = (id: string) =>
-  request<MailpitServiceSettings | PHPServiceSettings>('GET', `/api/services/${id}/settings`)
-export const putServiceSettings = (id: string, data: MailpitServiceSettings | PHPServiceSettings) =>
+  request<MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings>('GET', `/api/services/${id}/settings`)
+export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings) =>
   request<{ status: string }>('PUT', `/api/services/${id}/settings`, data)
 
 // --- Service PHP config (php-fpm-* only) ---

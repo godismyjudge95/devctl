@@ -3,12 +3,16 @@ package services
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -67,6 +71,24 @@ func (s *Supervisor) startLocked(def Definition) error {
 
 	cmd := exec.CommandContext(ctx, def.ManagedCmd, args...)
 	cmd.Dir = managedDir
+
+	// If ManagedUser is set, drop privileges to that user before exec.
+	// This is required for services that refuse to run as root (e.g. PostgreSQL).
+	if def.ManagedUser != "" {
+		u, err := user.Lookup(def.ManagedUser)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("supervisor: lookup user %q: %w", def.ManagedUser, err)
+		}
+		uid, _ := strconv.ParseUint(u.Uid, 10, 32)
+		gid, _ := strconv.ParseUint(u.Gid, 10, 32)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Uid: uint32(uid),
+				Gid: uint32(gid),
+			},
+		}
+	}
 
 	// If ManagedEnvFile is set, load key=value pairs as extra environment
 	// variables for the child process. This allows secrets (e.g.

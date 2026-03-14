@@ -4,7 +4,7 @@ import { useServicesStore } from '@/stores/services'
 import { useSettingsStore } from '@/stores/settings'
 import {
   Play, Square, RotateCcw, ScrollText, Loader2, Download, Trash2,
-  Copy, Settings2, Plus, ChevronDown, ChevronRight,
+  Copy, Settings2, Plus, ChevronDown, ChevronRight, Eraser,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
@@ -35,8 +35,9 @@ import {
 import {
   installServiceStream, purgeServiceStream, installPHP, uninstallPHP,
   getServiceSettings, putServiceSettings, getServicePHPConfig, putServicePHPConfig,
+  clearServiceLogs,
 } from '@/lib/api'
-import type { MailpitServiceSettings, PHPSettings } from '@/lib/api'
+import type { MailpitServiceSettings, MySQLServiceSettings, PHPSettings } from '@/lib/api'
 const store = useServicesStore()
 const settingsStore = useSettingsStore()
 
@@ -202,12 +203,14 @@ function executePurge() {
 
 // --- Log sheet ---
 const logOpen = ref(false)
+const logServiceId = ref('')
 const logServiceLabel = ref('')
 const logLines = ref<string[]>([])
 const logScroll = ref<HTMLElement | null>(null)
 let logEventSource: EventSource | null = null
 
 function openLog(id: string, label: string) {
+  logServiceId.value = id
   logServiceLabel.value = label
   logLines.value = []
   logOpen.value = true
@@ -252,6 +255,11 @@ function closeLog() {
   if (logEventSource) { logEventSource.close(); logEventSource = null }
 }
 
+async function clearLog() {
+  await clearServiceLogs(logServiceId.value)
+  logLines.value = []
+}
+
 // --- Collapsible credentials / details ---
 const expandedCredentials = ref<Set<string>>(new Set())
 
@@ -292,6 +300,13 @@ const svcSettingsTab = ref('settings')
 const mailpitHttpPort = ref('')
 const mailpitSmtpPort = ref('')
 
+// MySQL fields
+const mysqlPort = ref('')
+const mysqlBindAddress = ref('')
+const mysqlConfigContent = ref('')
+const mysqlConfigLoading = ref(false)
+const mysqlConfigSaving = ref(false)
+
 // PHP FPM fields
 const phpMemoryLimit = ref('')
 const phpUploadMaxFilesize = ref('')
@@ -305,8 +320,9 @@ const phpConfigLoading = ref(false)
 const phpConfigSaving = ref(false)
 
 function isMailpit(id: string) { return id === 'mailpit' }
+function isMySQL(id: string) { return id === 'mysql' }
 function isPHPFPM(id: string) { return id.startsWith('php-fpm-') }
-function hasSettingsGear(id: string) { return isMailpit(id) || isPHPFPM(id) }
+function hasSettingsGear(id: string) { return isMailpit(id) || isMySQL(id) || isPHPFPM(id) }
 
 async function openServiceSettings(id: string, label: string) {
   svcSettingsId.value = id
@@ -321,6 +337,11 @@ async function openServiceSettings(id: string, label: string) {
       const mp = data as MailpitServiceSettings
       mailpitHttpPort.value = mp.http_port
       mailpitSmtpPort.value = mp.smtp_port
+    } else if (isMySQL(id)) {
+      const my = data as MySQLServiceSettings
+      mysqlPort.value = my.port
+      mysqlBindAddress.value = my.bind_address
+      loadMySQLConfig(id)
     } else if (isPHPFPM(id)) {
       const php = data as PHPSettings
       phpMemoryLimit.value = php.memory_limit
@@ -363,6 +384,12 @@ async function saveServiceSettings() {
         smtp_port: mailpitSmtpPort.value,
       })
       toast.success('Mailpit settings saved — restarting…')
+    } else if (isMySQL(id)) {
+      await putServiceSettings(id, {
+        port: mysqlPort.value,
+        bind_address: mysqlBindAddress.value,
+      })
+      toast.success('MySQL settings saved — restarting…')
     } else if (isPHPFPM(id)) {
       await putServiceSettings(id, {
         memory_limit: phpMemoryLimit.value,
@@ -389,6 +416,31 @@ async function savePHPConfig() {
     toast.error(`Failed to save ${phpConfigFile.value}`, { description: e.message })
   } finally {
     phpConfigSaving.value = false
+  }
+}
+
+async function loadMySQLConfig(id: string) {
+  mysqlConfigLoading.value = true
+  try {
+    const res = await getServicePHPConfig(id, 'my.cnf')
+    mysqlConfigContent.value = res.content
+  } catch (e: any) {
+    mysqlConfigContent.value = ''
+    toast.error('Failed to load my.cnf', { description: e.message })
+  } finally {
+    mysqlConfigLoading.value = false
+  }
+}
+
+async function saveMySQLConfig() {
+  mysqlConfigSaving.value = true
+  try {
+    await putServicePHPConfig(svcSettingsId.value, 'my.cnf', mysqlConfigContent.value)
+    toast.success('my.cnf saved — restarting MySQL…')
+  } catch (e: any) {
+    toast.error('Failed to save my.cnf', { description: e.message })
+  } finally {
+    mysqlConfigSaving.value = false
   }
 }
 
@@ -634,7 +686,7 @@ async function doPHPUninstall() {
                     class="flex items-center gap-2"
                   >
                     <span class="text-xs text-muted-foreground w-40 shrink-0">{{ key }}</span>
-                    <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-0.5 truncate">{{ value }}</code>
+                    <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-0.5 truncate" :class="value === '' ? 'text-muted-foreground italic' : ''">{{ value !== '' ? value : '(empty)' }}</code>
                     <Button variant="ghost" size="icon" class="w-6 h-6 shrink-0" @click="copyToClipboard(value ?? '')">
                       <Copy class="w-3 h-3" />
                     </Button>
@@ -671,7 +723,13 @@ async function doPHPUninstall() {
   <Sheet :open="logOpen" @update:open="(v) => { if (!v) closeLog() }">
     <SheetContent side="right" class="w-full sm:max-w-2xl flex flex-col p-0">
       <SheetHeader class="px-5 py-4 border-b border-border shrink-0">
-        <SheetTitle class="font-mono text-sm">{{ logServiceLabel }} — logs</SheetTitle>
+        <div class="flex items-center justify-between">
+          <SheetTitle class="font-mono text-sm">{{ logServiceLabel }} — logs</SheetTitle>
+          <Button variant="ghost" size="sm" @click="clearLog">
+            <Eraser class="w-3.5 h-3.5" />
+            Clear
+          </Button>
+        </div>
       </SheetHeader>
       <div
         ref="logScroll"
@@ -897,6 +955,63 @@ async function doPHPUninstall() {
                 <Button @click="savePHPConfig" :disabled="phpConfigSaving || phpConfigLoading">
                   <Loader2 v-if="phpConfigSaving" class="w-3.5 h-3.5 animate-spin" />
                   Save File
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
+        </template>
+
+        <!-- MySQL: Settings + Config tabs -->
+        <template v-else-if="isMySQL(svcSettingsId)">
+          <Tabs v-model="svcSettingsTab" class="w-full">
+            <TabsList class="mb-3">
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+              <TabsTrigger value="config">Config</TabsTrigger>
+            </TabsList>
+
+            <!-- Settings tab -->
+            <TabsContent value="settings">
+              <div class="grid gap-4 py-2">
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="grid gap-1.5">
+                    <Label for="mysql_port">Port</Label>
+                    <Input id="mysql_port" v-model="mysqlPort" class="font-mono" placeholder="3306" />
+                  </div>
+                  <div class="grid gap-1.5">
+                    <Label for="mysql_bind">Bind Address</Label>
+                    <Input id="mysql_bind" v-model="mysqlBindAddress" class="font-mono" placeholder="127.0.0.1" />
+                  </div>
+                </div>
+                <p class="text-xs text-muted-foreground">MySQL will be restarted automatically when you save.</p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" @click="svcSettingsOpen = false">Cancel</Button>
+                <Button @click="saveServiceSettings" :disabled="svcSettingsSaving">
+                  <Loader2 v-if="svcSettingsSaving" class="w-3.5 h-3.5 animate-spin" />
+                  Save &amp; Restart
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+
+            <!-- Config tab -->
+            <TabsContent value="config">
+              <div class="space-y-3">
+                <p class="text-xs text-muted-foreground">my.cnf</p>
+                <div v-if="mysqlConfigLoading" class="text-center text-muted-foreground text-sm py-4">
+                  <Loader2 class="w-4 h-4 animate-spin inline-block mr-2" />Loading…
+                </div>
+                <textarea
+                  v-else
+                  v-model="mysqlConfigContent"
+                  class="w-full h-72 font-mono text-xs bg-muted/40 border border-border rounded-md p-3 resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+                  spellcheck="false"
+                />
+              </div>
+              <DialogFooter class="mt-4">
+                <Button variant="outline" @click="svcSettingsOpen = false">Cancel</Button>
+                <Button @click="saveMySQLConfig" :disabled="mysqlConfigSaving || mysqlConfigLoading">
+                  <Loader2 v-if="mysqlConfigSaving" class="w-3.5 h-3.5 animate-spin" />
+                  Save &amp; Restart
                 </Button>
               </DialogFooter>
             </TabsContent>

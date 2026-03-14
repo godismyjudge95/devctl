@@ -141,7 +141,7 @@ func run() error {
 
 	// --- Services ---
 	done = step("services registry")
-	registry := services.NewRegistry(config.DefaultServices(cfg.SiteHome))
+	registry := services.NewRegistry(config.DefaultServices(cfg.SiteHome, cfg.SiteUser))
 	done()
 
 	supervisor := services.NewSupervisor(cfg.SiteHome)

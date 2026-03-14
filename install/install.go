@@ -45,18 +45,14 @@ type Installer interface {
 	PurgeW(ctx context.Context, w io.Writer) error
 }
 
-// Registry maps service IDs to their Installer.
-// Deprecated: use NewRegistry for installers that require dependencies.
-var Registry = map[string]Installer{
-	"postgres": &PostgresInstaller{},
-}
-
 // NewRegistry builds the full installer map, injecting dependencies into
-// installers that need them (e.g. ReverbInstaller, MeilisearchInstaller).
+// installers that need them.
 func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, siteHome string) map[string]Installer {
-	m := make(map[string]Installer, len(Registry)+2)
-	for k, v := range Registry {
-		m[k] = v
+	m := make(map[string]Installer)
+	m["postgres"] = &PostgresInstaller{
+		supervisor: supervisor,
+		siteHome:   siteHome,
+		siteUser:   siteUser,
 	}
 	m["caddy"] = NewCaddyInstaller(supervisor, siteHome)
 	m["reverb"] = &ReverbInstaller{

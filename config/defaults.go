@@ -34,6 +34,10 @@ type ServiceDef struct {
 	// ManagedEnvFile is a path to a key=value file whose values are appended
 	// as CLI flags at process start (used to inject secrets known only after install).
 	ManagedEnvFile string `yaml:"managed_env_file"`
+	// ManagedUser is the OS username the supervisor drops privileges to before
+	// exec-ing the managed process. Required for services that refuse to run as root
+	// (e.g. PostgreSQL). When empty, the process inherits devctl's root privileges.
+	ManagedUser string `yaml:"managed_user"`
 	// HealthCheck is an optional shell command run when the service is running.
 	// A non-zero exit code causes the status to be reported as "warning".
 	HealthCheck string `yaml:"health_check"`
@@ -41,13 +45,16 @@ type ServiceDef struct {
 
 // DefaultServices returns the built-in service definitions.
 // siteHome is the home directory of the non-root site user (e.g. "/home/alice").
-func DefaultServices(siteHome string) []ServiceDef {
+// siteUser is the username of that user (e.g. "alice") — required for services
+// that must not run as root (e.g. PostgreSQL uses ManagedUser to drop privs).
+func DefaultServices(siteHome, siteUser string) []ServiceDef {
 	caddyDir := siteHome + "/sites/server/caddy"
 	meiliDir := siteHome + "/sites/server/meilisearch"
 	tsDir := siteHome + "/sites/server/typesense"
 	valkeyDir := siteHome + "/sites/server/valkey"
 	mailpitDir := siteHome + "/sites/server/mailpit"
 	mysqlDir := siteHome + "/sites/server/mysql"
+	postgresDir := siteHome + "/sites/server/postgres"
 	return []ServiceDef{
 		{
 			ID:             "caddy",
@@ -78,17 +85,19 @@ func DefaultServices(siteHome string) []ServiceDef {
 			Log:             valkeyDir + "/valkey.log",
 		},
 		{
-			ID:           "postgres",
-			Label:        "PostgreSQL",
-			Start:        "systemctl start postgresql",
-			Stop:         "systemctl stop postgresql",
-			Restart:      "systemctl restart postgresql",
-			Status:       "systemctl is-active postgresql",
-			StatusRegex:  `(?P<status>active|inactive|failed)`,
-			Version:      "psql --version",
-			VersionRegex: `(?P<version>[\d.]+)`,
-			Log:          "/var/log/postgresql/postgresql-15-main.log",
-			Installable:  true,
+			ID:              "postgres",
+			Label:           "PostgreSQL",
+			Installable:     true,
+			Managed:         true,
+			ManagedCmd:      postgresDir + "/bin/postgres",
+			ManagedArgs:     "-D " + postgresDir + "/data",
+			ManagedDir:      postgresDir,
+			ManagedUser:     siteUser,
+			Version:         postgresDir + "/bin/postgres --version",
+			VersionRegex:    `(?P<version>[\d.]+)`,
+			CredentialsFile: postgresDir + "/config.env",
+			Log:             postgresDir + "/postgres.log",
+			HealthCheck:     postgresDir + "/bin/pg_isready -h 127.0.0.1 -p 5432 -U " + siteUser + " -d postgres",
 		},
 		{
 			ID:              "mysql",
@@ -102,6 +111,7 @@ func DefaultServices(siteHome string) []ServiceDef {
 			VersionRegex:    `(?P<version>[\d.]+)`,
 			CredentialsFile: mysqlDir + "/config.env",
 			Log:             mysqlDir + "/mysql-error.log",
+			HealthCheck:     mysqlDir + "/bin/mysqladmin --socket=" + mysqlDir + "/mysql.sock ping",
 		},
 		{
 			ID:             "meilisearch",

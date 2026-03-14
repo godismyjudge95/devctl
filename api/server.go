@@ -79,6 +79,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/services/{id}/install", s.handleServiceInstall)
 	s.mux.HandleFunc("DELETE /api/services/{id}", s.handleServicePurge)
 	s.mux.HandleFunc("GET /api/services/{id}/logs", s.handleServiceLogs)
+	s.mux.HandleFunc("DELETE /api/services/{id}/logs", s.handleClearServiceLogs)
 	s.mux.HandleFunc("GET /api/services/{id}/credentials", s.handleServiceCredentials)
 	s.mux.HandleFunc("GET /api/services/{id}/details", s.handleGetServiceDetails)
 	s.mux.HandleFunc("GET /api/services/{id}/settings", s.handleGetServiceSettings)

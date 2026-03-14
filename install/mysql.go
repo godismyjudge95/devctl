@@ -114,7 +114,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	// 7. Write config.env with connection info for the credentials panel.
 	fmt.Fprintln(w, "mysql: writing config.env...")
-	envContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=\nDB_USERNAME=root\nDB_PASSWORD=\n"
+	envContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_USERNAME=root\nDB_PASSWORD=\n"
 	if err := os.WriteFile(filepath.Join(mysqlDir, "config.env"), []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("mysql: write config.env: %w", err)
 	}

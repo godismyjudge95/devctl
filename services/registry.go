@@ -38,6 +38,7 @@ func NewRegistry(defs []config.ServiceDef) *Registry {
 			ManagedArgs:     d.ManagedArgs,
 			ManagedDir:      d.ManagedDir,
 			ManagedEnvFile:  d.ManagedEnvFile,
+			ManagedUser:     d.ManagedUser,
 			HealthCheck:     d.HealthCheck,
 		})
 	}

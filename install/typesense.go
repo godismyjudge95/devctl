@@ -47,10 +47,13 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("typesense-%s.tar.gz", typesenseVersion))
 	defer os.Remove(tmpTar)
 
-	// 1. Create directory.
+	// 1. Create directories.
 	fmt.Fprintln(w, "typesense: creating directory...")
 	if err := os.MkdirAll(tsDir, 0755); err != nil {
 		return fmt.Errorf("typesense: create dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tsDir, "data"), 0755); err != nil {
+		return fmt.Errorf("typesense: create data dir: %w", err)
 	}
 
 	// 2. Download tarball.

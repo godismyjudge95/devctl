@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
@@ -29,7 +30,7 @@ func (s *Server) handleGetServiceDetails(w http.ResponseWriter, r *http.Request)
 }
 
 // handleGetServiceSettings returns configurable settings for a service.
-// Only mailpit and php-fpm-* are supported; others return 404.
+// Supported: mailpit, mysql, php-fpm-*. Others return 404.
 func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -45,6 +46,22 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 		writeJSON(w, map[string]string{
 			"http_port": httpPort,
 			"smtp_port": smtpPort,
+		})
+		return
+	}
+
+	if id == "mysql" {
+		port, _ := s.queries.GetSetting(r.Context(), "mysql_port")
+		if port == "" {
+			port = "3306"
+		}
+		bindAddr, _ := s.queries.GetSetting(r.Context(), "mysql_bind_address")
+		if bindAddr == "" {
+			bindAddr = "127.0.0.1"
+		}
+		writeJSON(w, map[string]string{
+			"port":         port,
+			"bind_address": bindAddr,
 		})
 		return
 	}
@@ -102,6 +119,34 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if id == "mysql" {
+		var input struct {
+			Port        string `json:"port"`
+			BindAddress string `json:"bind_address"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "mysql_port", Value: input.Port}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "mysql_bind_address", Value: input.BindAddress}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Restart with updated settings.
+		def, ok := s.registry.Get("mysql")
+		if ok {
+			def = s.mysqlDef(ctx, def)
+			_ = s.manager.Restart(def)
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
+		return
+	}
+
 	if strings.HasPrefix(id, "php-fpm-") {
 		ver := strings.TrimPrefix(id, "php-fpm-")
 		var settings php.GlobalSettings
@@ -128,21 +173,36 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 	writeError(w, fmt.Sprintf("service %q has no configurable settings", id), http.StatusNotFound)
 }
 
-// handleGetServicePHPConfig reads a PHP config file for a php-fpm-* service.
-// This is an alias route that delegates to handleGetPHPConfig using the version
-// extracted from the service ID.
+// handleGetServicePHPConfig reads a config file for a service.
+// Supported: php-fpm-* (php.ini, php-fpm.conf) and mysql (my.cnf).
 func (s *Server) handleGetServicePHPConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !strings.HasPrefix(id, "php-fpm-") {
-		writeError(w, "config files are only available for php-fpm-* services", http.StatusBadRequest)
-		return
-	}
-	ver := strings.TrimPrefix(id, "php-fpm-")
 	file := r.PathValue("file")
 	if file == "" {
 		writeError(w, "file required", http.StatusBadRequest)
 		return
 	}
+
+	if id == "mysql" {
+		path, ok := mysqlConfigFilePath(s.siteHome, file)
+		if !ok {
+			writeError(w, "file must be my.cnf", http.StatusBadRequest)
+			return
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]string{"content": string(content)})
+		return
+	}
+
+	if !strings.HasPrefix(id, "php-fpm-") {
+		writeError(w, "config files are only available for php-fpm-* and mysql services", http.StatusBadRequest)
+		return
+	}
+	ver := strings.TrimPrefix(id, "php-fpm-")
 	path, ok := configFilePath(ver, s.siteHome, file)
 	if !ok {
 		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
@@ -156,24 +216,16 @@ func (s *Server) handleGetServicePHPConfig(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]string{"content": string(content)})
 }
 
-// handlePutServicePHPConfig writes a PHP config file for a php-fpm-* service.
+// handlePutServicePHPConfig writes a config file for a service and restarts it.
+// Supported: php-fpm-* (php.ini, php-fpm.conf) and mysql (my.cnf).
 func (s *Server) handlePutServicePHPConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !strings.HasPrefix(id, "php-fpm-") {
-		writeError(w, "config files are only available for php-fpm-* services", http.StatusBadRequest)
-		return
-	}
-	ver := strings.TrimPrefix(id, "php-fpm-")
 	file := r.PathValue("file")
 	if file == "" {
 		writeError(w, "file required", http.StatusBadRequest)
 		return
 	}
-	path, ok := configFilePath(ver, s.siteHome, file)
-	if !ok {
-		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
-		return
-	}
+
 	var body struct {
 		Content string `json:"content"`
 	}
@@ -181,9 +233,49 @@ func (s *Server) handlePutServicePHPConfig(w http.ResponseWriter, r *http.Reques
 		writeError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	if id == "mysql" {
+		path, ok := mysqlConfigFilePath(s.siteHome, file)
+		if !ok {
+			writeError(w, "file must be my.cnf", http.StatusBadRequest)
+			return
+		}
+		if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Restart MySQL so the new config takes effect.
+		def, ok := s.registry.Get("mysql")
+		if ok {
+			def = s.mysqlDef(r.Context(), def)
+			_ = s.manager.Restart(def)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if !strings.HasPrefix(id, "php-fpm-") {
+		writeError(w, "config files are only available for php-fpm-* and mysql services", http.StatusBadRequest)
+		return
+	}
+	ver := strings.TrimPrefix(id, "php-fpm-")
+	path, ok := configFilePath(ver, s.siteHome, file)
+	if !ok {
+		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
+		return
+	}
 	if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// mysqlConfigFilePath returns the absolute path for a mysql config file,
+// validating that only my.cnf is accessible.
+func mysqlConfigFilePath(siteHome, file string) (string, bool) {
+	if file != "my.cnf" {
+		return "", false
+	}
+	return filepath.Join(siteHome, "sites", "server", "mysql", "my.cnf"), true
 }
