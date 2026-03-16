@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -58,7 +59,7 @@ type PostgresInstaller struct {
 func (p *PostgresInstaller) ServiceID() string { return "postgres" }
 
 func (p *PostgresInstaller) postgresDir() string {
-	return filepath.Join(p.siteHome, "sites", "server", "postgres")
+	return paths.ServiceDir(p.siteHome, "postgres")
 }
 
 // IsInstalled returns true when the postgres server binary is present.
@@ -155,6 +156,17 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("postgres: write config.env: %w", err)
 	}
 
+	// 9. Symlink the most useful client tools into the shared bin dir.
+	binDir := paths.BinDir(p.siteHome)
+	for _, name := range []string{"psql", "pg_dump", "pg_restore", "createdb", "dropdb"} {
+		target := filepath.Join(pgDir, "bin", name)
+		if fileExists(target) {
+			if err := LinkIntoBinDir(binDir, name, target); err != nil {
+				fmt.Fprintf(w, "postgres: warning: %v\n", err)
+			}
+		}
+	}
+
 	fmt.Fprintln(w, "postgres: install complete")
 	return nil
 }
@@ -171,8 +183,14 @@ func (p *PostgresInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "postgres: warning: stop process: %v\n", err)
 	}
 
+	// Remove bin dir symlinks.
+	binDir := paths.BinDir(p.siteHome)
+	for _, name := range []string{"psql", "pg_dump", "pg_restore", "createdb", "dropdb"} {
+		UnlinkFromBinDir(binDir, name)
+	}
+
 	// Remove the entire postgres directory (binaries + data + config).
-	pgDir := filepath.Join(p.siteHome, "sites", "server", "postgres")
+	pgDir := paths.ServiceDir(p.siteHome, "postgres")
 	if err := os.RemoveAll(pgDir); err != nil {
 		return fmt.Errorf("postgres: remove dir: %w", err)
 	}

@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/user"
-	"path/filepath"
+
+	"github.com/danielgormly/devctl/paths"
 )
 
 // Config is the top-level application configuration.
@@ -20,20 +21,16 @@ type Config struct {
 	SiteHome string
 }
 
-// Load creates the devctl config directory if needed and returns a Config.
+// Load resolves the site user and returns a Config.
+// The DB directory is created lazily by db.Open — no manual MkdirAll needed.
 func Load() (*Config, error) {
-	dir, err := configDir()
-	if err != nil {
-		return nil, err
-	}
-
 	siteUser, siteHome, err := resolveSiteUser()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Config{
-		DBPath:   filepath.Join(dir, "devctl.db"),
+		DBPath:   paths.DBPath(siteHome),
 		SiteUser: siteUser,
 		SiteHome: siteHome,
 	}, nil
@@ -56,15 +53,4 @@ func resolveSiteUser() (string, string, error) {
 		return "", "", fmt.Errorf("DEVCTL_SITE_USER %q: %w", name, err)
 	}
 	return u.Username, u.HomeDir, nil
-}
-
-func configDir() (string, error) {
-	// devctl runs as a systemd system service (root). Use a system-wide path
-	// so the config is stable regardless of which user account launched the
-	// process.
-	dir := "/etc/devctl"
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("create config dir: %w", err)
-	}
-	return dir, nil
 }

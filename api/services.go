@@ -9,10 +9,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -356,7 +358,7 @@ func (s *Server) handleServiceCredentials(w http.ResponseWriter, r *http.Request
 		}
 	} else {
 		candidates = []candidate{
-			{s.siteHome + "/sites/server/" + id + "/config.env", ""},
+			{filepath.Join(paths.ServiceDir(s.siteHome, id), "config.env"), ""},
 			{s.siteHome + "/sites/" + id + "/.env", upperID + "_"},
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -33,6 +34,8 @@ type CreateSiteInput struct {
 	Aliases        []string
 	HTTPS          bool
 	AutoDiscovered bool
+	// PublicDir is the subdirectory within RootPath to use as document root (e.g. "public").
+	PublicDir string
 	// SiteType is "php" (default) or "ws" for a WebSocket reverse-proxy site.
 	SiteType string
 	// WSUpstream is the dial address used when SiteType == "ws",
@@ -42,6 +45,9 @@ type CreateSiteInput struct {
 	ParentSiteID string
 	// WorktreeBranch is the branch this worktree is on.
 	WorktreeBranch string
+	// ServiceVhost marks this site as a managed service vhost (e.g. reverb.test).
+	// Service vhosts are excluded from the user-facing sites list.
+	ServiceVhost bool
 }
 
 // Create inserts a site into the DB and provisions its Caddy vhost.
@@ -61,6 +67,10 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 	autoVal := int64(0)
 	if input.AutoDiscovered {
 		autoVal = 1
+	}
+	serviceVhostVal := int64(0)
+	if input.ServiceVhost {
+		serviceVhostVal = 1
 	}
 
 	// Build settings JSON.
@@ -92,6 +102,8 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		Settings:       string(settingsJSON),
 		ParentSiteID:   parentID,
 		WorktreeBranch: worktreeBranch,
+		PublicDir:      input.PublicDir,
+		ServiceVhost:   serviceVhostVal,
 	})
 	if err != nil {
 		return dbq.Site{}, fmt.Errorf("create site db: %w", err)
@@ -159,6 +171,7 @@ func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 		Domain:         domain,
 		RootPath:       dirPath,
 		PHPVersion:     "8.3",
+		PublicDir:      detectPublicDir(dirPath),
 		Aliases:        nil,
 		HTTPS:          true,
 		AutoDiscovered: true,
@@ -226,6 +239,7 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 		Domain:         worktreeDomain,
 		RootPath:       worktreePath,
 		PHPVersion:     phpVersion,
+		PublicDir:      parent.PublicDir,
 		HTTPS:          true,
 		AutoDiscovered: false,
 		ParentSiteID:   parentID,
@@ -300,6 +314,7 @@ func (m *Manager) syncCaddy(site dbq.Site) error {
 		ID:         "vhost-" + site.ID,
 		Hosts:      hosts,
 		RootPath:   site.RootPath,
+		PublicDir:  site.PublicDir,
 		PHPVersion: site.PhpVersion,
 		HTTPS:      site.Https == 1,
 		SiteType:   siteType,
@@ -328,4 +343,18 @@ func DomainToID(domain string) string {
 	id = strings.ReplaceAll(id, ".", "-")
 	id = strings.ReplaceAll(id, "_", "-")
 	return id
+}
+
+// detectPublicDir returns the public subdirectory for a project root path.
+// Laravel/Statamic projects (identified by an "artisan" file) use "public";
+// all other projects default to "".
+func detectPublicDir(rootPath string) string {
+	if _, err := filepath.Abs(rootPath); err != nil {
+		return ""
+	}
+	// artisan file → Laravel or Statamic → public/
+	if info, err := os.Stat(filepath.Join(rootPath, "artisan")); err == nil && !info.IsDir() {
+		return "public"
+	}
+	return ""
 }

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/danielgormly/devctl/paths"
 )
 
 // managedProc holds state for a single supervised child process or goroutine.
@@ -108,7 +110,7 @@ func (s *Supervisor) startEmbedded(def Definition) error {
 func (s *Supervisor) startProcess(def Definition) error {
 	managedDir := def.ManagedDir
 	if managedDir == "" {
-		managedDir = s.siteHome + "/sites/" + def.ID
+		managedDir = paths.ServiceDir(s.siteHome, def.ID)
 	}
 
 	args := strings.Fields(def.ManagedArgs)

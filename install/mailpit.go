@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -25,7 +26,7 @@ type MailpitInstaller struct {
 func (m *MailpitInstaller) ServiceID() string { return "mailpit" }
 
 func (m *MailpitInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(m.siteHome, "sites", "server", "mailpit", "mailpit"))
+	return fileExists(filepath.Join(paths.ServiceDir(m.siteHome, "mailpit"), "mailpit"))
 }
 
 func (m *MailpitInstaller) Install(ctx context.Context) error {
@@ -38,7 +39,7 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	mailpitDir := filepath.Join(m.siteHome, "sites", "server", "mailpit")
+	mailpitDir := paths.ServiceDir(m.siteHome, "mailpit")
 	binPath := filepath.Join(mailpitDir, "mailpit")
 	dataDir := filepath.Join(mailpitDir, "data")
 	envPath := filepath.Join(mailpitDir, "config.env")
@@ -66,7 +67,12 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("mailpit: chmod binary: %w", err)
 	}
 
-	// 4. Write config.env with connection info for Laravel .env.
+	// 4. Symlink into the shared bin dir so mailpit is in PATH.
+	if err := LinkIntoBinDir(paths.BinDir(m.siteHome), "mailpit", binPath); err != nil {
+		fmt.Fprintf(w, "mailpit: warning: %v\n", err)
+	}
+
+	// 5. Write config.env with connection info for Laravel .env.
 	fmt.Fprintln(w, "mailpit: writing config.env...")
 	envContent := "MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\n"
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
@@ -87,8 +93,11 @@ func (m *MailpitInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "mailpit: warning: stop process: %v\n", err)
 	}
 
+	// Remove bin dir symlink.
+	UnlinkFromBinDir(paths.BinDir(m.siteHome), "mailpit")
+
 	// Remove the directory (binary + data + config.env).
-	mailpitDir := filepath.Join(m.siteHome, "sites", "server", "mailpit")
+	mailpitDir := paths.ServiceDir(m.siteHome, "mailpit")
 	if err := os.RemoveAll(mailpitDir); err != nil {
 		return fmt.Errorf("mailpit: remove dir: %w", err)
 	}

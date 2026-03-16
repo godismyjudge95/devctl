@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/paths"
 )
 
 const (
@@ -27,8 +29,10 @@ const (
 // /usr/local/bin/php{ver}.
 //
 // siteHome is the home directory of the non-root site user (e.g. "/home/alice").
+// siteUser is the non-root OS username (e.g. "alice") — PHP-FPM workers run as
+// this user so they can write to site storage directories.
 // The binaries are installed to {siteHome}/sites/server/php/{ver}/.
-func Install(ctx context.Context, ver string, siteHome string) error {
+func Install(ctx context.Context, ver string, siteHome string, siteUser string) error {
 	fullVer, err := resolveFullVersion(ctx, ver)
 	if err != nil {
 		return fmt.Errorf("php %s: resolve version: %w", ver, err)
@@ -83,15 +87,19 @@ func Install(ctx context.Context, ver string, siteHome string) error {
 		return fmt.Errorf("php %s: chmod cli: %w", ver, err)
 	}
 
-	// 6. Symlink CLI binary to /usr/local/bin/php{ver}.
-	symlinkPath := "/usr/local/bin/php" + ver
+	// 6. Symlink CLI binary into ~/sites/server/bin/php{ver}.
+	binDir := paths.BinDir(siteHome)
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("php %s: create bin dir: %w", ver, err)
+	}
+	symlinkPath := filepath.Join(binDir, "php"+ver)
 	_ = os.Remove(symlinkPath) // remove stale symlink if any
 	if err := os.Symlink(cliBin, symlinkPath); err != nil {
 		return fmt.Errorf("php %s: symlink cli: %w", ver, err)
 	}
 
 	// 7. Write php-fpm.conf and php.ini.
-	if err := WriteConfigs(ver, siteHome); err != nil {
+	if err := WriteConfigs(ver, siteHome, siteUser); err != nil {
 		return fmt.Errorf("php %s: write configs: %w", ver, err)
 	}
 
@@ -101,7 +109,7 @@ func Install(ctx context.Context, ver string, siteHome string) error {
 		fmt.Printf("php: configure prepend for %s: %v\n", ver, err)
 	}
 
-	// 9. Update /usr/local/bin/php to point at the highest installed version.
+	// 9. Update ~/sites/server/bin/php to point at the highest installed version.
 	if err := UpdateGlobalSymlink(siteHome); err != nil {
 		fmt.Printf("php: %v\n", err)
 	}
@@ -112,8 +120,8 @@ func Install(ctx context.Context, ver string, siteHome string) error {
 // Uninstall stops the FPM process (caller responsibility), removes the symlink,
 // and deletes the install directory.
 func Uninstall(ctx context.Context, ver string, siteHome string) error {
-	// Remove CLI symlink.
-	symlinkPath := "/usr/local/bin/php" + ver
+	// Remove versioned CLI symlink from ~/sites/server/bin/php{ver}.
+	symlinkPath := filepath.Join(paths.BinDir(siteHome), "php"+ver)
 	if err := os.Remove(symlinkPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("php %s: remove symlink: %w", ver, err)
 	}
@@ -124,7 +132,7 @@ func Uninstall(ctx context.Context, ver string, siteHome string) error {
 		return fmt.Errorf("php %s: remove dir: %w", ver, err)
 	}
 
-	// Update /usr/local/bin/php to point at the new highest installed version.
+	// Update ~/sites/server/bin/php to point at the new highest installed version.
 	if err := UpdateGlobalSymlink(siteHome); err != nil {
 		fmt.Printf("php: %v\n", err)
 	}

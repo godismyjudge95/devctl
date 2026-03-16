@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -13,13 +14,14 @@ import (
 // siteUser is the username of that user (e.g. "alice") — required for services
 // that must not run as root (e.g. PostgreSQL uses ManagedUser to drop privs).
 func DefaultServices(siteHome, siteUser string) []services.Definition {
-	caddyDir := siteHome + "/sites/server/caddy"
-	meiliDir := siteHome + "/sites/server/meilisearch"
-	tsDir := siteHome + "/sites/server/typesense"
-	valkeyDir := siteHome + "/sites/server/valkey"
-	mailpitDir := siteHome + "/sites/server/mailpit"
-	mysqlDir := siteHome + "/sites/server/mysql"
-	postgresDir := siteHome + "/sites/server/postgres"
+	caddyDir := paths.ServiceDir(siteHome, "caddy")
+	meiliDir := paths.ServiceDir(siteHome, "meilisearch")
+	tsDir := paths.ServiceDir(siteHome, "typesense")
+	valkeyDir := paths.ServiceDir(siteHome, "valkey")
+	mailpitDir := paths.ServiceDir(siteHome, "mailpit")
+	mysqlDir := paths.ServiceDir(siteHome, "mysql")
+	postgresDir := paths.ServiceDir(siteHome, "postgres")
+	reverbDir := paths.ServiceDir(siteHome, "reverb")
 	return []services.Definition{
 		{
 			ID:             "caddy",
@@ -146,9 +148,10 @@ func DefaultServices(siteHome, siteUser string) []services.Definition {
 			Managed:        true,
 			ManagedCmd:     "php",
 			ManagedArgs:    "artisan reverb:start --host=127.0.0.1 --port=7383",
-			Version:        `grep -m1 '"version"' ` + siteHome + `/sites/reverb/vendor/laravel/reverb/composer.json`,
+			ManagedDir:     reverbDir,
+			Version:        `grep -m1 '"version"' ` + reverbDir + `/vendor/laravel/reverb/composer.json`,
 			VersionRegex:   `"version": "(?P<version>[^"]+)"`,
-			Log:            siteHome + "/sites/reverb/storage/logs/laravel.log",
+			Log:            reverbDir + "/storage/logs/laravel.log",
 			// Start/Stop/Restart/Status are handled by the Supervisor, not shell commands.
 		},
 		{

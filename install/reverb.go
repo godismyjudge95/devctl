@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
@@ -31,7 +32,7 @@ type ReverbInstaller struct {
 func (r *ReverbInstaller) ServiceID() string { return "reverb" }
 
 func (r *ReverbInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(r.siteHome, "sites", "reverb", "artisan"))
+	return fileExists(filepath.Join(paths.ServiceDir(r.siteHome, "reverb"), "artisan"))
 }
 
 func (r *ReverbInstaller) Install(ctx context.Context) error {
@@ -46,8 +47,8 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	sitesDir := filepath.Join(r.siteHome, "sites")
-	reverbDir := filepath.Join(sitesDir, "reverb")
+	sitesDir := paths.ServerDir(r.siteHome)
+	reverbDir := paths.ServiceDir(r.siteHome, "reverb")
 
 	// 1. Ensure $HOME/sites exists (owned by siteUser).
 	if err := os.MkdirAll(sitesDir, 0755); err != nil {
@@ -97,11 +98,12 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 6. Register the vhost via the site manager.
 	fmt.Fprintln(w, "reverb: creating reverb.test site...")
 	_, err = r.siteManager.Create(ctx, sites.CreateSiteInput{
-		Domain:     "reverb.test",
-		RootPath:   reverbDir,
-		SiteType:   "ws",
-		WSUpstream: "127.0.0.1:7383",
-		HTTPS:      true,
+		Domain:       "reverb.test",
+		RootPath:     reverbDir,
+		SiteType:     "ws",
+		WSUpstream:   "127.0.0.1:7383",
+		HTTPS:        true,
+		ServiceVhost: true,
 	})
 	if err != nil {
 		// Best-effort: site may already exist.
@@ -132,7 +134,7 @@ func (r *ReverbInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove the directory.
-	reverbDir := filepath.Join(r.siteHome, "sites", "reverb")
+	reverbDir := paths.ServiceDir(r.siteHome, "reverb")
 	if err := os.RemoveAll(reverbDir); err != nil {
 		return fmt.Errorf("reverb: remove dir: %w", err)
 	}

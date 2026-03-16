@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useSitesStore } from '@/stores/sites'
-import { getPHPVersions, getSiteBranches, getWorktreeConfig, putWorktreeConfig } from '@/lib/api'
+import { getPHPVersions, getSiteBranches, getWorktreeConfig, putWorktreeConfig, detectSite } from '@/lib/api'
 import type { Site, Branch, WorktreeConfig } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import {
@@ -49,7 +49,20 @@ const dialogOpen = ref(false)
 const creating = ref(false)
 const removingId = ref<string | null>(null)
 const updatingPhpId = ref<string | null>(null)
-const form = ref({ domain: '', root_path: '', php_version: '8.3', https: true, aliases: '' })
+const form = ref({ domain: '', root_path: '', php_version: '8.3', https: true, aliases: '', public_dir: '' })
+const detectedFramework = ref('')
+
+async function onRootPathBlur() {
+  const path = form.value.root_path.trim()
+  if (!path) return
+  try {
+    const result = await detectSite(path)
+    form.value.public_dir = result.public_dir
+    detectedFramework.value = result.framework
+  } catch {
+    // Detection failure is non-fatal; leave fields as-is.
+  }
+}
 
 async function addSite() {
   if (!form.value.domain || !form.value.root_path) return
@@ -61,10 +74,12 @@ async function addSite() {
       php_version: form.value.php_version,
       https: form.value.https ? 1 : 0,
       aliases: form.value.aliases ? form.value.aliases.split(',').map((a: string) => a.trim()) : [],
+      public_dir: form.value.public_dir,
     })
     toast.success(`Site ${form.value.domain} created`)
     dialogOpen.value = false
-    form.value = { domain: '', root_path: '', php_version: phpVersions.value[0] ?? '8.3', https: true, aliases: '' }
+    form.value = { domain: '', root_path: '', php_version: phpVersions.value[0] ?? '8.3', https: true, aliases: '', public_dir: '' }
+    detectedFramework.value = ''
   } catch (e: any) {
     toast.error('Failed to create site', { description: e.message })
   } finally {
@@ -95,6 +110,7 @@ async function changePhpVersion(site: Site, ver: string) {
       https: site.https,
       spx_enabled: site.spx_enabled,
       aliases,
+      public_dir: site.public_dir,
     })
     toast.success(`${site.domain} switched to PHP ${ver}`)
   } catch (e: any) {
@@ -317,6 +333,9 @@ function worktreeCount(siteId: string): number {
               <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono">
                 <GitBranch class="w-3 h-3 mr-1" />{{ site.worktree_branch }}
               </Badge>
+              <Badge v-if="site.public_dir" variant="outline" class="font-mono text-muted-foreground">
+                /{{ site.public_dir }}
+              </Badge>
 
               <div class="ml-auto flex items-center gap-1">
                 <!-- Add Worktree button (only on non-worktree sites) -->
@@ -381,7 +400,17 @@ function worktreeCount(siteId: string): number {
           </div>
           <div class="grid gap-1.5">
             <Label for="root_path">Root Path</Label>
-            <Input id="root_path" v-model="form.root_path" placeholder="/home/user/sites/myapp" class="font-mono" />
+            <Input id="root_path" v-model="form.root_path" placeholder="/home/user/sites/myapp" class="font-mono" @blur="onRootPathBlur" />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="public_dir">
+              Public Directory
+              <span class="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Input id="public_dir" v-model="form.public_dir" placeholder="public" class="font-mono" />
+            <p v-if="detectedFramework" class="text-xs text-muted-foreground">
+              Detected: <span class="capitalize">{{ detectedFramework }}</span>
+            </p>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="grid gap-1.5">

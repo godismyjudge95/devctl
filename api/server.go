@@ -30,6 +30,7 @@ type Server struct {
 	siteManager *sites.Manager
 	installers  map[string]install.Installer
 	siteHome    string // home directory of the non-root site user
+	siteUser    string // OS username of the non-root site user (e.g. "daniel")
 	devctlAddr  string // listen address passed to EnsureHTTPServer (e.g. "127.0.0.1:4000")
 	mux         *http.ServeMux
 	uiFS        embed.FS
@@ -48,6 +49,7 @@ func NewServer(
 	installers map[string]install.Installer,
 	uiFS embed.FS,
 	siteHome string,
+	siteUser string,
 	devctlAddr string,
 ) *Server {
 	s := &Server{
@@ -62,6 +64,7 @@ func NewServer(
 		siteManager: siteManager,
 		installers:  installers,
 		siteHome:    siteHome,
+		siteUser:    siteUser,
 		devctlAddr:  devctlAddr,
 		mux:         http.NewServeMux(),
 		uiFS:        uiFS,
@@ -89,6 +92,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/services/events", s.handleServiceEvents)
 
 	// Sites
+	s.mux.HandleFunc("GET /api/sites/detect", s.handleDetectSite)
 	s.mux.HandleFunc("GET /api/sites", s.handleGetSites)
 	s.mux.HandleFunc("POST /api/sites", s.handleCreateSite)
 	s.mux.HandleFunc("GET /api/sites/{id}", s.handleGetSite)
@@ -129,6 +133,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	s.mux.HandleFunc("GET /api/settings/resolved", s.handleGetResolvedSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	s.mux.HandleFunc("POST /api/restart", s.handleRestart)
 
 	// DNS
 	s.mux.HandleFunc("GET /api/dns/detect-ip", s.handleDNSDetectIP)

@@ -10,6 +10,7 @@ import (
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 )
 
@@ -335,5 +336,5 @@ func mysqlConfigFilePath(siteHome, file string) (string, bool) {
 	if file != "my.cnf" {
 		return "", false
 	}
-	return filepath.Join(siteHome, "sites", "server", "mysql", "my.cnf"), true
+	return filepath.Join(paths.ServiceDir(siteHome, "mysql"), "my.cnf"), true
 }

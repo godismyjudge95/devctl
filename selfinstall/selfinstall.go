@@ -19,14 +19,13 @@ import (
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
 )
 
 const serviceDir = "/etc/systemd/system"
 const serviceName = "devctl.service"
-const dbPath = "/etc/devctl/devctl.db"
-const configDir = "/etc/devctl"
 
 // Run is the entry point for `devctl install`. args is os.Args[2:].
 func Run(args []string) error {
@@ -79,7 +78,7 @@ func Run(args []string) error {
 	}
 
 	// --- 3. Resolve binary install path ---
-	installDir, err := resolveInstallDir(*flagPath, siteHome, sitesDir, *flagYes, r)
+	installDir, err := resolveInstallDir(*flagPath, siteHome, *flagYes, r)
 	if err != nil {
 		return err
 	}
@@ -98,15 +97,20 @@ func Run(args []string) error {
 		fmt.Println()
 	}
 
+	binDir := paths.BinDir(siteHome)
+	profileScript := "/etc/profile.d/devctl.sh"
+
 	// --- Confirmation summary ---
 	if !*flagYes {
 		fmt.Println("devctl will perform the following steps:")
 		fmt.Printf("  1. Copy binary      → %s\n", binaryDest)
 		fmt.Printf("  2. Write service    → %s\n", serviceFile)
 		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
-		fmt.Println("  4. systemctl daemon-reload")
-		fmt.Println("  5. systemctl enable devctl")
-		fmt.Println("  6. systemctl start devctl")
+		fmt.Printf("  4. Link binary      → %s/devctl\n", binDir)
+		fmt.Printf("  5. Write PATH setup → %s\n", profileScript)
+		fmt.Println("  6. systemctl daemon-reload")
+		fmt.Println("  7. systemctl enable devctl")
+		fmt.Println("  8. systemctl start devctl")
 		fmt.Println()
 		fmt.Print("Proceed? [y/N] ")
 		if !confirm(r) {
@@ -128,7 +132,14 @@ func Run(args []string) error {
 			return os.WriteFile(serviceFile, []byte(content), 0644)
 		}},
 		{"Saving sites directory", func() error {
-			return saveSitesDir(sitesDir)
+			return saveSitesDir(siteHome, sitesDir)
+		}},
+		{"Linking binary into bin dir", func() error {
+			return install.LinkIntoBinDir(binDir, "devctl", binaryDest)
+		}},
+		{"Writing profile.d PATH script", func() error {
+			content := fmt.Sprintf("# Added by devctl — do not edit manually\nexport PATH=\"%s:$PATH\"\n", binDir)
+			return os.WriteFile(profileScript, []byte(content), 0644)
 		}},
 		{"Running daemon-reload", func() error {
 			return systemctl("daemon-reload")
@@ -293,13 +304,14 @@ func resolveSitesDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader)
 }
 
 // resolveInstallDir prompts the user to choose or type a binary install directory.
-// sitesDir is offered as one of the preset options.
-func resolveInstallDir(flagVal, siteHome, sitesDir string, skipPrompt bool, r *bufio.Reader) (string, error) {
+func resolveInstallDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader) (string, error) {
 	if flagVal != "" {
 		return filepath.Clean(flagVal), nil
 	}
+	devctlDir := paths.DevctlDir(siteHome)
+
 	if skipPrompt {
-		return "/usr/local/bin", nil
+		return devctlDir, nil
 	}
 
 	type opt struct {
@@ -316,13 +328,8 @@ func resolveInstallDir(flagVal, siteHome, sitesDir string, skipPrompt bool, r *b
 			opts = append(opts, opt{label, path})
 		}
 	}
-	add("/usr/local/bin  [recommended]", "/usr/local/bin")
-	add(sitesDir, sitesDir)
-	// Only show ~/sites as a separate option if sitesDir differs from it.
-	defaultSites := filepath.Join(siteHome, "sites")
-	if defaultSites != sitesDir {
-		add(defaultSites, defaultSites)
-	}
+	add(devctlDir+"  [recommended]", devctlDir)
+	add("/usr/local/bin", "/usr/local/bin")
 	opts = append(opts, opt{"Enter a custom path", ""})
 
 	fmt.Println("Where should the devctl binary be installed?")
@@ -362,8 +369,8 @@ func resolveInstallDir(flagVal, siteHome, sitesDir string, skipPrompt bool, r *b
 }
 
 // saveSitesDir opens (or creates) the devctl SQLite DB and persists sites_watch_dir.
-func saveSitesDir(sitesDir string) error {
-	database, err := db.Open(dbPath)
+func saveSitesDir(siteHome, sitesDir string) error {
+	database, err := db.Open(paths.DBPath(siteHome))
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
@@ -536,6 +543,9 @@ func Uninstall(args []string) error {
 		fmt.Println()
 	}
 
+	// Remove profile.d PATH script (non-interactive, no prompt needed).
+	_ = os.Remove("/etc/profile.d/devctl.sh")
+
 	// Stop and disable the service.
 	if isActive {
 		fmt.Print("Stopping service... ")
@@ -583,6 +593,10 @@ func Uninstall(args []string) error {
 			} else {
 				fmt.Println("✓")
 			}
+			// Also remove the BinDir symlink if siteHome is known.
+			if siteHome != "" {
+				install.UnlinkFromBinDir(paths.BinDir(siteHome), "devctl")
+			}
 		} else {
 			fmt.Printf("  Binary left in place at %s\n", binaryPath)
 		}
@@ -590,21 +604,22 @@ func Uninstall(args []string) error {
 	}
 
 	// --- Optional: remove config directory ---
-	if fileExists(configDir) {
-		fmt.Printf("Remove config directory (%s)? [y/N] ", configDir)
+	devctlDir := paths.DevctlDir(siteHome)
+	if siteHome != "" && fileExists(devctlDir) {
+		fmt.Printf("Remove devctl data directory (%s)? [y/N] ", devctlDir)
 		fmt.Println()
 		fmt.Println("  This contains the database and settings. The sites directory will NOT be touched.")
 		fmt.Print("  Confirm removal? [y/N] ")
 		if *flagYes || confirm(r) {
-			fmt.Print("Removing config directory... ")
-			if err := os.RemoveAll(configDir); err != nil {
+			fmt.Print("Removing devctl data directory... ")
+			if err := os.RemoveAll(devctlDir); err != nil {
 				fmt.Println("✗")
-				fmt.Printf("  warning: could not remove config dir: %v\n", err)
+				fmt.Printf("  warning: could not remove devctl data dir: %v\n", err)
 			} else {
 				fmt.Println("✓")
 			}
 		} else {
-			fmt.Printf("  Config directory left in place at %s\n", configDir)
+			fmt.Printf("  Data directory left in place at %s\n", devctlDir)
 		}
 		fmt.Println()
 	}
@@ -632,20 +647,19 @@ func Uninstall(args []string) error {
 	return nil
 }
 
-// readSiteHome opens the config DB and returns the site_home setting value.
-// Returns an empty string if the DB does not exist or the setting is missing.
+// readSiteHome resolves the site owner's home directory by looking up the
+// SUDO_USER environment variable. This is always set when running via
+// `sudo devctl uninstall`. Returns an empty string if it cannot be determined.
 func readSiteHome() string {
-	database, err := db.Open(dbPath)
+	name := os.Getenv("SUDO_USER")
+	if name == "" {
+		return ""
+	}
+	u, err := user.Lookup(name)
 	if err != nil {
 		return ""
 	}
-	defer database.Close()
-	queries := dbq.New(database)
-	val, err := queries.GetSetting(context.Background(), "site_home")
-	if err != nil {
-		return ""
-	}
-	return val
+	return u.HomeDir
 }
 
 // purgeInstalledServices removes all devctl-managed service binaries that are

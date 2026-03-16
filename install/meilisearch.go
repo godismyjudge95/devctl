@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
@@ -30,7 +31,7 @@ type MeilisearchInstaller struct {
 func (m *MeilisearchInstaller) ServiceID() string { return "meilisearch" }
 
 func (m *MeilisearchInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(m.siteHome, "sites", "server", "meilisearch", "meilisearch"))
+	return fileExists(filepath.Join(paths.ServiceDir(m.siteHome, "meilisearch"), "meilisearch"))
 }
 
 func (m *MeilisearchInstaller) Install(ctx context.Context) error {
@@ -43,7 +44,7 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		return nil
 	}
 
-	meiliDir := filepath.Join(m.siteHome, "sites", "server", "meilisearch")
+	meiliDir := paths.ServiceDir(m.siteHome, "meilisearch")
 	binPath := filepath.Join(meiliDir, "meilisearch")
 	envPath := filepath.Join(meiliDir, "config.env")
 
@@ -62,7 +63,12 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		return fmt.Errorf("meilisearch: chmod binary: %w", err)
 	}
 
-	// 3. Generate a random 32-byte hex master key.
+	// 3. Symlink into the shared bin dir so meilisearch is in PATH.
+	if err := LinkIntoBinDir(paths.BinDir(m.siteHome), "meilisearch", binPath); err != nil {
+		fmt.Fprintf(w, "meilisearch: warning: %v\n", err)
+	}
+
+	// 4. Generate a random 32-byte hex master key.
 	key, err := generateRandomHex(32)
 	if err != nil {
 		return fmt.Errorf("meilisearch: generate master key: %w", err)
@@ -109,8 +115,11 @@ func (m *MeilisearchInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
+	// Remove bin dir symlink.
+	UnlinkFromBinDir(paths.BinDir(m.siteHome), "meilisearch")
+
 	// Remove the directory.
-	meiliDir := filepath.Join(m.siteHome, "sites", "server", "meilisearch")
+	meiliDir := paths.ServiceDir(m.siteHome, "meilisearch")
 	if err := os.RemoveAll(meiliDir); err != nil {
 		return fmt.Errorf("meilisearch: remove dir: %w", err)
 	}

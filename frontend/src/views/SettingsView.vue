@@ -1,18 +1,52 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { Download, ShieldCheck } from 'lucide-vue-next'
+import { Download, ShieldCheck, RotateCw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import { restartDevctl } from '@/lib/api'
 
 const store = useSettingsStore()
 onMounted(() => store.load())
 
 function save(key: string, value: string) {
   store.save({ [key]: value })
+}
+
+const restarting = ref(false)
+const restartStatus = ref<'idle' | 'restarting' | 'reconnecting' | 'done' | 'error'>('idle')
+
+async function saveAndRestart() {
+  restarting.value = true
+  restartStatus.value = 'restarting'
+  try {
+    await restartDevctl()
+  } catch {
+    // The process may die before it can send a response — that's fine.
+  }
+  restartStatus.value = 'reconnecting'
+  // Poll /api/settings until the server comes back up.
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 800))
+    try {
+      const res = await fetch('/api/settings')
+      if (res.ok) {
+        await store.load()
+        restartStatus.value = 'done'
+        restarting.value = false
+        setTimeout(() => { restartStatus.value = 'idle' }, 3000)
+        return
+      }
+    } catch {
+      // server not up yet — keep polling
+    }
+  }
+  restartStatus.value = 'error'
+  restarting.value = false
 }
 
 async function downloadCert() {
@@ -54,8 +88,8 @@ async function trustCert() {
             <Label for="devctl_host">Bind Host</Label>
             <Input
               id="devctl_host"
-              :value="store.settings['devctl_host']"
-              @change="save('devctl_host', ($event.target as HTMLInputElement).value)"
+              v-model="store.settings['devctl_host']"
+              @change="save('devctl_host', store.settings['devctl_host'] ?? '')"
               class="font-mono"
             />
           </div>
@@ -63,8 +97,8 @@ async function trustCert() {
             <Label for="devctl_port">Port</Label>
             <Input
               id="devctl_port"
-              :value="store.settings['devctl_port']"
-              @change="save('devctl_port', ($event.target as HTMLInputElement).value)"
+              v-model="store.settings['devctl_port']"
+              @change="save('devctl_port', store.settings['devctl_port'] ?? '')"
               class="font-mono"
             />
           </div>
@@ -84,8 +118,8 @@ async function trustCert() {
             <Label for="sites_watch_dir">Watch Directory</Label>
             <Input
               id="sites_watch_dir"
-              :value="store.settings['sites_watch_dir']"
-              @change="save('sites_watch_dir', ($event.target as HTMLInputElement).value)"
+              v-model="store.settings['sites_watch_dir']"
+              @change="save('sites_watch_dir', store.settings['sites_watch_dir'] ?? '')"
               placeholder="$HOME/sites"
               class="font-mono"
             />
@@ -126,13 +160,27 @@ async function trustCert() {
             <Label for="dump_tcp_port">TCP Port</Label>
             <Input
               id="dump_tcp_port"
-              :value="store.settings['dump_tcp_port']"
-              @change="save('dump_tcp_port', ($event.target as HTMLInputElement).value)"
+              v-model="store.settings['dump_tcp_port']"
+              @change="save('dump_tcp_port', store.settings['dump_tcp_port'] ?? '')"
               class="font-mono"
             />
           </div>
         </CardContent>
       </Card>
+
+      <Separator />
+
+      <!-- Save & Restart -->
+      <div class="flex items-center gap-4">
+        <Button :disabled="restarting" @click="saveAndRestart">
+          <RotateCw class="w-4 h-4" :class="restarting ? 'animate-spin' : ''" />
+          Save &amp; Restart
+        </Button>
+        <span v-if="restartStatus === 'restarting'" class="text-sm text-muted-foreground">Restarting…</span>
+        <span v-else-if="restartStatus === 'reconnecting'" class="text-sm text-muted-foreground">Waiting for server…</span>
+        <span v-else-if="restartStatus === 'done'" class="text-sm text-green-600">Restarted successfully.</span>
+        <span v-else-if="restartStatus === 'error'" class="text-sm text-destructive">Server did not come back in time. Check journalctl.</span>
+      </div>
 
     </div>
   </div>

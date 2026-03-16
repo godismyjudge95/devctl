@@ -34,6 +34,8 @@ type Site struct {
 	Settings       string    `db:"settings" json:"settings"`
 	ParentSiteID   *string   `db:"parent_site_id" json:"parent_site_id"`
 	WorktreeBranch *string   `db:"worktree_branch" json:"worktree_branch"`
+	PublicDir      string    `db:"public_dir" json:"public_dir"`
+	ServiceVhost   int64     `db:"service_vhost" json:"service_vhost"`
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }

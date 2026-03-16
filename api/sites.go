@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/sites"
 )
 
@@ -18,10 +19,11 @@ type siteRequest struct {
 	Aliases    []string `json:"aliases"`
 	SPXEnabled bool     `json:"spx_enabled"`
 	HTTPS      bool     `json:"https"`
+	PublicDir  string   `json:"public_dir"`
 }
 
 func (s *Server) handleGetSites(w http.ResponseWriter, r *http.Request) {
-	all, err := s.queries.GetAllSites(context.Background())
+	all, err := s.queries.GetUserSites(context.Background())
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -41,12 +43,19 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-detect public_dir if the caller didn't supply one.
+	publicDir := req.PublicDir
+	if publicDir == "" {
+		publicDir = DetectPublicDir(req.RootPath)
+	}
+
 	site, err := s.siteManager.Create(r.Context(), sites.CreateSiteInput{
 		Domain:     req.Domain,
 		RootPath:   req.RootPath,
 		PHPVersion: req.PHPVersion,
 		Aliases:    req.Aliases,
 		HTTPS:      req.HTTPS,
+		PublicDir:  publicDir,
 	})
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
@@ -101,6 +110,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		SpxEnabled: spx,
 		Https:      httpsVal,
 		Settings:   existing.Settings,
+		PublicDir:  req.PublicDir,
 		ID:         id,
 	})
 	if err != nil {
@@ -118,11 +128,21 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		ID:         "vhost-" + site.ID,
 		Hosts:      hosts,
 		RootPath:   site.RootPath,
+		PublicDir:  site.PublicDir,
 		PHPVersion: site.PhpVersion,
 		HTTPS:      site.Https == 1,
 		SiteType:   settings["site_type"],
 		WSUpstream: settings["ws_upstream"],
 	})
+
+	// Ensure the PHP-FPM process for the selected version is running.
+	if site.PhpVersion != "" && settings["site_type"] != "ws" {
+		fpmID := php.FPMServiceID(site.PhpVersion)
+		if !s.supervisor.IsRunning(fpmID) {
+			def := s.phpFPMServiceDef(site.PhpVersion)
+			_ = s.supervisor.Start(def)
+		}
+	}
 
 	writeJSON(w, site)
 }

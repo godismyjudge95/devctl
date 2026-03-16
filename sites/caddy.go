@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -70,6 +71,7 @@ type VhostConfig struct {
 	ID         string   // unique route @id, e.g. "vhost-myapp-test"
 	Hosts      []string // all domains (primary + aliases)
 	RootPath   string
+	PublicDir  string // subdirectory within RootPath to use as document root (e.g. "public")
 	PHPVersion string // e.g. "8.3"
 	HTTPS      bool
 	// SiteType is "php" (default) or "ws" for a WebSocket reverse proxy.
@@ -244,6 +246,12 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 
 	sock := fmt.Sprintf("unix//run/php/php%s-fpm.sock", cfg.PHPVersion)
 
+	// Compute the effective document root (project root + optional public subdirectory).
+	effectiveRoot := cfg.RootPath
+	if cfg.PublicDir != "" {
+		effectiveRoot = filepath.Join(cfg.RootPath, cfg.PublicDir)
+	}
+
 	return map[string]interface{}{
 		"@id":      cfg.ID,
 		"match":    []map[string]interface{}{{"host": cfg.Hosts}},
@@ -256,12 +264,12 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 					{
 						"match": []map[string]interface{}{
 							{"file": map[string]interface{}{
-								"root":      cfg.RootPath,
+								"root":      effectiveRoot,
 								"try_files": []string{"{http.request.uri.path}"},
 							}},
 						},
 						"handle": []map[string]interface{}{
-							{"handler": "file_server", "root": cfg.RootPath},
+							{"handler": "file_server", "root": effectiveRoot},
 						},
 					},
 					// Everything else: rewrite to index.php and pass to PHP-FPM.
@@ -280,7 +288,7 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 								"upstreams": []map[string]interface{}{{"dial": sock}},
 								"transport": map[string]interface{}{
 									"protocol":   "fastcgi",
-									"root":       cfg.RootPath,
+									"root":       effectiveRoot,
 									"split_path": []string{".php"},
 								},
 							},

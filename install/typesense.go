@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
@@ -28,7 +29,7 @@ type TypesenseInstaller struct {
 func (t *TypesenseInstaller) ServiceID() string { return "typesense" }
 
 func (t *TypesenseInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(t.siteHome, "sites", "server", "typesense", "typesense-server"))
+	return fileExists(filepath.Join(paths.ServiceDir(t.siteHome, "typesense"), "typesense-server"))
 }
 
 func (t *TypesenseInstaller) Install(ctx context.Context) error {
@@ -41,7 +42,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	tsDir := filepath.Join(t.siteHome, "sites", "server", "typesense")
+	tsDir := paths.ServiceDir(t.siteHome, "typesense")
 	binPath := filepath.Join(tsDir, "typesense-server")
 	envPath := filepath.Join(tsDir, "config.env")
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("typesense-%s.tar.gz", typesenseVersion))
@@ -71,7 +72,12 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("typesense: chmod binary: %w", err)
 	}
 
-	// 4. Generate a random 32-byte hex API key.
+	// 4. Symlink into the shared bin dir so typesense-server is in PATH.
+	if err := LinkIntoBinDir(paths.BinDir(t.siteHome), "typesense-server", binPath); err != nil {
+		fmt.Fprintf(w, "typesense: warning: %v\n", err)
+	}
+
+	// 5. Generate a random 32-byte hex API key.
 	key, err := generateRandomHex(32)
 	if err != nil {
 		return fmt.Errorf("typesense: generate api key: %w", err)
@@ -118,8 +124,11 @@ func (t *TypesenseInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
+	// Remove bin dir symlink.
+	UnlinkFromBinDir(paths.BinDir(t.siteHome), "typesense-server")
+
 	// Remove the directory.
-	tsDir := filepath.Join(t.siteHome, "sites", "server", "typesense")
+	tsDir := paths.ServiceDir(t.siteHome, "typesense")
 	if err := os.RemoveAll(tsDir); err != nil {
 		return fmt.Errorf("typesense: remove dir: %w", err)
 	}

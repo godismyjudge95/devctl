@@ -8,21 +8,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-)
 
-// PrependPath is the well-known location devctl writes prepend.php to.
-const PrependPath = "/etc/devctl/prepend.php"
+	"github.com/danielgormly/devctl/paths"
+)
 
 //go:embed prepend.php
 var prependPHP []byte
 
-// InstallPrepend writes the embedded prepend.php to PrependPath.
+// InstallPrepend writes the embedded prepend.php to paths.PrependPath(siteHome).
 // Safe to call on every startup — it is idempotent.
-func InstallPrepend() error {
-	if err := os.MkdirAll(filepath.Dir(PrependPath), 0755); err != nil {
-		return fmt.Errorf("create %s dir: %w", filepath.Dir(PrependPath), err)
+func InstallPrepend(siteHome string) error {
+	p := paths.PrependPath(siteHome)
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		return fmt.Errorf("create %s dir: %w", filepath.Dir(p), err)
 	}
-	return os.WriteFile(PrependPath, prependPHP, 0644)
+	return os.WriteFile(p, prependPHP, 0644)
 }
 
 // GlobalSettings are the php.ini keys we expose for editing.
@@ -68,7 +68,7 @@ func ConfigurePrepend(ctx context.Context, ver, siteHome string) error {
 	}
 
 	const key = "auto_prepend_file"
-	line := key + " = " + PrependPath
+	line := key + " = " + paths.PrependPath(siteHome)
 	lines := strings.Split(string(input), "\n")
 	found := false
 	for i, l := range lines {
@@ -92,7 +92,9 @@ func ConfigurePrepend(ctx context.Context, ver, siteHome string) error {
 
 // WriteConfigs generates php-fpm.conf and php.ini for the given version.
 // Called during Install to create the initial config files.
-func WriteConfigs(ver, siteHome string) error {
+// siteUser is the non-root OS user who owns the sites directory (e.g. "daniel").
+// PHP-FPM worker processes run as this user so they can write to site storage dirs.
+func WriteConfigs(ver, siteHome, siteUser string) error {
 	phpDir := PHPDir(ver, siteHome)
 	socketPath := FPMSocket(ver)
 	iniPath := fpmIniPath(ver, siteHome)
@@ -110,14 +112,17 @@ post_max_size = 128M
 	}
 
 	// Write php-fpm.conf.
+	// Run workers as siteUser so they can write to site storage directories.
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
 [global]
 error_log = %s/php-fpm.log
 
 [www]
+user = %s
+group = %s
 listen = %s
-listen.owner = root
-listen.group = root
+listen.owner = %s
+listen.group = %s
 listen.mode = 0660
 pm = dynamic
 pm.max_children = 10
@@ -126,7 +131,7 @@ pm.min_spare_servers = 1
 pm.max_spare_servers = 4
 php_admin_value[error_log] = %s/php-fpm-www.log
 php_admin_flag[log_errors] = on
-`, ver, phpDir, socketPath, phpDir)
+`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -39,7 +40,7 @@ type MySQLInstaller struct {
 func (m *MySQLInstaller) ServiceID() string { return "mysql" }
 
 func (m *MySQLInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(m.siteHome, "sites", "server", "mysql", "bin", "mysqld"))
+	return fileExists(filepath.Join(paths.ServiceDir(m.siteHome, "mysql"), "bin", "mysqld"))
 }
 
 func (m *MySQLInstaller) Install(ctx context.Context) error {
@@ -52,7 +53,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	mysqlDir := filepath.Join(m.siteHome, "sites", "server", "mysql")
+	mysqlDir := paths.ServiceDir(m.siteHome, "mysql")
 	dataDir := filepath.Join(mysqlDir, "data")
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-%s-minimal.tar.xz", mysqlVersion))
 	defer os.Remove(tmpTar)
@@ -119,6 +120,17 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("mysql: write config.env: %w", err)
 	}
 
+	// 8. Symlink client tools into the shared bin dir.
+	binDir := paths.BinDir(m.siteHome)
+	for _, name := range []string{"mysql", "mysqldump", "mysqladmin"} {
+		target := filepath.Join(mysqlDir, "bin", name)
+		if fileExists(target) {
+			if err := LinkIntoBinDir(binDir, name, target); err != nil {
+				fmt.Fprintf(w, "mysql: warning: %v\n", err)
+			}
+		}
+	}
+
 	fmt.Fprintln(w, "mysql: install complete")
 	return nil
 }
@@ -133,8 +145,14 @@ func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "mysql: warning: stop process: %v\n", err)
 	}
 
+	// Remove bin dir symlinks.
+	binDir := paths.BinDir(m.siteHome)
+	for _, name := range []string{"mysql", "mysqldump", "mysqladmin"} {
+		UnlinkFromBinDir(binDir, name)
+	}
+
 	// Remove the entire mysql directory (binary tree + data + config).
-	mysqlDir := filepath.Join(m.siteHome, "sites", "server", "mysql")
+	mysqlDir := paths.ServiceDir(m.siteHome, "mysql")
 	if err := os.RemoveAll(mysqlDir); err != nil {
 		return fmt.Errorf("mysql: remove dir: %w", err)
 	}

@@ -1,6 +1,9 @@
 -- name: GetAllSites :many
 SELECT * FROM sites ORDER BY created_at ASC;
 
+-- name: GetUserSites :many
+SELECT * FROM sites WHERE service_vhost = 0 ORDER BY created_at ASC;
+
 -- name: GetSite :one
 SELECT * FROM sites WHERE id = ? LIMIT 1;
 
@@ -14,13 +17,13 @@ SELECT * FROM sites WHERE root_path = ? LIMIT 1;
 SELECT * FROM sites WHERE parent_site_id = ? ORDER BY created_at ASC;
 
 -- name: CreateSite :one
-INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateSite :one
 UPDATE sites
-SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, updated_at = datetime('now')
+SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, public_dir = ?, updated_at = datetime('now')
 WHERE id = ?
 RETURNING *;
 

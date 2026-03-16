@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -31,7 +32,7 @@ func NewCaddyInstaller(supervisor *services.Supervisor, siteHome string) *CaddyI
 func (c *CaddyInstaller) ServiceID() string { return "caddy" }
 
 func (c *CaddyInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(c.siteHome, "sites", "server", "caddy", "caddy"))
+	return fileExists(filepath.Join(paths.ServiceDir(c.siteHome, "caddy"), "caddy"))
 }
 
 func (c *CaddyInstaller) Install(ctx context.Context) error {
@@ -44,7 +45,7 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	caddyDir := filepath.Join(c.siteHome, "sites", "server", "caddy")
+	caddyDir := paths.ServiceDir(c.siteHome, "caddy")
 	binPath := filepath.Join(caddyDir, "caddy")
 	tmpTar := filepath.Join(os.TempDir(), "caddy-linux-amd64.tar.gz")
 	defer os.Remove(tmpTar)
@@ -70,7 +71,12 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("caddy: chmod binary: %w", err)
 	}
 
-	// 4. Write env file so the supervisor sets HOME to caddyDir,
+	// 4. Symlink into the shared bin dir so caddy is in PATH.
+	if err := LinkIntoBinDir(paths.BinDir(c.siteHome), "caddy", binPath); err != nil {
+		fmt.Fprintf(w, "caddy: warning: %v\n", err)
+	}
+
+	// 5. Write env file so the supervisor sets HOME to caddyDir,
 	//    which redirects Caddy's autosave.json and internal CA data
 	//    to a path devctl controls.
 	envPath := filepath.Join(caddyDir, "caddy.env")
@@ -92,8 +98,11 @@ func (c *CaddyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "caddy: warning: stop process: %v\n", err)
 	}
 
+	// Remove bin dir symlink.
+	UnlinkFromBinDir(paths.BinDir(c.siteHome), "caddy")
+
 	// Remove the directory (binary + data).
-	caddyDir := filepath.Join(c.siteHome, "sites", "server", "caddy")
+	caddyDir := paths.ServiceDir(c.siteHome, "caddy")
 	if err := os.RemoveAll(caddyDir); err != nil {
 		return fmt.Errorf("caddy: remove dir: %w", err)
 	}

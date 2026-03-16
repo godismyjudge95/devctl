@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
@@ -306,4 +307,26 @@ func lsbReleaseName(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("empty lsb_release output")
 	}
 	return name, nil
+}
+
+// LinkIntoBinDir creates (or replaces) a symlink named `name` inside binDir
+// pointing at targetBinary. The bin directory is created if absent. The
+// operation is idempotent — any existing file or symlink at the destination is
+// removed first.
+func LinkIntoBinDir(binDir, name, targetBinary string) error {
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("bin dir: mkdir: %w", err)
+	}
+	dest := filepath.Join(binDir, name)
+	_ = os.Remove(dest) // remove stale symlink or file
+	if err := os.Symlink(targetBinary, dest); err != nil {
+		return fmt.Errorf("bin dir: symlink %s → %s: %w", name, targetBinary, err)
+	}
+	return nil
+}
+
+// UnlinkFromBinDir removes the named symlink from binDir. A missing file is
+// not treated as an error.
+func UnlinkFromBinDir(binDir, name string) {
+	_ = os.Remove(filepath.Join(binDir, name))
 }

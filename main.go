@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,6 +49,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "open":
+			if err := runOpen(); err != nil {
+				fmt.Fprintf(os.Stderr, "devctl open: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "--help", "-h", "help":
 			fmt.Print(usage)
 			return
@@ -63,6 +70,7 @@ const usage = `Usage: devctl <command> [flags]
 
 Commands:
   (no command)   Start the devctl daemon (requires root)
+  open           Open the current project's .test URL in the browser
   install        Install devctl as a systemd service
   uninstall      Remove the devctl systemd service
   version        Print the version and exit
@@ -73,7 +81,7 @@ install flags:
                  (auto-detected from SUDO_USER if omitted)
   --sites-dir    Directory where sites are stored (default: ~/sites)
   --path         Directory to install the devctl binary into
-                 (default: /usr/local/bin)
+                 (default: ~/sites/server/devctl)
   --yes          Skip all confirmation prompts (for scripted installs)
 
 uninstall flags:
@@ -134,8 +142,22 @@ func run() error {
 	// ConfigurePrepend (which writes to php.ini and reloads FPM) is NOT called
 	// here; it runs only when a PHP version is explicitly installed via the UI.
 	done = step("php prepend")
-	if err := php.InstallPrepend(); err != nil {
+	if err := php.InstallPrepend(cfg.SiteHome); err != nil {
 		log.Printf("php: install prepend: %v", err)
+	}
+	done()
+
+	// --- PHP-FPM config refresh ---
+	// Re-write php-fpm.conf for every installed version on startup.
+	// This ensures the pool user/group is always up to date (e.g. if the
+	// site user changed since the last install).
+	done = step("php-fpm config refresh")
+	if phpVersions, err := php.InstalledVersions(cfg.SiteHome); err == nil {
+		for _, v := range phpVersions {
+			if err := php.WriteConfigs(v.Version, cfg.SiteHome, cfg.SiteUser); err != nil {
+				log.Printf("php: refresh config for %s: %v", v.Version, err)
+			}
+		}
 	}
 	done()
 
@@ -179,8 +201,16 @@ func run() error {
 			}
 		}
 	}
-
-	// --- Sites ---
+	// Auto-start all installed PHP-FPM versions.
+	for _, def := range registry.All() {
+		if def.Managed && isPHPFPMDef(def) {
+			if _, statErr := os.Stat(def.ManagedCmd); statErr == nil {
+				if err := supervisor.Start(def); err != nil {
+					log.Printf("supervisor: auto-start %s: %v", def.ID, err)
+				}
+			}
+		}
+	}
 	done = step("caddy ensure http server")
 	caddyClient := sites.NewCaddyClient(caddyAdminURL)
 	siteManager := sites.NewManager(database, caddyClient)
@@ -229,7 +259,7 @@ func run() error {
 	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
 	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, addr)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, cfg.SiteUser, addr)
 
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {
@@ -323,5 +353,5 @@ func phpFPMDefinition(ver, siteHome string) services.Definition {
 
 // isPHPFPMDef reports whether a Definition was created by phpFPMDefinition.
 func isPHPFPMDef(def services.Definition) bool {
-	return len(def.ID) > 9 && def.ID[:9] == "php-fpm-"
+	return strings.HasPrefix(def.ID, "php-fpm-")
 }

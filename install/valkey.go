@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/ulikunitz/xz"
 )
@@ -41,7 +42,7 @@ type ValkeyInstaller struct {
 func (v *ValkeyInstaller) ServiceID() string { return "redis" }
 
 func (v *ValkeyInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(v.siteHome, "sites", "server", "valkey", "valkey-server"))
+	return fileExists(filepath.Join(paths.ServiceDir(v.siteHome, "valkey"), "valkey-server"))
 }
 
 func (v *ValkeyInstaller) Install(ctx context.Context) error {
@@ -54,7 +55,7 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	valkeyDir := filepath.Join(v.siteHome, "sites", "server", "valkey")
+	valkeyDir := paths.ServiceDir(v.siteHome, "valkey")
 	binPath := filepath.Join(valkeyDir, "valkey-server")
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s.tar.gz", valkeyVersion))
 	defer os.Remove(tmpTar)
@@ -83,7 +84,24 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("valkey: chmod binary: %w", err)
 	}
 
-	// 5. Write config.env with static connection info.
+	// 5. Also extract valkey-cli if present in the tarball.
+	cliBinPath := filepath.Join(valkeyDir, "valkey-cli")
+	if err := extractFromTar(tmpTar, "valkey-cli", cliBinPath); err == nil {
+		_ = os.Chmod(cliBinPath, 0755)
+	}
+
+	// 6. Symlink server (and cli if present) into the shared bin dir.
+	binDir := paths.BinDir(v.siteHome)
+	if err := LinkIntoBinDir(binDir, "valkey-server", binPath); err != nil {
+		fmt.Fprintf(w, "valkey: warning: %v\n", err)
+	}
+	if fileExists(cliBinPath) {
+		if err := LinkIntoBinDir(binDir, "valkey-cli", cliBinPath); err != nil {
+			fmt.Fprintf(w, "valkey: warning: %v\n", err)
+		}
+	}
+
+	// 7. Write config.env with static connection info.
 	envPath := filepath.Join(valkeyDir, "config.env")
 	envContent := "REDIS_HOST=127.0.0.1\nREDIS_PORT=6379\n"
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
@@ -104,8 +122,13 @@ func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "valkey: warning: stop process: %v\n", err)
 	}
 
+	// Remove bin dir symlinks.
+	binDir := paths.BinDir(v.siteHome)
+	UnlinkFromBinDir(binDir, "valkey-server")
+	UnlinkFromBinDir(binDir, "valkey-cli")
+
 	// Remove the directory.
-	valkeyDir := filepath.Join(v.siteHome, "sites", "server", "valkey")
+	valkeyDir := paths.ServiceDir(v.siteHome, "valkey")
 	if err := os.RemoveAll(valkeyDir); err != nil {
 		return fmt.Errorf("valkey: remove dir: %w", err)
 	}

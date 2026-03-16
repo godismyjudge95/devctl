@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/danielgormly/devctl/paths"
 )
 
 func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
@@ -22,7 +24,7 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTLSTrust(w http.ResponseWriter, r *http.Request) {
 	const adminAddr = "localhost:2019"
 
-	cmd := exec.CommandContext(r.Context(), filepath.Join(s.siteHome, "sites/server/caddy/caddy"), "trust", "--address", adminAddr)
+	cmd := exec.CommandContext(r.Context(), filepath.Join(paths.ServiceDir(s.siteHome, "caddy"), "caddy"), "trust", "--address", adminAddr)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out

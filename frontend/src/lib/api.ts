@@ -23,6 +23,7 @@ export interface Site {
   spx_enabled: number
   https: number
   auto_discovered: number
+  public_dir: string
   parent_site_id: string | null
   worktree_branch: string | null
   created_at: string
@@ -181,6 +182,7 @@ export interface SiteInput {
   spx_enabled?: number
   https?: number
   auto_discovered?: number
+  public_dir?: string
 }
 
 // --- Sites ---
@@ -193,6 +195,8 @@ export const updateSite = (id: string, data: SiteInput) =>
 export const deleteSite = (id: string) => request<void>('DELETE', `/api/sites/${id}`)
 export const enableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/enable`)
 export const disableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/disable`)
+export const detectSite = (rootPath: string) =>
+  request<{ public_dir: string; framework: string }>('GET', `/api/sites/detect?root_path=${encodeURIComponent(rootPath)}`)
 
 // --- Worktrees ---
 export const getSiteBranches = (id: string) =>
@@ -384,3 +388,6 @@ export const setPHPConfig = (ver: string, file: string, content: string) =>
 // --- TLS ---
 export const getTLSCertURL = () => '/api/tls/cert'
 export const trustTLS = () => request<{ status: string; output: string }>('POST', '/api/tls/trust')
+
+// --- System ---
+export const restartDevctl = () => request<{ status: string }>('POST', '/api/restart')
