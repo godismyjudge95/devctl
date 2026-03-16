@@ -15,10 +15,10 @@ import (
 //go:embed prepend.php
 var prependPHP []byte
 
-// InstallPrepend writes the embedded prepend.php to paths.PrependPath(siteHome).
+// InstallPrepend writes the embedded prepend.php to paths.PrependPath(serverRoot).
 // Safe to call on every startup — it is idempotent.
-func InstallPrepend(siteHome string) error {
-	p := paths.PrependPath(siteHome)
+func InstallPrepend(serverRoot string) error {
+	p := paths.PrependPath(serverRoot)
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return fmt.Errorf("create %s dir: %w", filepath.Dir(p), err)
 	}
@@ -34,23 +34,23 @@ type GlobalSettings struct {
 }
 
 // GetSettings reads the global settings from the first installed FPM php.ini.
-func GetSettings(ver, siteHome string) (GlobalSettings, error) {
-	iniPath := fpmIniPath(ver, siteHome)
+func GetSettings(ver, serverRoot string) (GlobalSettings, error) {
+	iniPath := fpmIniPath(ver, serverRoot)
 	return readIni(iniPath)
 }
 
 // ApplySettings writes the given settings to all installed PHP-FPM versions.
 // Callers should restart PHP-FPM processes via the supervisor to apply changes.
 // This is a best-effort operation — errors are collected but all versions are attempted.
-func ApplySettings(ctx context.Context, s GlobalSettings, siteHome string) []error {
-	versions, err := InstalledVersions(siteHome)
+func ApplySettings(ctx context.Context, s GlobalSettings, serverRoot string) []error {
+	versions, err := InstalledVersions(serverRoot)
 	if err != nil {
 		return []error{fmt.Errorf("list versions: %w", err)}
 	}
 
 	var errs []error
 	for _, v := range versions {
-		if err := writeIni(fpmIniPath(v.Version, siteHome), s); err != nil {
+		if err := writeIni(fpmIniPath(v.Version, serverRoot), s); err != nil {
 			errs = append(errs, fmt.Errorf("write ini for %s: %w", v.Version, err))
 		}
 	}
@@ -60,15 +60,15 @@ func ApplySettings(ctx context.Context, s GlobalSettings, siteHome string) []err
 // ConfigurePrepend writes auto_prepend_file into the FPM php.ini for the
 // given version. The FPM process must be restarted by the caller (via the
 // supervisor) to pick up the new setting.
-func ConfigurePrepend(ctx context.Context, ver, siteHome string) error {
-	path := fpmIniPath(ver, siteHome)
+func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
+	path := fpmIniPath(ver, serverRoot)
 	input, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 
 	const key = "auto_prepend_file"
-	line := key + " = " + paths.PrependPath(siteHome)
+	line := key + " = " + paths.PrependPath(serverRoot)
 	lines := strings.Split(string(input), "\n")
 	found := false
 	for i, l := range lines {
@@ -92,13 +92,14 @@ func ConfigurePrepend(ctx context.Context, ver, siteHome string) error {
 
 // WriteConfigs generates php-fpm.conf and php.ini for the given version.
 // Called during Install to create the initial config files.
+// serverRoot is the absolute path to the devctl server directory.
 // siteUser is the non-root OS user who owns the sites directory (e.g. "daniel").
 // PHP-FPM worker processes run as this user so they can write to site storage dirs.
-func WriteConfigs(ver, siteHome, siteUser string) error {
-	phpDir := PHPDir(ver, siteHome)
+func WriteConfigs(ver, serverRoot, siteUser string) error {
+	phpDir := PHPDir(ver, serverRoot)
 	socketPath := FPMSocket(ver)
-	iniPath := fpmIniPath(ver, siteHome)
-	fpmConfPath := FPMConfigPath(ver, siteHome)
+	iniPath := fpmIniPath(ver, serverRoot)
+	fpmConfPath := FPMConfigPath(ver, serverRoot)
 
 	// Write php.ini with sensible defaults.
 	ini := fmt.Sprintf(`; devctl-managed php.ini for PHP %s
@@ -139,8 +140,8 @@ php_admin_flag[log_errors] = on
 	return nil
 }
 
-func fpmIniPath(ver, siteHome string) string {
-	return filepath.Join(PHPDir(ver, siteHome), "php.ini")
+func fpmIniPath(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php.ini")
 }
 
 func readIni(path string) (GlobalSettings, error) {

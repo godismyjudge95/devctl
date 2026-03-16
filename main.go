@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -128,7 +129,7 @@ func run() error {
 	dumpTCPPort := ":" + getSetting(ctx, queries, database, "dump_tcp_port", "9912")
 	sitesWatchDir := getSetting(ctx, queries, database, "sites_watch_dir", "")
 	if sitesWatchDir == "" {
-		sitesWatchDir = os.ExpandEnv("$HOME/sites")
+		sitesWatchDir = filepath.Dir(cfg.ServerRoot)
 	}
 	pollIntervalSec := getSetting(ctx, queries, database, "service_poll_interval", "5")
 	pollInterval := parseDuration(pollIntervalSec)
@@ -142,7 +143,7 @@ func run() error {
 	// ConfigurePrepend (which writes to php.ini and reloads FPM) is NOT called
 	// here; it runs only when a PHP version is explicitly installed via the UI.
 	done = step("php prepend")
-	if err := php.InstallPrepend(cfg.SiteHome); err != nil {
+	if err := php.InstallPrepend(cfg.ServerRoot); err != nil {
 		log.Printf("php: install prepend: %v", err)
 	}
 	done()
@@ -152,9 +153,9 @@ func run() error {
 	// This ensures the pool user/group is always up to date (e.g. if the
 	// site user changed since the last install).
 	done = step("php-fpm config refresh")
-	if phpVersions, err := php.InstalledVersions(cfg.SiteHome); err == nil {
+	if phpVersions, err := php.InstalledVersions(cfg.ServerRoot); err == nil {
 		for _, v := range phpVersions {
-			if err := php.WriteConfigs(v.Version, cfg.SiteHome, cfg.SiteUser); err != nil {
+			if err := php.WriteConfigs(v.Version, cfg.ServerRoot, cfg.SiteUser); err != nil {
 				log.Printf("php: refresh config for %s: %v", v.Version, err)
 			}
 		}
@@ -163,18 +164,18 @@ func run() error {
 
 	// --- Services ---
 	done = step("services registry")
-	registry := services.NewRegistry(config.DefaultServices(cfg.SiteHome, cfg.SiteUser))
+	registry := services.NewRegistry(config.DefaultServices(cfg.ServerRoot, cfg.SiteUser))
 	done()
 
-	supervisor := services.NewSupervisor(cfg.SiteHome)
+	supervisor := services.NewSupervisor(cfg.ServerRoot)
 	manager := services.NewManager(registry, supervisor)
 	poller := services.NewPoller(registry, manager, pollInterval)
 
 	// --- PHP-FPM: register installed versions as supervised service definitions ---
 	done = step("php-fpm registry")
-	if phpVersions, err := php.InstalledVersions(cfg.SiteHome); err == nil {
+	if phpVersions, err := php.InstalledVersions(cfg.ServerRoot); err == nil {
 		for _, v := range phpVersions {
-			registry.Register(phpFPMDefinition(v.Version, cfg.SiteHome))
+			registry.Register(phpFPMDefinition(v.Version, cfg.ServerRoot))
 		}
 	} else {
 		log.Printf("php: scan installed versions: %v", err)
@@ -183,7 +184,7 @@ func run() error {
 
 	// Auto-install + auto-start Caddy first so the Admin API is ready before EnsureHTTPServer.
 	// installRegistry isn't built yet at this point, so we instantiate CaddyInstaller directly.
-	caddyInstaller := install.NewCaddyInstaller(supervisor, cfg.SiteHome)
+	caddyInstaller := install.NewCaddyInstaller(supervisor, cfg.ServerRoot)
 	if !caddyInstaller.IsInstalled() {
 		log.Printf("startup: caddy not installed — installing now...")
 		if err := caddyInstaller.Install(ctx); err != nil {
@@ -247,7 +248,7 @@ func run() error {
 	// --- Install registry ---
 	// Build after siteManager and supervisor are ready so ReverbInstaller
 	// can receive its dependencies.
-	installRegistry := install.NewRegistry(siteManager, queries, supervisor, cfg.SiteUser, cfg.SiteHome)
+	installRegistry := install.NewRegistry(siteManager, queries, supervisor, cfg.SiteUser, cfg.ServerRoot, cfg.SiteHome)
 
 	// Wire installer IsInstalled checks into the manager so GetState works.
 	for id, inst := range installRegistry {
@@ -259,7 +260,7 @@ func run() error {
 	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
 	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.SiteHome, cfg.SiteUser, addr)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.ServerRoot, cfg.SiteUser, addr)
 
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {
@@ -336,17 +337,17 @@ func parseDuration(s string) time.Duration {
 // phpFPMDefinition builds a supervised services.Definition for a PHP-FPM version.
 // The process is run as: php-fpm --nodaemonize --fpm-config {dir}/php-fpm.conf
 // --nodaemonize keeps it in the foreground so the supervisor can own the lifecycle.
-func phpFPMDefinition(ver, siteHome string) services.Definition {
+func phpFPMDefinition(ver, serverRoot string) services.Definition {
 	return services.Definition{
 		ID:           php.FPMServiceID(ver),
 		Label:        "PHP " + ver + " FPM",
 		Description:  "PHP " + ver + " FastCGI Process Manager",
 		Managed:      true,
-		ManagedCmd:   php.FPMBinary(ver, siteHome),
-		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, siteHome)),
-		ManagedDir:   php.PHPDir(ver, siteHome),
-		Log:          php.FPMLogPath(ver, siteHome),
-		Version:      php.FPMBinary(ver, siteHome) + " -v",
+		ManagedCmd:   php.FPMBinary(ver, serverRoot),
+		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, serverRoot)),
+		ManagedDir:   php.PHPDir(ver, serverRoot),
+		Log:          php.FPMLogPath(ver, serverRoot),
+		Version:      php.FPMBinary(ver, serverRoot) + " -v",
 		VersionRegex: `PHP (?P<version>[\d.]+)`,
 	}
 }

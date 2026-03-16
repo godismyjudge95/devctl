@@ -16,23 +16,23 @@ const (
 	caddyURL     = "https://github.com/caddyserver/caddy/releases/download/" + caddyVersion + "/caddy_2.10.0_linux_amd64.tar.gz"
 )
 
-// CaddyInstaller downloads the Caddy binary to $HOME/sites/server/caddy/
+// CaddyInstaller downloads the Caddy binary to {serverRoot}/caddy/
 // and runs it as a supervised child process.
 type CaddyInstaller struct {
 	supervisor *services.Supervisor
-	siteHome   string // home directory of the non-root site user (e.g. "/home/alice")
+	serverRoot string // absolute path to the devctl server directory (e.g. "/home/alice/ddev/sites/server")
 }
 
 // NewCaddyInstaller creates a CaddyInstaller. It can be called before the full
-// install registry is built — only supervisor and siteHome are required.
-func NewCaddyInstaller(supervisor *services.Supervisor, siteHome string) *CaddyInstaller {
-	return &CaddyInstaller{supervisor: supervisor, siteHome: siteHome}
+// install registry is built — only supervisor and serverRoot are required.
+func NewCaddyInstaller(supervisor *services.Supervisor, serverRoot string) *CaddyInstaller {
+	return &CaddyInstaller{supervisor: supervisor, serverRoot: serverRoot}
 }
 
 func (c *CaddyInstaller) ServiceID() string { return "caddy" }
 
 func (c *CaddyInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(c.siteHome, "caddy"), "caddy"))
+	return fileExists(filepath.Join(paths.ServiceDir(c.serverRoot, "caddy"), "caddy"))
 }
 
 func (c *CaddyInstaller) Install(ctx context.Context) error {
@@ -45,7 +45,7 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	caddyDir := paths.ServiceDir(c.siteHome, "caddy")
+	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
 	binPath := filepath.Join(caddyDir, "caddy")
 	tmpTar := filepath.Join(os.TempDir(), "caddy-linux-amd64.tar.gz")
 	defer os.Remove(tmpTar)
@@ -72,7 +72,7 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 4. Symlink into the shared bin dir so caddy is in PATH.
-	if err := LinkIntoBinDir(paths.BinDir(c.siteHome), "caddy", binPath); err != nil {
+	if err := LinkIntoBinDir(paths.BinDir(c.serverRoot), "caddy", binPath); err != nil {
 		fmt.Fprintf(w, "caddy: warning: %v\n", err)
 	}
 
@@ -99,10 +99,10 @@ func (c *CaddyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove bin dir symlink.
-	UnlinkFromBinDir(paths.BinDir(c.siteHome), "caddy")
+	UnlinkFromBinDir(paths.BinDir(c.serverRoot), "caddy")
 
 	// Remove the directory (binary + data).
-	caddyDir := paths.ServiceDir(c.siteHome, "caddy")
+	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
 	if err := os.RemoveAll(caddyDir); err != nil {
 		return fmt.Errorf("caddy: remove dir: %w", err)
 	}

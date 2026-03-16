@@ -18,7 +18,7 @@ import (
 	"github.com/danielgormly/devctl/sites"
 )
 
-// ReverbInstaller sets up a fresh Laravel app at $HOME/sites/reverb,
+// ReverbInstaller sets up a fresh Laravel app at {serverRoot}/reverb,
 // configures it as a Reverb broadcasting server, and registers a WS
 // vhost at reverb.test via Caddy.
 type ReverbInstaller struct {
@@ -26,13 +26,14 @@ type ReverbInstaller struct {
 	queries     *dbq.Queries
 	supervisor  *services.Supervisor
 	siteUser    string // non-root OS user who owns ~/sites (e.g. "alice")
-	siteHome    string // home directory of siteUser (e.g. "/home/alice")
+	siteHome    string // home directory of siteUser (e.g. "/home/alice") — used for runAsUserW and composer bin path
+	serverRoot  string // absolute path to the devctl server directory (e.g. "/home/alice/ddev/sites/server")
 }
 
 func (r *ReverbInstaller) ServiceID() string { return "reverb" }
 
 func (r *ReverbInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(r.siteHome, "reverb"), "artisan"))
+	return fileExists(filepath.Join(paths.ServiceDir(r.serverRoot, "reverb"), "artisan"))
 }
 
 func (r *ReverbInstaller) Install(ctx context.Context) error {
@@ -47,8 +48,8 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	sitesDir := paths.ServerDir(r.siteHome)
-	reverbDir := paths.ServiceDir(r.siteHome, "reverb")
+	sitesDir := paths.ServerDir(r.serverRoot)
+	reverbDir := paths.ServiceDir(r.serverRoot, "reverb")
 
 	// 1. Ensure $HOME/sites exists (owned by siteUser).
 	if err := os.MkdirAll(sitesDir, 0755); err != nil {
@@ -134,7 +135,7 @@ func (r *ReverbInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove the directory.
-	reverbDir := paths.ServiceDir(r.siteHome, "reverb")
+	reverbDir := paths.ServiceDir(r.serverRoot, "reverb")
 	if err := os.RemoveAll(reverbDir); err != nil {
 		return fmt.Errorf("reverb: remove dir: %w", err)
 	}

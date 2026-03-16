@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { restartDevctl } from '@/lib/api'
+import { restartDevctl, trustTLS } from '@/lib/api'
 
 const store = useSettingsStore()
 onMounted(() => store.load())
@@ -49,6 +49,10 @@ async function saveAndRestart() {
   restarting.value = false
 }
 
+const trusting = ref(false)
+const trustStatus = ref<'idle' | 'working' | 'done' | 'error'>('idle')
+const trustMessage = ref('')
+
 async function downloadCert() {
   const res = await fetch('/api/tls/cert')
   if (!res.ok) { alert('Failed to fetch certificate'); return }
@@ -60,9 +64,20 @@ async function downloadCert() {
 }
 
 async function trustCert() {
-  const res = await fetch('/api/tls/trust', { method: 'POST' })
-  if (res.ok) alert('Certificate trusted!')
-  else alert('Failed to trust certificate')
+  trusting.value = true
+  trustStatus.value = 'working'
+  trustMessage.value = ''
+  try {
+    const result = await trustTLS()
+    trustStatus.value = 'done'
+    trustMessage.value = result.output || 'Certificate trusted successfully.'
+  } catch (e: unknown) {
+    trustStatus.value = 'error'
+    trustMessage.value = e instanceof Error ? e.message : 'Failed to trust certificate.'
+  } finally {
+    trusting.value = false
+    setTimeout(() => { trustStatus.value = 'idle'; trustMessage.value = '' }, 8000)
+  }
 }
 </script>
 
@@ -135,15 +150,20 @@ async function trustCert() {
           <CardTitle>TLS</CardTitle>
           <CardDescription>Caddy internal CA root certificate management.</CardDescription>
         </CardHeader>
-        <CardContent class="flex flex-wrap gap-2">
-          <Button variant="outline" @click="downloadCert">
-            <Download class="w-4 h-4" />
-            Download Root Certificate
-          </Button>
-          <Button variant="outline" @click="trustCert">
-            <ShieldCheck class="w-4 h-4" />
-            Trust Certificate
-          </Button>
+        <CardContent class="space-y-3">
+          <div class="flex flex-wrap gap-2">
+            <Button variant="outline" @click="downloadCert">
+              <Download class="w-4 h-4" />
+              Download Root Certificate
+            </Button>
+            <Button variant="outline" :disabled="trusting" @click="trustCert">
+              <ShieldCheck class="w-4 h-4" :class="trusting ? 'animate-pulse' : ''" />
+              {{ trusting ? 'Trusting…' : 'Trust Certificate' }}
+            </Button>
+          </div>
+          <p v-if="trustStatus === 'done'" class="text-sm text-green-600 whitespace-pre-wrap">{{ trustMessage }}</p>
+          <p v-else-if="trustStatus === 'error'" class="text-sm text-destructive whitespace-pre-wrap">{{ trustMessage }}</p>
+          <p v-else-if="trustStatus === 'working'" class="text-sm text-muted-foreground">Installing certificate into system and browser trust stores…</p>
         </CardContent>
       </Card>
 

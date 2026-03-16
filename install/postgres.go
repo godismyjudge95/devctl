@@ -44,7 +44,7 @@ func perconaTarURL() string {
 }
 
 // PostgresInstaller downloads the Percona Distribution for PostgreSQL binary
-// tarball to $HOME/sites/server/postgres/, initialises the data directory as
+// tarball to {serverRoot}/postgres/, initialises the data directory as
 // siteUser (PostgreSQL refuses to start as root), and runs postgres as a
 // supervised child process of devctl with privilege drop via ManagedUser.
 //
@@ -52,14 +52,14 @@ func perconaTarURL() string {
 // a system library required by the tarball. No systemd unit.
 type PostgresInstaller struct {
 	supervisor *services.Supervisor
-	siteHome   string // home directory of the non-root site user (e.g. "/home/alice")
+	serverRoot string // absolute path to the devctl server directory
 	siteUser   string // username of the non-root site user (e.g. "alice")
 }
 
 func (p *PostgresInstaller) ServiceID() string { return "postgres" }
 
 func (p *PostgresInstaller) postgresDir() string {
-	return paths.ServiceDir(p.siteHome, "postgres")
+	return paths.ServiceDir(p.serverRoot, "postgres")
 }
 
 // IsInstalled returns true when the postgres server binary is present.
@@ -157,7 +157,7 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 9. Symlink the most useful client tools into the shared bin dir.
-	binDir := paths.BinDir(p.siteHome)
+	binDir := paths.BinDir(p.serverRoot)
 	for _, name := range []string{"psql", "pg_dump", "pg_restore", "createdb", "dropdb"} {
 		target := filepath.Join(pgDir, "bin", name)
 		if fileExists(target) {
@@ -184,13 +184,13 @@ func (p *PostgresInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove bin dir symlinks.
-	binDir := paths.BinDir(p.siteHome)
+	binDir := paths.BinDir(p.serverRoot)
 	for _, name := range []string{"psql", "pg_dump", "pg_restore", "createdb", "dropdb"} {
 		UnlinkFromBinDir(binDir, name)
 	}
 
 	// Remove the entire postgres directory (binaries + data + config).
-	pgDir := paths.ServiceDir(p.siteHome, "postgres")
+	pgDir := paths.ServiceDir(p.serverRoot, "postgres")
 	if err := os.RemoveAll(pgDir); err != nil {
 		return fmt.Errorf("postgres: remove dir: %w", err)
 	}

@@ -6,11 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/paths"
 )
+
+const devctlServiceFile = "/etc/systemd/system/devctl.service"
 
 // runOpen finds the site whose root_path contains the current working directory
 // and opens its URL in the default browser.
@@ -20,12 +23,8 @@ func runOpen() error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("get home directory: %w", err)
-	}
-
-	dbPath := paths.DBPath(home)
+	serverRoot := resolveServerRootForOpen()
+	dbPath := paths.DBPath(serverRoot)
 	database, err := db.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open database: %w\nhint: is devctl installed and running?", err)
@@ -66,4 +65,24 @@ func runOpen() error {
 	}
 
 	return fmt.Errorf("no site found for %q\nhint: run 'devctl' to start the daemon and auto-discover sites", cwd)
+}
+
+// resolveServerRootForOpen reads DEVCTL_SERVER_ROOT from the systemd service
+// file. Falls back to {HOME}/sites/server for legacy installs.
+func resolveServerRootForOpen() string {
+	data, err := os.ReadFile(devctlServiceFile)
+	if err == nil {
+		prefix := "Environment=DEVCTL_SERVER_ROOT="
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, prefix) {
+				if v := strings.TrimPrefix(line, prefix); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	// Legacy fallback.
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "sites", "server")
 }

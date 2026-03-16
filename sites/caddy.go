@@ -134,13 +134,26 @@ func (c *CaddyClient) DeleteVhost(id string) error {
 }
 
 // RootCert fetches the Caddy internal CA root certificate (PEM).
+// It calls /pki/ca/local and extracts the root_certificate field from the JSON
+// response (as opposed to /pki/ca/local/certificates which returns the
+// intermediate certificate chain).
 func (c *CaddyClient) RootCert() ([]byte, error) {
-	resp, err := c.http.Get(c.adminURL + "/pki/ca/local/certificates")
+	resp, err := c.http.Get(c.adminURL + "/pki/ca/local")
 	if err != nil {
 		return nil, fmt.Errorf("caddy pki: %w", err)
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+
+	var result struct {
+		RootCertificate string `json:"root_certificate"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("caddy pki decode: %w", err)
+	}
+	if result.RootCertificate == "" {
+		return nil, fmt.Errorf("caddy pki: root_certificate field is empty")
+	}
+	return []byte(result.RootCertificate), nil
 }
 
 // EnsureHTTPServer ensures the Caddy config has an HTTP server named "devctl"
@@ -194,25 +207,16 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 		},
 	}
 
-	checkTLSURL := fmt.Sprintf("%s/config/apps/tls", c.adminURL)
-	respTLS, err := c.http.Get(checkTLSURL)
+	// Always PUT the TLS automation policy so the internal CA is applied even if
+	// Caddy was restarted and lost its in-memory state. This is idempotent.
+	tlsBody, _ := json.Marshal(tlsAutomation)
+	putTLSURL := fmt.Sprintf("%s/config/apps/tls", c.adminURL)
+	respTLS2, err := c.http.Do(mustRequest("PUT", putTLSURL, tlsBody))
 	if err != nil {
-		return fmt.Errorf("caddy check tls: %w", err)
+		return fmt.Errorf("caddy PUT tls: %w", err)
 	}
-	defer respTLS.Body.Close()
-	existingTLS, _ := io.ReadAll(respTLS.Body)
-
-	// Only set TLS automation if it's not already configured.
-	if respTLS.StatusCode != http.StatusOK || string(existingTLS) == "null" {
-		tlsBody, _ := json.Marshal(tlsAutomation)
-		putTLSURL := fmt.Sprintf("%s/config/apps/tls", c.adminURL)
-		respTLS2, err := c.http.Do(mustRequest("PUT", putTLSURL, tlsBody))
-		if err != nil {
-			return fmt.Errorf("caddy PUT tls: %w", err)
-		}
-		defer respTLS2.Body.Close()
-		io.Copy(io.Discard, respTLS2.Body)
-	}
+	defer respTLS2.Body.Close()
+	io.Copy(io.Discard, respTLS2.Body)
 
 	// Ensure the devctl.test reverse-proxy route is present.
 	if err := c.UpsertVhost(VhostConfig{

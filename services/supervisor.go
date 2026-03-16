@@ -31,19 +31,19 @@ type managedProc struct {
 // Supervisor manages devctl-supervised services (child processes or embedded goroutines).
 // It auto-restarts on crash and stops all children cleanly on shutdown.
 type Supervisor struct {
-	mu       sync.Mutex
-	procs    map[string]*managedProc
-	siteHome string // home directory of the site owner (e.g. "/home/alice")
+	mu         sync.Mutex
+	procs      map[string]*managedProc
+	serverRoot string // server root directory (e.g. "/home/alice/ddev/sites/server")
 }
 
 // NewSupervisor creates an idle Supervisor.
-// siteHome is the home directory of the non-root user who owns ~/sites
-// (e.g. "/home/alice") — used to resolve the working directory of managed
-// child processes.
-func NewSupervisor(siteHome string) *Supervisor {
+// serverRoot is the absolute path to the devctl server directory
+// (e.g. "/home/alice/ddev/sites/server") — used to resolve the working
+// directory of managed child processes.
+func NewSupervisor(serverRoot string) *Supervisor {
 	return &Supervisor{
-		procs:    make(map[string]*managedProc),
-		siteHome: siteHome,
+		procs:      make(map[string]*managedProc),
+		serverRoot: serverRoot,
 	}
 }
 
@@ -110,7 +110,7 @@ func (s *Supervisor) startEmbedded(def Definition) error {
 func (s *Supervisor) startProcess(def Definition) error {
 	managedDir := def.ManagedDir
 	if managedDir == "" {
-		managedDir = paths.ServiceDir(s.siteHome, def.ID)
+		managedDir = paths.ServiceDir(s.serverRoot, def.ID)
 	}
 
 	args := strings.Fields(def.ManagedArgs)

@@ -31,18 +31,18 @@ func valkeyTarURL(ctx context.Context) string {
 }
 
 // ValkeyInstaller downloads the Valkey binary to
-// $HOME/sites/server/valkey/ and runs it as a supervised child process.
+// {serverRoot}/valkey/ and runs it as a supervised child process.
 // Valkey is a Redis-compatible open-source fork; the service ID is kept as
 // "redis" so existing Laravel .env files (REDIS_HOST, etc.) continue to work.
 type ValkeyInstaller struct {
 	supervisor *services.Supervisor
-	siteHome   string // home directory of the non-root site user (e.g. "/home/alice")
+	serverRoot string // absolute path to the devctl server directory
 }
 
 func (v *ValkeyInstaller) ServiceID() string { return "redis" }
 
 func (v *ValkeyInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(v.siteHome, "valkey"), "valkey-server"))
+	return fileExists(filepath.Join(paths.ServiceDir(v.serverRoot, "valkey"), "valkey-server"))
 }
 
 func (v *ValkeyInstaller) Install(ctx context.Context) error {
@@ -55,7 +55,7 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	valkeyDir := paths.ServiceDir(v.siteHome, "valkey")
+	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")
 	binPath := filepath.Join(valkeyDir, "valkey-server")
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s.tar.gz", valkeyVersion))
 	defer os.Remove(tmpTar)
@@ -91,7 +91,7 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 6. Symlink server (and cli if present) into the shared bin dir.
-	binDir := paths.BinDir(v.siteHome)
+	binDir := paths.BinDir(v.serverRoot)
 	if err := LinkIntoBinDir(binDir, "valkey-server", binPath); err != nil {
 		fmt.Fprintf(w, "valkey: warning: %v\n", err)
 	}
@@ -123,12 +123,12 @@ func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove bin dir symlinks.
-	binDir := paths.BinDir(v.siteHome)
+	binDir := paths.BinDir(v.serverRoot)
 	UnlinkFromBinDir(binDir, "valkey-server")
 	UnlinkFromBinDir(binDir, "valkey-cli")
 
 	// Remove the directory.
-	valkeyDir := paths.ServiceDir(v.siteHome, "valkey")
+	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")
 	if err := os.RemoveAll(valkeyDir); err != nil {
 		return fmt.Errorf("valkey: remove dir: %w", err)
 	}

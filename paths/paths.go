@@ -2,6 +2,10 @@
 // devctl owns. All other packages must import this package instead of
 // constructing paths inline.
 //
+// All functions accept serverRoot — the absolute path to the server directory
+// (e.g. "/home/alice/ddev/sites/server"). This is stored in the systemd unit
+// as DEVCTL_SERVER_ROOT and loaded by config.Load().
+//
 // Paths that devctl does NOT own (e.g. /run/php/, /etc/systemd/,
 // /etc/resolv.conf) are intentionally absent — those are managed by the OS or
 // other tools.
@@ -10,53 +14,55 @@ package paths
 import "path/filepath"
 
 // ServerDir returns the root directory for all devctl-managed service data.
+// For historical reasons this accepts serverRoot directly — it is a no-op that
+// exists so callers have a consistent API.
 //
-//	~/sites/server
-func ServerDir(siteHome string) string {
-	return filepath.Join(siteHome, "sites", "server")
+//	serverRoot  (e.g. /home/alice/ddev/sites/server)
+func ServerDir(serverRoot string) string {
+	return serverRoot
 }
 
 // DevctlDir returns the directory used for devctl's own runtime state
 // (database, prepend.php, binary).
 //
-//	~/sites/server/devctl
-func DevctlDir(siteHome string) string {
-	return filepath.Join(ServerDir(siteHome), "devctl")
+//	{serverRoot}/devctl
+func DevctlDir(serverRoot string) string {
+	return filepath.Join(serverRoot, "devctl")
 }
 
 // DBPath returns the absolute path to the devctl SQLite database.
 //
-//	~/sites/server/devctl/devctl.db
-func DBPath(siteHome string) string {
-	return filepath.Join(DevctlDir(siteHome), "devctl.db")
+//	{serverRoot}/devctl/devctl.db
+func DBPath(serverRoot string) string {
+	return filepath.Join(DevctlDir(serverRoot), "devctl.db")
 }
 
 // PrependPath returns the absolute path to the PHP auto-prepend file.
 //
-//	~/sites/server/devctl/prepend.php
-func PrependPath(siteHome string) string {
-	return filepath.Join(DevctlDir(siteHome), "prepend.php")
+//	{serverRoot}/devctl/prepend.php
+func PrependPath(serverRoot string) string {
+	return filepath.Join(DevctlDir(serverRoot), "prepend.php")
 }
 
 // BinaryPath returns the absolute path to the installed devctl binary.
 //
-//	~/sites/server/devctl/devctl
-func BinaryPath(siteHome string) string {
-	return filepath.Join(DevctlDir(siteHome), "devctl")
+//	{serverRoot}/devctl/devctl
+func BinaryPath(serverRoot string) string {
+	return filepath.Join(DevctlDir(serverRoot), "devctl")
 }
 
 // ServiceDir returns the data directory for a managed service.
 //
-//	~/sites/server/<id>
-func ServiceDir(siteHome, id string) string {
-	return filepath.Join(ServerDir(siteHome), id)
+//	{serverRoot}/<id>
+func ServiceDir(serverRoot, id string) string {
+	return filepath.Join(serverRoot, id)
 }
 
 // BinDir returns the shared symlink farm that is prepended to PATH via
 // /etc/profile.d/devctl.sh. Each service installer drops a symlink here on
 // install and removes it on purge.
 //
-//	~/sites/server/bin
-func BinDir(siteHome string) string {
-	return filepath.Join(ServerDir(siteHome), "bin")
+//	{serverRoot}/bin
+func BinDir(serverRoot string) string {
+	return filepath.Join(serverRoot, "bin")
 }

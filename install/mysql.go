@@ -26,7 +26,7 @@ func mysqlTarURL() string {
 }
 
 // MySQLInstaller downloads the MySQL 8.4 LTS "Linux Generic" minimal binary
-// tarball to $HOME/sites/server/mysql/, initialises the data directory, and
+// tarball to {serverRoot}/mysql/, initialises the data directory, and
 // runs mysqld as a supervised child process of devctl.
 //
 // No PPA, no APT packages, no systemd unit for MySQL itself.
@@ -34,13 +34,13 @@ func mysqlTarURL() string {
 // system dependency.
 type MySQLInstaller struct {
 	supervisor *services.Supervisor
-	siteHome   string // home directory of the non-root site user (e.g. "/home/alice")
+	serverRoot string // absolute path to the devctl server directory
 }
 
 func (m *MySQLInstaller) ServiceID() string { return "mysql" }
 
 func (m *MySQLInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(m.siteHome, "mysql"), "bin", "mysqld"))
+	return fileExists(filepath.Join(paths.ServiceDir(m.serverRoot, "mysql"), "bin", "mysqld"))
 }
 
 func (m *MySQLInstaller) Install(ctx context.Context) error {
@@ -53,7 +53,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	mysqlDir := paths.ServiceDir(m.siteHome, "mysql")
+	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
 	dataDir := filepath.Join(mysqlDir, "data")
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-%s-minimal.tar.xz", mysqlVersion))
 	defer os.Remove(tmpTar)
@@ -121,7 +121,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 8. Symlink client tools into the shared bin dir.
-	binDir := paths.BinDir(m.siteHome)
+	binDir := paths.BinDir(m.serverRoot)
 	for _, name := range []string{"mysql", "mysqldump", "mysqladmin"} {
 		target := filepath.Join(mysqlDir, "bin", name)
 		if fileExists(target) {
@@ -146,13 +146,13 @@ func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove bin dir symlinks.
-	binDir := paths.BinDir(m.siteHome)
+	binDir := paths.BinDir(m.serverRoot)
 	for _, name := range []string{"mysql", "mysqldump", "mysqladmin"} {
 		UnlinkFromBinDir(binDir, name)
 	}
 
 	// Remove the entire mysql directory (binary tree + data + config).
-	mysqlDir := paths.ServiceDir(m.siteHome, "mysql")
+	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
 	if err := os.RemoveAll(mysqlDir); err != nil {
 		return fmt.Errorf("mysql: remove dir: %w", err)
 	}

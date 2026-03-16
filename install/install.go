@@ -48,42 +48,43 @@ type Installer interface {
 
 // NewRegistry builds the full installer map, injecting dependencies into
 // installers that need them.
-func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, siteHome string) map[string]Installer {
+func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, serverRoot, siteHome string) map[string]Installer {
 	m := make(map[string]Installer)
 	m["postgres"] = &PostgresInstaller{
 		supervisor: supervisor,
-		siteHome:   siteHome,
+		serverRoot: serverRoot,
 		siteUser:   siteUser,
 	}
-	m["caddy"] = NewCaddyInstaller(supervisor, siteHome)
+	m["caddy"] = NewCaddyInstaller(supervisor, serverRoot)
 	m["reverb"] = &ReverbInstaller{
 		siteManager: siteManager,
 		queries:     queries,
 		supervisor:  supervisor,
 		siteUser:    siteUser,
 		siteHome:    siteHome,
+		serverRoot:  serverRoot,
 	}
 	m["meilisearch"] = &MeilisearchInstaller{
 		siteManager: siteManager,
 		supervisor:  supervisor,
-		siteHome:    siteHome,
+		serverRoot:  serverRoot,
 	}
 	m["typesense"] = &TypesenseInstaller{
 		siteManager: siteManager,
 		supervisor:  supervisor,
-		siteHome:    siteHome,
+		serverRoot:  serverRoot,
 	}
 	m["redis"] = &ValkeyInstaller{
 		supervisor: supervisor,
-		siteHome:   siteHome,
+		serverRoot: serverRoot,
 	}
 	m["mailpit"] = &MailpitInstaller{
 		supervisor: supervisor,
-		siteHome:   siteHome,
+		serverRoot: serverRoot,
 	}
 	m["mysql"] = &MySQLInstaller{
 		supervisor: supervisor,
-		siteHome:   siteHome,
+		serverRoot: serverRoot,
 	}
 	m["dns"] = &DNSInstaller{}
 	return m

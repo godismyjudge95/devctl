@@ -18,18 +18,18 @@ const (
 )
 
 // TypesenseInstaller downloads the Typesense binary to
-// $HOME/sites/server/typesense/, generates an API key, writes config.env,
+// {serverRoot}/typesense/, generates an API key, writes config.env,
 // and registers a Caddy reverse-proxy vhost at typesense.test.
 type TypesenseInstaller struct {
 	siteManager *sites.Manager
 	supervisor  *services.Supervisor
-	siteHome    string // home directory of the non-root site user (e.g. "/home/alice")
+	serverRoot  string // absolute path to the devctl server directory
 }
 
 func (t *TypesenseInstaller) ServiceID() string { return "typesense" }
 
 func (t *TypesenseInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(t.siteHome, "typesense"), "typesense-server"))
+	return fileExists(filepath.Join(paths.ServiceDir(t.serverRoot, "typesense"), "typesense-server"))
 }
 
 func (t *TypesenseInstaller) Install(ctx context.Context) error {
@@ -42,7 +42,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
-	tsDir := paths.ServiceDir(t.siteHome, "typesense")
+	tsDir := paths.ServiceDir(t.serverRoot, "typesense")
 	binPath := filepath.Join(tsDir, "typesense-server")
 	envPath := filepath.Join(tsDir, "config.env")
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("typesense-%s.tar.gz", typesenseVersion))
@@ -73,7 +73,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 4. Symlink into the shared bin dir so typesense-server is in PATH.
-	if err := LinkIntoBinDir(paths.BinDir(t.siteHome), "typesense-server", binPath); err != nil {
+	if err := LinkIntoBinDir(paths.BinDir(t.serverRoot), "typesense-server", binPath); err != nil {
 		fmt.Fprintf(w, "typesense: warning: %v\n", err)
 	}
 
@@ -125,10 +125,10 @@ func (t *TypesenseInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove bin dir symlink.
-	UnlinkFromBinDir(paths.BinDir(t.siteHome), "typesense-server")
+	UnlinkFromBinDir(paths.BinDir(t.serverRoot), "typesense-server")
 
 	// Remove the directory.
-	tsDir := paths.ServiceDir(t.siteHome, "typesense")
+	tsDir := paths.ServiceDir(t.serverRoot, "typesense")
 	if err := os.RemoveAll(tsDir); err != nil {
 		return fmt.Errorf("typesense: remove dir: %w", err)
 	}

@@ -13,19 +13,19 @@ import (
 
 // configFilePath resolves the absolute path for an allowed PHP config file.
 // Returns ("", false) if the filename is not in the allowlist.
-func configFilePath(ver, siteHome, file string) (string, bool) {
+func configFilePath(ver, serverRoot, file string) (string, bool) {
 	switch file {
 	case "php.ini":
-		return php.PHPIniPath(ver, siteHome), true
+		return php.PHPIniPath(ver, serverRoot), true
 	case "php-fpm.conf":
-		return php.FPMConfigPath(ver, siteHome), true
+		return php.FPMConfigPath(ver, serverRoot), true
 	default:
 		return "", false
 	}
 }
 
 func (s *Server) handleGetPHPVersions(w http.ResponseWriter, r *http.Request) {
-	versions, err := php.InstalledVersions(s.siteHome)
+	versions, err := php.InstalledVersions(s.serverRoot)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -52,7 +52,7 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := php.Install(r.Context(), ver, s.siteHome, s.siteUser); err != nil {
+	if err := php.Install(r.Context(), ver, s.serverRoot, s.siteUser); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -67,7 +67,7 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	versions, _ := php.InstalledVersions(s.siteHome)
+	versions, _ := php.InstalledVersions(s.serverRoot)
 	if versions == nil {
 		versions = []php.Version{}
 	}
@@ -94,7 +94,7 @@ func (s *Server) handleUninstallPHP(w http.ResponseWriter, r *http.Request) {
 	_ = s.supervisor.Stop(id)
 	s.registry.Unregister(id)
 
-	if err := php.Uninstall(r.Context(), ver, s.siteHome); err != nil {
+	if err := php.Uninstall(r.Context(), ver, s.serverRoot); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -144,7 +144,7 @@ func (s *Server) handlePHPFPMRestart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetPHPSettings(w http.ResponseWriter, r *http.Request) {
-	versions, err := php.InstalledVersions(s.siteHome)
+	versions, err := php.InstalledVersions(s.serverRoot)
 	if err != nil || len(versions) == 0 {
 		// Return defaults if no PHP installed.
 		writeJSON(w, php.GlobalSettings{
@@ -156,7 +156,7 @@ func (s *Server) handleGetPHPSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := php.GetSettings(versions[0].Version, s.siteHome)
+	settings, err := php.GetSettings(versions[0].Version, s.serverRoot)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -171,7 +171,7 @@ func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errs := php.ApplySettings(r.Context(), settings, s.siteHome)
+	errs := php.ApplySettings(r.Context(), settings, s.serverRoot)
 	if len(errs) > 0 {
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
@@ -190,11 +190,11 @@ func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 		ID:           php.FPMServiceID(ver),
 		Label:        "PHP " + ver + " FPM",
 		Managed:      true,
-		ManagedCmd:   php.FPMBinary(ver, s.siteHome),
-		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, s.siteHome)),
-		ManagedDir:   php.PHPDir(ver, s.siteHome),
-		Log:          php.FPMLogPath(ver, s.siteHome),
-		Version:      php.FPMBinary(ver, s.siteHome) + " -v",
+		ManagedCmd:   php.FPMBinary(ver, s.serverRoot),
+		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, s.serverRoot)),
+		ManagedDir:   php.PHPDir(ver, s.serverRoot),
+		Log:          php.FPMLogPath(ver, s.serverRoot),
+		Version:      php.FPMBinary(ver, s.serverRoot) + " -v",
 		VersionRegex: `PHP (?P<version>[\d.]+)`,
 	}
 }
@@ -207,7 +207,7 @@ func (s *Server) handleGetPHPConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "version and file required", http.StatusBadRequest)
 		return
 	}
-	path, ok := configFilePath(ver, s.siteHome, file)
+	path, ok := configFilePath(ver, s.serverRoot, file)
 	if !ok {
 		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
 		return
@@ -228,7 +228,7 @@ func (s *Server) handleSetPHPConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "version and file required", http.StatusBadRequest)
 		return
 	}
-	path, ok := configFilePath(ver, s.siteHome, file)
+	path, ok := configFilePath(ver, s.serverRoot, file)
 	if !ok {
 		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
 		return

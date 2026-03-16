@@ -357,9 +357,10 @@ func (s *Server) handleServiceCredentials(w http.ResponseWriter, r *http.Request
 			{def.CredentialsFile, ""},
 		}
 	} else {
+		sitesDir := filepath.Dir(s.serverRoot)
 		candidates = []candidate{
-			{filepath.Join(paths.ServiceDir(s.siteHome, id), "config.env"), ""},
-			{s.siteHome + "/sites/" + id + "/.env", upperID + "_"},
+			{filepath.Join(paths.ServiceDir(s.serverRoot, id), "config.env"), ""},
+			{filepath.Join(sitesDir, id, ".env"), upperID + "_"},
 		}
 	}
 

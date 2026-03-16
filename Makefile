@@ -6,8 +6,8 @@ BINARY     := devctl
 # Fall back to USER for non-sudo environments.
 SITE_USER  ?= $(if $(SUDO_USER),$(SUDO_USER),$(USER))
 SITE_HOME  := $(shell getent passwd $(SITE_USER) | cut -d: -f6)
-INSTALL_DIR := $(SITE_HOME)/sites/server/devctl
-BIN_DIR    := $(SITE_HOME)/sites/server/bin
+INSTALL_DIR := $(SITE_HOME)/ddev/sites/server/devctl
+BIN_DIR    := $(SITE_HOME)/ddev/sites/server/bin
 SERVICE_DIR := /etc/systemd/system
 VERSION    ?= dev
 

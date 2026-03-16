@@ -28,17 +28,18 @@ const (
 // version (e.g. "8.3"), writes config files, and symlinks the CLI binary into
 // /usr/local/bin/php{ver}.
 //
-// siteHome is the home directory of the non-root site user (e.g. "/home/alice").
+// serverRoot is the absolute path to the devctl server directory
+// (e.g. "/home/alice/ddev/sites/server").
 // siteUser is the non-root OS username (e.g. "alice") — PHP-FPM workers run as
 // this user so they can write to site storage directories.
-// The binaries are installed to {siteHome}/sites/server/php/{ver}/.
-func Install(ctx context.Context, ver string, siteHome string, siteUser string) error {
+// The binaries are installed to {serverRoot}/php/{ver}/.
+func Install(ctx context.Context, ver string, serverRoot string, siteUser string) error {
 	fullVer, err := resolveFullVersion(ctx, ver)
 	if err != nil {
 		return fmt.Errorf("php %s: resolve version: %w", ver, err)
 	}
 
-	phpDir := PHPDir(ver, siteHome)
+	phpDir := PHPDir(ver, serverRoot)
 	fpmBin := filepath.Join(phpDir, "php-fpm")
 	cliBin := filepath.Join(phpDir, "php")
 
@@ -87,8 +88,8 @@ func Install(ctx context.Context, ver string, siteHome string, siteUser string) 
 		return fmt.Errorf("php %s: chmod cli: %w", ver, err)
 	}
 
-	// 6. Symlink CLI binary into ~/sites/server/bin/php{ver}.
-	binDir := paths.BinDir(siteHome)
+	// 6. Symlink CLI binary into {serverRoot}/bin/php{ver}.
+	binDir := paths.BinDir(serverRoot)
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return fmt.Errorf("php %s: create bin dir: %w", ver, err)
 	}
@@ -99,19 +100,29 @@ func Install(ctx context.Context, ver string, siteHome string, siteUser string) 
 	}
 
 	// 7. Write php-fpm.conf and php.ini.
-	if err := WriteConfigs(ver, siteHome, siteUser); err != nil {
+	if err := WriteConfigs(ver, serverRoot, siteUser); err != nil {
 		return fmt.Errorf("php %s: write configs: %w", ver, err)
 	}
 
 	// 8. Configure auto_prepend_file for the dump server.
-	if err := ConfigurePrepend(ctx, ver, siteHome); err != nil {
+	if err := ConfigurePrepend(ctx, ver, serverRoot); err != nil {
 		// Non-fatal.
 		fmt.Printf("php: configure prepend for %s: %v\n", ver, err)
 	}
 
-	// 9. Update ~/sites/server/bin/php to point at the highest installed version.
-	if err := UpdateGlobalSymlink(siteHome); err != nil {
+	// 9. Update {serverRoot}/bin/php to point at the highest installed version.
+	if err := UpdateGlobalSymlink(serverRoot); err != nil {
 		fmt.Printf("php: %v\n", err)
+	}
+
+	// 10. Download/update Composer and WP-CLI into the shared bin dir.
+	if err := InstallComposer(ctx, binDir); err != nil {
+		// Non-fatal — log and continue.
+		fmt.Printf("php: install composer: %v\n", err)
+	}
+	if err := InstallWPCLI(ctx, binDir); err != nil {
+		// Non-fatal — log and continue.
+		fmt.Printf("php: install wp-cli: %v\n", err)
 	}
 
 	return nil
@@ -119,21 +130,21 @@ func Install(ctx context.Context, ver string, siteHome string, siteUser string) 
 
 // Uninstall stops the FPM process (caller responsibility), removes the symlink,
 // and deletes the install directory.
-func Uninstall(ctx context.Context, ver string, siteHome string) error {
-	// Remove versioned CLI symlink from ~/sites/server/bin/php{ver}.
-	symlinkPath := filepath.Join(paths.BinDir(siteHome), "php"+ver)
+func Uninstall(ctx context.Context, ver string, serverRoot string) error {
+	// Remove versioned CLI symlink from {serverRoot}/bin/php{ver}.
+	symlinkPath := filepath.Join(paths.BinDir(serverRoot), "php"+ver)
 	if err := os.Remove(symlinkPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("php %s: remove symlink: %w", ver, err)
 	}
 
 	// Remove install directory.
-	phpDir := PHPDir(ver, siteHome)
+	phpDir := PHPDir(ver, serverRoot)
 	if err := os.RemoveAll(phpDir); err != nil {
 		return fmt.Errorf("php %s: remove dir: %w", ver, err)
 	}
 
-	// Update ~/sites/server/bin/php to point at the new highest installed version.
-	if err := UpdateGlobalSymlink(siteHome); err != nil {
+	// Update {serverRoot}/bin/php to point at the new highest installed version.
+	if err := UpdateGlobalSymlink(serverRoot); err != nil {
 		fmt.Printf("php: %v\n", err)
 	}
 
@@ -209,6 +220,39 @@ func disableSystemFPM(ctx context.Context, ver string) {
 		cmd := exec.CommandContext(ctx, "systemctl", action, unit)
 		_ = cmd.Run()
 	}
+}
+
+const (
+	composerURL = "https://getcomposer.org/composer-stable.phar"
+	wpcliURL    = "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
+)
+
+// InstallComposer downloads the latest stable Composer phar into binDir as
+// "composer" and makes it executable. It is safe to call on every PHP install
+// — it always refreshes to the latest build.
+func InstallComposer(ctx context.Context, binDir string) error {
+	dest := filepath.Join(binDir, "composer")
+	if err := curlDownload(ctx, composerURL, dest); err != nil {
+		return fmt.Errorf("download composer: %w", err)
+	}
+	if err := os.Chmod(dest, 0755); err != nil {
+		return fmt.Errorf("chmod composer: %w", err)
+	}
+	return nil
+}
+
+// InstallWPCLI downloads the latest WP-CLI phar into binDir as "wp" and makes
+// it executable. It is safe to call on every PHP install — it always refreshes
+// to the latest build.
+func InstallWPCLI(ctx context.Context, binDir string) error {
+	dest := filepath.Join(binDir, "wp")
+	if err := curlDownload(ctx, wpcliURL, dest); err != nil {
+		return fmt.Errorf("download wp-cli: %w", err)
+	}
+	if err := os.Chmod(dest, 0755); err != nil {
+		return fmt.Errorf("chmod wp-cli: %w", err)
+	}
+	return nil
 }
 
 // extractFromTar finds the first entry whose base name matches binaryName in a

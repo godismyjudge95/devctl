@@ -10,18 +10,20 @@ import (
 )
 
 // DefaultServices returns the built-in service definitions.
-// siteHome is the home directory of the non-root site user (e.g. "/home/alice").
-// siteUser is the username of that user (e.g. "alice") — required for services
-// that must not run as root (e.g. PostgreSQL uses ManagedUser to drop privs).
-func DefaultServices(siteHome, siteUser string) []services.Definition {
-	caddyDir := paths.ServiceDir(siteHome, "caddy")
-	meiliDir := paths.ServiceDir(siteHome, "meilisearch")
-	tsDir := paths.ServiceDir(siteHome, "typesense")
-	valkeyDir := paths.ServiceDir(siteHome, "valkey")
-	mailpitDir := paths.ServiceDir(siteHome, "mailpit")
-	mysqlDir := paths.ServiceDir(siteHome, "mysql")
-	postgresDir := paths.ServiceDir(siteHome, "postgres")
-	reverbDir := paths.ServiceDir(siteHome, "reverb")
+// serverRoot is the absolute path to the devctl server directory
+// (e.g. "/home/alice/ddev/sites/server").
+// siteUser is the username of the non-root site user (e.g. "alice") — required
+// for services that must not run as root (e.g. PostgreSQL uses ManagedUser to
+// drop privs).
+func DefaultServices(serverRoot, siteUser string) []services.Definition {
+	caddyDir := paths.ServiceDir(serverRoot, "caddy")
+	meiliDir := paths.ServiceDir(serverRoot, "meilisearch")
+	tsDir := paths.ServiceDir(serverRoot, "typesense")
+	valkeyDir := paths.ServiceDir(serverRoot, "valkey")
+	mailpitDir := paths.ServiceDir(serverRoot, "mailpit")
+	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
+	postgresDir := paths.ServiceDir(serverRoot, "postgres")
+	reverbDir := paths.ServiceDir(serverRoot, "reverb")
 	return []services.Definition{
 		{
 			ID:             "caddy",
@@ -32,7 +34,7 @@ func DefaultServices(siteHome, siteUser string) []services.Definition {
 			Required:       true,
 			Managed:        true,
 			ManagedCmd:     caddyDir + "/caddy",
-			ManagedArgs:    "run --resume",
+			ManagedArgs:    "run",
 			ManagedDir:     caddyDir,
 			ManagedEnvFile: caddyDir + "/caddy.env",
 			Version:        caddyDir + "/caddy version",

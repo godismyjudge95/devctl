@@ -20,18 +20,18 @@ const (
 )
 
 // MeilisearchInstaller downloads the Meilisearch binary to
-// $HOME/sites/server/meilisearch/, generates a master key, writes
+// {serverRoot}/meilisearch/, generates a master key, writes
 // config.env, and registers a Caddy reverse-proxy vhost at meilisearch.test.
 type MeilisearchInstaller struct {
 	siteManager *sites.Manager
 	supervisor  *services.Supervisor
-	siteHome    string // home directory of the non-root site user (e.g. "/home/alice")
+	serverRoot  string // absolute path to the devctl server directory
 }
 
 func (m *MeilisearchInstaller) ServiceID() string { return "meilisearch" }
 
 func (m *MeilisearchInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(m.siteHome, "meilisearch"), "meilisearch"))
+	return fileExists(filepath.Join(paths.ServiceDir(m.serverRoot, "meilisearch"), "meilisearch"))
 }
 
 func (m *MeilisearchInstaller) Install(ctx context.Context) error {
@@ -44,7 +44,7 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		return nil
 	}
 
-	meiliDir := paths.ServiceDir(m.siteHome, "meilisearch")
+	meiliDir := paths.ServiceDir(m.serverRoot, "meilisearch")
 	binPath := filepath.Join(meiliDir, "meilisearch")
 	envPath := filepath.Join(meiliDir, "config.env")
 
@@ -64,7 +64,7 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 	}
 
 	// 3. Symlink into the shared bin dir so meilisearch is in PATH.
-	if err := LinkIntoBinDir(paths.BinDir(m.siteHome), "meilisearch", binPath); err != nil {
+	if err := LinkIntoBinDir(paths.BinDir(m.serverRoot), "meilisearch", binPath); err != nil {
 		fmt.Fprintf(w, "meilisearch: warning: %v\n", err)
 	}
 
@@ -116,10 +116,10 @@ func (m *MeilisearchInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 	}
 
 	// Remove bin dir symlink.
-	UnlinkFromBinDir(paths.BinDir(m.siteHome), "meilisearch")
+	UnlinkFromBinDir(paths.BinDir(m.serverRoot), "meilisearch")
 
 	// Remove the directory.
-	meiliDir := paths.ServiceDir(m.siteHome, "meilisearch")
+	meiliDir := paths.ServiceDir(m.serverRoot, "meilisearch")
 	if err := os.RemoveAll(meiliDir); err != nil {
 		return fmt.Errorf("meilisearch: remove dir: %w", err)
 	}

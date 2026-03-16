@@ -77,8 +77,11 @@ func Run(args []string) error {
 		return err
 	}
 
+	// serverRoot is the fully resolved server directory derived from sitesDir.
+	serverRoot := filepath.Join(sitesDir, "server")
+
 	// --- 3. Resolve binary install path ---
-	installDir, err := resolveInstallDir(*flagPath, siteHome, *flagYes, r)
+	installDir, err := resolveInstallDir(*flagPath, serverRoot, *flagYes, r)
 	if err != nil {
 		return err
 	}
@@ -97,7 +100,7 @@ func Run(args []string) error {
 		fmt.Println()
 	}
 
-	binDir := paths.BinDir(siteHome)
+	binDir := paths.BinDir(serverRoot)
 	profileScript := "/etc/profile.d/devctl.sh"
 
 	// --- Confirmation summary ---
@@ -128,11 +131,11 @@ func Run(args []string) error {
 			return copyFile(exe, binaryDest, 0755)
 		}},
 		{"Writing service file", func() error {
-			content := buildServiceFile(binaryDest, siteUser, siteHome)
+			content := buildServiceFile(binaryDest, siteUser, siteHome, serverRoot)
 			return os.WriteFile(serviceFile, []byte(content), 0644)
 		}},
 		{"Saving sites directory", func() error {
-			return saveSitesDir(siteHome, sitesDir)
+			return saveSitesDir(serverRoot, sitesDir)
 		}},
 		{"Linking binary into bin dir", func() error {
 			return install.LinkIntoBinDir(binDir, "devctl", binaryDest)
@@ -304,11 +307,11 @@ func resolveSitesDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader)
 }
 
 // resolveInstallDir prompts the user to choose or type a binary install directory.
-func resolveInstallDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader) (string, error) {
+func resolveInstallDir(flagVal, serverRoot string, skipPrompt bool, r *bufio.Reader) (string, error) {
 	if flagVal != "" {
 		return filepath.Clean(flagVal), nil
 	}
-	devctlDir := paths.DevctlDir(siteHome)
+	devctlDir := paths.DevctlDir(serverRoot)
 
 	if skipPrompt {
 		return devctlDir, nil
@@ -369,8 +372,8 @@ func resolveInstallDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reade
 }
 
 // saveSitesDir opens (or creates) the devctl SQLite DB and persists sites_watch_dir.
-func saveSitesDir(siteHome, sitesDir string) error {
-	database, err := db.Open(paths.DBPath(siteHome))
+func saveSitesDir(serverRoot, sitesDir string) error {
+	database, err := db.Open(paths.DBPath(serverRoot))
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
@@ -384,7 +387,7 @@ func saveSitesDir(siteHome, sitesDir string) error {
 }
 
 // buildServiceFile generates the systemd unit file content.
-func buildServiceFile(binaryPath, siteUser, siteHome string) string {
+func buildServiceFile(binaryPath, siteUser, siteHome, serverRoot string) string {
 	return fmt.Sprintf(`[Unit]
 Description=devctl — Local PHP Dev Dashboard
 After=network.target
@@ -396,10 +399,11 @@ Restart=on-failure
 RestartSec=5s
 Environment=HOME=%s
 Environment=DEVCTL_SITE_USER=%s
+Environment=DEVCTL_SERVER_ROOT=%s
 
 [Install]
 WantedBy=multi-user.target
-`, binaryPath, siteHome, siteUser)
+`, binaryPath, siteHome, siteUser, serverRoot)
 }
 
 // waitForActive polls `systemctl is-active devctl` until it returns "active"
@@ -510,12 +514,15 @@ func Uninstall(args []string) error {
 	fmt.Println("━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 
-	// Read siteHome from the config DB early, before we remove anything.
-	// This is needed later for service purge. Errors are non-fatal — siteHome
-	// may be empty if the DB doesn't exist or the setting was never saved.
+	// Read siteHome and serverRoot from the service file early, before we remove anything.
+	// These are needed later for service purge. Errors are non-fatal.
 	siteHome := readSiteHome()
-
 	serviceFile := filepath.Join(serviceDir, serviceName)
+	serverRoot := detectServerRoot(serviceFile)
+	if serverRoot == "" && siteHome != "" {
+		// Fallback for installs that predate DEVCTL_SERVER_ROOT.
+		serverRoot = filepath.Join(siteHome, "sites", "server")
+	}
 
 	// Detect the installed binary path from the service file.
 	binaryPath := detectBinaryPath(serviceFile)
@@ -593,9 +600,9 @@ func Uninstall(args []string) error {
 			} else {
 				fmt.Println("✓")
 			}
-			// Also remove the BinDir symlink if siteHome is known.
-			if siteHome != "" {
-				install.UnlinkFromBinDir(paths.BinDir(siteHome), "devctl")
+			// Also remove the BinDir symlink if serverRoot is known.
+			if serverRoot != "" {
+				install.UnlinkFromBinDir(paths.BinDir(serverRoot), "devctl")
 			}
 		} else {
 			fmt.Printf("  Binary left in place at %s\n", binaryPath)
@@ -604,8 +611,8 @@ func Uninstall(args []string) error {
 	}
 
 	// --- Optional: remove config directory ---
-	devctlDir := paths.DevctlDir(siteHome)
-	if siteHome != "" && fileExists(devctlDir) {
+	devctlDir := paths.DevctlDir(serverRoot)
+	if serverRoot != "" && fileExists(devctlDir) {
 		fmt.Printf("Remove devctl data directory (%s)? [y/N] ", devctlDir)
 		fmt.Println()
 		fmt.Println("  This contains the database and settings. The sites directory will NOT be touched.")
@@ -626,10 +633,10 @@ func Uninstall(args []string) error {
 
 	// --- Optional: remove installed services ---
 	purgeServices := *flagYes || *flagPurgeServices
-	if siteHome != "" {
+	if serverRoot != "" {
 		if !purgeServices {
 			fmt.Println("Remove installed services (Caddy, Valkey, Mailpit, etc.)?")
-			fmt.Println("  This will stop and delete all service binaries under ~/sites/server/.")
+			fmt.Printf("  This will stop and delete all service binaries under %s.\n", serverRoot)
 			fmt.Println("  PHP versions and any APT-installed services (PostgreSQL, MySQL) will also be removed.")
 			fmt.Print("  Proceed? [y/N] ")
 			purgeServices = confirm(r)
@@ -638,7 +645,7 @@ func Uninstall(args []string) error {
 
 		if purgeServices {
 			ctx := context.Background()
-			purgeInstalledServices(ctx, siteHome, os.Stdout)
+			purgeInstalledServices(ctx, serverRoot, siteHome, os.Stdout)
 		}
 	}
 
@@ -667,12 +674,12 @@ func readSiteHome() string {
 // already stopped because devctl itself has been stopped) and removes their
 // data directories. APT-installed services (PostgreSQL, MySQL) are fully purged
 // via apt-get.
-func purgeInstalledServices(ctx context.Context, siteHome string, w io.Writer) {
-	supervisor := services.NewSupervisor(siteHome)
+func purgeInstalledServices(ctx context.Context, serverRoot, siteHome string, w io.Writer) {
+	supervisor := services.NewSupervisor(serverRoot)
 	// siteManager and queries are not available here; pass nil — the installers
 	// that use them (Reverb, Meilisearch, Typesense) will emit warnings for the
 	// site-cleanup step but will still remove their directories.
-	registry := install.NewRegistry(nil, nil, supervisor, "", siteHome)
+	registry := install.NewRegistry(nil, nil, supervisor, "", serverRoot, siteHome)
 
 	// Ordered list — stop Caddy first so it releases ports before we remove it.
 	serviceOrder := []string{"caddy", "redis", "mailpit", "meilisearch", "typesense", "reverb", "postgres", "mysql"}
@@ -691,14 +698,14 @@ func purgeInstalledServices(ctx context.Context, siteHome string, w io.Writer) {
 	}
 
 	// PHP versions — remove all installed versions and the global symlink.
-	phpVersions, err := php.InstalledVersions(siteHome)
+	phpVersions, err := php.InstalledVersions(serverRoot)
 	if err != nil {
 		fmt.Fprintf(w, "warning: list PHP versions: %v\n", err)
 		return
 	}
 	for _, v := range phpVersions {
 		fmt.Fprintf(w, "Removing PHP %s... ", v.Version)
-		if err := php.Uninstall(ctx, v.Version, siteHome); err != nil {
+		if err := php.Uninstall(ctx, v.Version, serverRoot); err != nil {
 			fmt.Fprintf(w, "warning: %v\n", err)
 		} else {
 			fmt.Fprintf(w, "✓\n")
@@ -716,6 +723,23 @@ func detectBinaryPath(serviceFile string) string {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "ExecStart=") {
 			return strings.TrimPrefix(line, "ExecStart=")
+		}
+	}
+	return ""
+}
+
+// detectServerRoot reads DEVCTL_SERVER_ROOT from an Environment= line in the
+// service file. Returns an empty string if not found (pre-DEVCTL_SERVER_ROOT installs).
+func detectServerRoot(serviceFile string) string {
+	data, err := os.ReadFile(serviceFile)
+	if err != nil {
+		return ""
+	}
+	prefix := "Environment=DEVCTL_SERVER_ROOT="
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimPrefix(line, prefix)
 		}
 	}
 	return ""

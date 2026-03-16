@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 
 	"github.com/danielgormly/devctl/paths"
 )
@@ -19,6 +20,11 @@ type Config struct {
 	SiteUser string
 	// SiteHome is the home directory of SiteUser (e.g. "/home/alice").
 	SiteHome string
+	// ServerRoot is the absolute path to the devctl server directory
+	// (e.g. "/home/alice/ddev/sites/server"). It is baked into the systemd
+	// unit as DEVCTL_SERVER_ROOT at install time. When unset it falls back to
+	// {SiteHome}/sites/server for backwards compatibility.
+	ServerRoot string
 }
 
 // Load resolves the site user and returns a Config.
@@ -29,11 +35,25 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	serverRoot := resolveServerRoot(siteHome)
+
 	return &Config{
-		DBPath:   paths.DBPath(siteHome),
-		SiteUser: siteUser,
-		SiteHome: siteHome,
+		DBPath:     paths.DBPath(serverRoot),
+		SiteUser:   siteUser,
+		SiteHome:   siteHome,
+		ServerRoot: serverRoot,
 	}, nil
+}
+
+// resolveServerRoot returns the server root directory. It reads
+// DEVCTL_SERVER_ROOT; if unset it falls back to {siteHome}/sites/server for
+// backwards compatibility with installs that predate this setting.
+func resolveServerRoot(siteHome string) string {
+	if v := os.Getenv("DEVCTL_SERVER_ROOT"); v != "" {
+		return filepath.Clean(v)
+	}
+	// Legacy fallback: derive from siteHome the same way the old paths package did.
+	return filepath.Join(siteHome, "sites", "server")
 }
 
 // resolveSiteUser returns the non-root user and their home directory.

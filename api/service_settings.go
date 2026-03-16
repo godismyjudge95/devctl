@@ -70,7 +70,7 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 
 	if strings.HasPrefix(id, "php-fpm-") {
 		ver := strings.TrimPrefix(id, "php-fpm-")
-		settings, err := php.GetSettings(ver, s.siteHome)
+		settings, err := php.GetSettings(ver, s.serverRoot)
 		if err != nil {
 			// Return sensible defaults when the ini doesn't exist yet.
 			writeJSON(w, php.GlobalSettings{
@@ -180,7 +180,7 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 			writeError(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		errs := php.ApplySettings(r.Context(), settings, s.siteHome)
+		errs := php.ApplySettings(r.Context(), settings, s.serverRoot)
 		if len(errs) > 0 {
 			msgs := make([]string, len(errs))
 			for i, e := range errs {
@@ -243,7 +243,7 @@ func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if id == "mysql" {
-		path, ok := mysqlConfigFilePath(s.siteHome, file)
+		path, ok := mysqlConfigFilePath(s.serverRoot, file)
 		if !ok {
 			writeError(w, "file must be my.cnf", http.StatusBadRequest)
 			return
@@ -262,7 +262,7 @@ func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ver := strings.TrimPrefix(id, "php-fpm-")
-	path, ok := configFilePath(ver, s.siteHome, file)
+	path, ok := configFilePath(ver, s.serverRoot, file)
 	if !ok {
 		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
 		return
@@ -294,7 +294,7 @@ func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if id == "mysql" {
-		path, ok := mysqlConfigFilePath(s.siteHome, file)
+		path, ok := mysqlConfigFilePath(s.serverRoot, file)
 		if !ok {
 			writeError(w, "file must be my.cnf", http.StatusBadRequest)
 			return
@@ -318,7 +318,7 @@ func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ver := strings.TrimPrefix(id, "php-fpm-")
-	path, ok := configFilePath(ver, s.siteHome, file)
+	path, ok := configFilePath(ver, s.serverRoot, file)
 	if !ok {
 		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
 		return
@@ -332,9 +332,9 @@ func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) 
 
 // mysqlConfigFilePath returns the absolute path for a mysql config file,
 // validating that only my.cnf is accessible.
-func mysqlConfigFilePath(siteHome, file string) (string, bool) {
+func mysqlConfigFilePath(serverRoot, file string) (string, bool) {
 	if file != "my.cnf" {
 		return "", false
 	}
-	return filepath.Join(paths.ServiceDir(siteHome, "mysql"), "my.cnf"), true
+	return filepath.Join(paths.ServiceDir(serverRoot, "mysql"), "my.cnf"), true
 }

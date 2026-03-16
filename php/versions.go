@@ -23,14 +23,14 @@ func FPMServiceID(ver string) string {
 }
 
 // PHPDir returns the directory where a PHP version's binaries and config live.
-// e.g. /home/alice/sites/server/php/8.3
-func PHPDir(ver, siteHome string) string {
-	return filepath.Join(paths.ServerDir(siteHome), "php", ver)
+// e.g. /home/alice/ddev/sites/server/php/8.3
+func PHPDir(ver, serverRoot string) string {
+	return filepath.Join(paths.ServerDir(serverRoot), "php", ver)
 }
 
 // FPMBinary returns the path to the php-fpm binary for the given version.
-func FPMBinary(ver, siteHome string) string {
-	return filepath.Join(PHPDir(ver, siteHome), "php-fpm")
+func FPMBinary(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm")
 }
 
 // FPMSocket returns the conventional unix socket path for the given version.
@@ -40,27 +40,27 @@ func FPMSocket(ver string) string {
 }
 
 // FPMConfigPath returns the path to the php-fpm.conf for the given version.
-func FPMConfigPath(ver, siteHome string) string {
-	return filepath.Join(PHPDir(ver, siteHome), "php-fpm.conf")
+func FPMConfigPath(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm.conf")
 }
 
 // PHPIniPath returns the path to the php.ini for the given version.
-func PHPIniPath(ver, siteHome string) string {
-	return filepath.Join(PHPDir(ver, siteHome), "php.ini")
+func PHPIniPath(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php.ini")
 }
 
 // FPMLogPath returns the path to the php-fpm log file for the given version.
-func FPMLogPath(ver, siteHome string) string {
-	return filepath.Join(PHPDir(ver, siteHome), "php-fpm-www.log")
+func FPMLogPath(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm-www.log")
 }
 
 var versionRe = regexp.MustCompile(`^(\d+\.\d+)$`)
 
-// InstalledVersions scans {siteHome}/sites/server/php/ for installed PHP versions.
+// InstalledVersions scans {serverRoot}/php/ for installed PHP versions.
 // A version is considered installed if its php-fpm binary exists.
 // Returns them sorted newest-first.
-func InstalledVersions(siteHome string) ([]Version, error) {
-	phpBase := filepath.Join(paths.ServerDir(siteHome), "php")
+func InstalledVersions(serverRoot string) ([]Version, error) {
+	phpBase := filepath.Join(paths.ServerDir(serverRoot), "php")
 	entries, err := os.ReadDir(phpBase)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -79,7 +79,7 @@ func InstalledVersions(siteHome string) ([]Version, error) {
 			continue
 		}
 		// Only include if php-fpm binary is present.
-		if _, err := os.Stat(FPMBinary(ver, siteHome)); os.IsNotExist(err) {
+		if _, err := os.Stat(FPMBinary(ver, serverRoot)); os.IsNotExist(err) {
 			continue
 		}
 		versions = append(versions, Version{
@@ -96,13 +96,13 @@ func InstalledVersions(siteHome string) ([]Version, error) {
 	return versions, nil
 }
 
-// UpdateGlobalSymlink points ~/sites/server/bin/php at the CLI binary for the
+// UpdateGlobalSymlink points {serverRoot}/bin/php at the CLI binary for the
 // highest installed PHP version. If no versions are installed the symlink is
 // removed. Errors are non-fatal — callers should log but continue.
-func UpdateGlobalSymlink(siteHome string) error {
-	globalLink := filepath.Join(paths.BinDir(siteHome), "php")
+func UpdateGlobalSymlink(serverRoot string) error {
+	globalLink := filepath.Join(paths.BinDir(serverRoot), "php")
 
-	versions, err := InstalledVersions(siteHome)
+	versions, err := InstalledVersions(serverRoot)
 	if err != nil {
 		return fmt.Errorf("update global php symlink: %w", err)
 	}
@@ -116,7 +116,7 @@ func UpdateGlobalSymlink(siteHome string) error {
 
 	// Versions are sorted newest-first; use the first one.
 	best := versions[0].Version
-	cliBin := filepath.Join(PHPDir(best, siteHome), "php")
+	cliBin := filepath.Join(PHPDir(best, serverRoot), "php")
 	if err := os.Symlink(cliBin, globalLink); err != nil {
 		return fmt.Errorf("update global php symlink: %w", err)
 	}
