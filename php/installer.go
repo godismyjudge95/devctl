@@ -48,17 +48,11 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: create dir: %w", ver, err)
 	}
 
-	// 2. Ensure /run/php/ exists (tmpfs — may vanish after reboot, FPM recreates
-	//    the socket but the directory must exist first).
-	if err := os.MkdirAll("/run/php", 0755); err != nil {
-		return fmt.Errorf("php %s: create /run/php: %w", ver, err)
-	}
-
-	// 3. Stop and disable the system php{ver}-fpm unit if present, so it does
+	// 2. Stop and disable the system php{ver}-fpm unit if present, so it does
 	//    not hold the conventional socket path we're about to use.
 	disableSystemFPM(ctx, ver)
 
-	// 4. Download and extract FPM binary.
+	// 3. Download and extract FPM binary.
 	fpmURL := fmt.Sprintf("%sphp-%s-fpm-linux-x86_64.tar.gz", staticPHPIndex, fullVer)
 	tmpFPM := filepath.Join(os.TempDir(), fmt.Sprintf("php-%s-fpm.tar.gz", fullVer))
 	defer os.Remove(tmpFPM)
@@ -73,7 +67,7 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: chmod fpm: %w", ver, err)
 	}
 
-	// 5. Download and extract CLI binary.
+	// 4. Download and extract CLI binary.
 	cliURL := fmt.Sprintf("%sphp-%s-cli-linux-x86_64.tar.gz", staticPHPIndex, fullVer)
 	tmpCLI := filepath.Join(os.TempDir(), fmt.Sprintf("php-%s-cli.tar.gz", fullVer))
 	defer os.Remove(tmpCLI)
@@ -88,7 +82,7 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: chmod cli: %w", ver, err)
 	}
 
-	// 6. Symlink CLI binary into {serverRoot}/bin/php{ver}.
+	// 5. Symlink CLI binary into {serverRoot}/bin/php{ver}.
 	binDir := paths.BinDir(serverRoot)
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return fmt.Errorf("php %s: create bin dir: %w", ver, err)
@@ -99,23 +93,23 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: symlink cli: %w", ver, err)
 	}
 
-	// 7. Write php-fpm.conf and php.ini.
+	// 6. Write php-fpm.conf and php.ini.
 	if err := WriteConfigs(ver, serverRoot, siteUser); err != nil {
 		return fmt.Errorf("php %s: write configs: %w", ver, err)
 	}
 
-	// 8. Configure auto_prepend_file for the dump server.
+	// 7. Configure auto_prepend_file for the dump server.
 	if err := ConfigurePrepend(ctx, ver, serverRoot); err != nil {
 		// Non-fatal.
 		fmt.Printf("php: configure prepend for %s: %v\n", ver, err)
 	}
 
-	// 9. Update {serverRoot}/bin/php to point at the highest installed version.
+	// 8. Update {serverRoot}/bin/php to point at the highest installed version.
 	if err := UpdateGlobalSymlink(serverRoot); err != nil {
 		fmt.Printf("php: %v\n", err)
 	}
 
-	// 10. Download/update Composer and WP-CLI into the shared bin dir.
+	// 9. Download/update Composer and WP-CLI into the shared bin dir.
 	if err := InstallComposer(ctx, binDir); err != nil {
 		// Non-fatal — log and continue.
 		fmt.Printf("php: install composer: %v\n", err)

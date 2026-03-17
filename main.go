@@ -214,7 +214,7 @@ func run() error {
 	}
 	done = step("caddy ensure http server")
 	caddyClient := sites.NewCaddyClient(caddyAdminURL)
-	siteManager := sites.NewManager(database, caddyClient)
+	siteManager := sites.NewManager(database, caddyClient, cfg.ServerRoot)
 
 	// Wait for the Caddy Admin API to be ready (up to 10 s) before pushing config.
 	// This is necessary when Caddy is a supervised child process.

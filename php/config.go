@@ -97,7 +97,7 @@ func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
 // PHP-FPM worker processes run as this user so they can write to site storage dirs.
 func WriteConfigs(ver, serverRoot, siteUser string) error {
 	phpDir := PHPDir(ver, serverRoot)
-	socketPath := FPMSocket(ver)
+	socketPath := FPMSocket(ver, serverRoot)
 	iniPath := fpmIniPath(ver, serverRoot)
 	fpmConfPath := FPMConfigPath(ver, serverRoot)
 	prependPath := paths.PrependPath(serverRoot)

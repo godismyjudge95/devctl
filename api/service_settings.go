@@ -23,7 +23,7 @@ func (s *Server) handleGetServiceDetails(w http.ResponseWriter, r *http.Request)
 	if strings.HasPrefix(id, "php-fpm-") {
 		ver := strings.TrimPrefix(id, "php-fpm-")
 		writeJSON(w, map[string]string{
-			"Socket": php.FPMSocket(ver),
+			"Socket": php.FPMSocket(ver, s.serverRoot),
 		})
 		return
 	}

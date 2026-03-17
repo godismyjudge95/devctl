@@ -156,6 +156,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		HTTPS:      site.Https == 1,
 		SiteType:   settings["site_type"],
 		WSUpstream: settings["ws_upstream"],
+		ServerRoot: s.serverRoot,
 	})
 
 	// Ensure the PHP-FPM process for the selected version is running.

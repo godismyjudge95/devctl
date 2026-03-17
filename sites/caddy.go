@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/php"
 )
 
 // CaddyClient wraps the Caddy Admin API.
@@ -78,6 +80,8 @@ type VhostConfig struct {
 	SiteType string
 	// WSUpstream is the dial address for WS sites, e.g. "127.0.0.1:7383".
 	WSUpstream string
+	// ServerRoot is the devctl server root directory, used to locate the PHP-FPM socket.
+	ServerRoot string
 }
 
 // UpsertVhost adds or replaces a vhost route in the Caddy HTTP server config.
@@ -248,7 +252,7 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 		}
 	}
 
-	sock := fmt.Sprintf("unix//run/php/php%s-fpm.sock", cfg.PHPVersion)
+	sock := "unix/" + php.FPMSocket(cfg.PHPVersion, cfg.ServerRoot)
 
 	// Compute the effective document root (project root + optional public subdirectory).
 	effectiveRoot := cfg.RootPath

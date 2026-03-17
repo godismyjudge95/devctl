@@ -33,10 +33,12 @@ func FPMBinary(ver, serverRoot string) string {
 	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm")
 }
 
-// FPMSocket returns the conventional unix socket path for the given version.
-// Matches the ondrej/php PPA convention so Caddy/Nginx configs work without changes.
-func FPMSocket(ver string) string {
-	return fmt.Sprintf("/run/php/php%s-fpm.sock", ver)
+// FPMSocket returns the unix socket path for the given version.
+// The socket lives inside the PHP version directory under serverRoot so that
+// it survives reboots — /run is a tmpfs on most Linux systems (including WSL)
+// and is not recreated automatically between boots.
+func FPMSocket(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm.sock")
 }
 
 // FPMConfigPath returns the path to the php-fpm.conf for the given version.
@@ -84,7 +86,7 @@ func InstalledVersions(serverRoot string) ([]Version, error) {
 		}
 		versions = append(versions, Version{
 			Version:   ver,
-			FPMSocket: FPMSocket(ver),
+			FPMSocket: FPMSocket(ver, serverRoot),
 		})
 	}
 

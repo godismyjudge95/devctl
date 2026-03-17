@@ -13,15 +13,17 @@ import (
 
 // Manager handles site CRUD and keeps Caddy in sync.
 type Manager struct {
-	db    *dbq.Queries
-	caddy *CaddyClient
+	db         *dbq.Queries
+	caddy      *CaddyClient
+	serverRoot string
 }
 
 // NewManager creates a Manager.
-func NewManager(db *sql.DB, caddy *CaddyClient) *Manager {
+func NewManager(db *sql.DB, caddy *CaddyClient, serverRoot string) *Manager {
 	return &Manager{
-		db:    dbq.New(db),
-		caddy: caddy,
+		db:         dbq.New(db),
+		caddy:      caddy,
+		serverRoot: serverRoot,
 	}
 }
 
@@ -347,6 +349,7 @@ func (m *Manager) syncCaddy(site dbq.Site) error {
 		HTTPS:      site.Https == 1,
 		SiteType:   siteType,
 		WSUpstream: wsUpstream,
+		ServerRoot: m.serverRoot,
 	})
 }
 
