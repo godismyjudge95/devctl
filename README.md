@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="devctl-mark.png" width="64" alt="devctl logo">
+</p>
+
 # devctl
 
 A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.

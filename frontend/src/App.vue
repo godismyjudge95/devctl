@@ -5,6 +5,7 @@ import { useServicesStore } from '@/stores/services'
 import { useMailStore } from '@/stores/mail'
 import { useSitesStore } from '@/stores/sites'
 import { useDarkMode } from '@/composables/useDarkMode'
+import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { onMounted, watch, computed, ref } from 'vue'
 import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/sheet'
 
 const { isDark, toggleDark } = useDarkMode()
+const { requestPermission, notify } = useDumpNotifications()
 
 const route = useRoute()
 const router = useRouter()
@@ -29,7 +31,37 @@ const mobileNavOpen = ref(false)
 onMounted(() => {
   servicesStore.connectSSE()
   dumpsStore.connectWS()
+  requestPermission()
   // Mail WS is connected reactively once Mailpit is known to be installed.
+
+  // Handle navigation messages posted by the service worker (e.g. notification click).
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'navigate') {
+        router.push(event.data.path)
+      }
+    })
+  }
+})
+
+// Fire a native notification when new dumps arrive (only when not on /dumps).
+// Track length so we only notify on additions, not on clears.
+// -1 sentinel means "not initialized yet" — first fire sets the baseline silently.
+let lastDumpsLength = -1
+watch(() => dumpsStore.dumps.length, (newLen) => {
+  if (lastDumpsLength === -1) {
+    // First fire: baseline from initial WS load, don't notify.
+    lastDumpsLength = newLen
+    return
+  }
+  if (newLen <= lastDumpsLength) {
+    // Array shrank (cleared) — update baseline, no notification.
+    lastDumpsLength = newLen
+    return
+  }
+  lastDumpsLength = newLen
+  const newest = dumpsStore.dumps[0]
+  if (newest) notify(newest)
 })
 
 // Connect/disconnect mail WS based on Mailpit install state.
@@ -70,9 +102,7 @@ const navItems = computed(() =>
     <nav class="hidden md:flex w-56 shrink-0 border-r border-border flex-col bg-card">
       <!-- Logo -->
       <div class="flex items-center gap-2 px-5 h-14 border-b border-border">
-        <div class="w-6 h-6 rounded bg-primary flex items-center justify-center">
-          <span class="text-primary-foreground text-xs font-bold">d</span>
-        </div>
+        <img src="/logo-transparent.png" class="w-6 h-6" alt="devctl" />
         <span class="font-semibold text-sm tracking-tight">devctl</span>
       </div>
 
@@ -135,9 +165,7 @@ const navItems = computed(() =>
           <SheetContent side="left" class="w-64 p-0 flex flex-col">
             <SheetHeader class="px-5 h-14 border-b border-border flex flex-row items-center space-y-0">
               <div class="flex items-center gap-2">
-                <div class="w-6 h-6 rounded bg-primary flex items-center justify-center">
-                  <span class="text-primary-foreground text-xs font-bold">d</span>
-                </div>
+                <img src="/logo-transparent.png" class="w-6 h-6" alt="devctl" />
                 <SheetTitle class="font-semibold text-sm tracking-tight">devctl</SheetTitle>
               </div>
             </SheetHeader>
@@ -192,9 +220,7 @@ const navItems = computed(() =>
 
         <!-- Logo (center) -->
         <div class="flex items-center gap-2">
-          <div class="w-6 h-6 rounded bg-primary flex items-center justify-center">
-            <span class="text-primary-foreground text-xs font-bold">d</span>
-          </div>
+          <img src="/logo-transparent.png" class="w-6 h-6" alt="devctl" />
           <span class="font-semibold text-sm tracking-tight">devctl</span>
         </div>
 

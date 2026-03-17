@@ -91,7 +91,7 @@ func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
 }
 
 // WriteConfigs generates php-fpm.conf and php.ini for the given version.
-// Called during Install to create the initial config files.
+// Called during Install and on every devctl startup to keep config current.
 // serverRoot is the absolute path to the devctl server directory.
 // siteUser is the non-root OS user who owns the sites directory (e.g. "daniel").
 // PHP-FPM worker processes run as this user so they can write to site storage dirs.
@@ -100,20 +100,26 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 	socketPath := FPMSocket(ver)
 	iniPath := fpmIniPath(ver, serverRoot)
 	fpmConfPath := FPMConfigPath(ver, serverRoot)
+	prependPath := paths.PrependPath(serverRoot)
 
 	// Write php.ini with sensible defaults.
+	// auto_prepend_file is always included so the dump interceptor is active
+	// for CLI usage. The FPM pool config also sets it via php_value for workers.
 	ini := fmt.Sprintf(`; devctl-managed php.ini for PHP %s
 upload_max_filesize = 128M
 memory_limit = 256M
 max_execution_time = 120
 post_max_size = 128M
-`, ver)
+auto_prepend_file = %s
+`, ver, prependPath)
 	if err := os.WriteFile(iniPath, []byte(ini), 0644); err != nil {
 		return fmt.Errorf("write php.ini: %w", err)
 	}
 
 	// Write php-fpm.conf.
 	// Run workers as siteUser so they can write to site storage directories.
+	// php_value[auto_prepend_file] injects the dump interceptor into every
+	// FPM request; this is authoritative because it is set at the pool level.
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
 [global]
 error_log = %s/php-fpm.log
@@ -132,7 +138,8 @@ pm.min_spare_servers = 1
 pm.max_spare_servers = 4
 php_admin_value[error_log] = %s/php-fpm-www.log
 php_admin_flag[log_errors] = on
-`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir)
+php_value[auto_prepend_file] = %s
+`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}

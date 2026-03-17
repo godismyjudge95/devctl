@@ -28,12 +28,56 @@ function _devctl_send_dumps(array $vars): void
 {
     $host   = $_SERVER['HTTP_HOST']     ?? '';
     $file   = $_SERVER['SCRIPT_FILENAME'] ?? '';
-    $trace  = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
+    $trace  = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 20);
 
-    // Find the caller frame (skip this helper and dump/dd)
-    $frame  = $trace[2] ?? $trace[1] ?? $trace[0] ?? [];
+    // $trace[1] is the dd()/dump() call site — its 'file' and 'line' are where
+    // the user wrote the call. For Blade templates this is the compiled view cache
+    // file (storage/framework/views/…), which has correct line numbers matching
+    // the source .blade.php. Walk further up only if trace[1] has no file.
+    //
+    // We avoid using trace[2] because for Blade, that frame is
+    // Filesystem::includeFile() — not the user's code.
+    $frame = [];
+    $thisFile = __FILE__;
+    for ($i = 1, $n = count($trace); $i < $n; $i++) {
+        $f = $trace[$i];
+        $path = $f['file'] ?? '';
+        if ($path === '' || $path === $thisFile) {
+            continue;
+        }
+        $frame = $f;
+        break;
+    }
+    if (empty($frame)) {
+        $frame = $trace[0] ?? [];
+    }
+
     $line   = (int)($frame['line'] ?? 0);
     $source = $frame['file'] ?? $file;
+
+    // If the source is a compiled Blade cache file, try to resolve it back to
+    // the original .blade.php. The compiled file often contains a reference to
+    // the original path (e.g. from Blade debug extensions or error templates).
+    // We scan the first 2 KB of the compiled file for a .blade.php path.
+    if (str_contains($source, '/framework/views/') && is_readable($source)) {
+        $head = file_get_contents($source, false, null, 0, 2048);
+        if ($head !== false && preg_match('#[\w./\-]+\.blade\.php#', $head, $m)) {
+            $rel = $m[0];
+            // Resolve relative path: walk up from the cache file's directory to
+            // find the app root (directory containing a composer.json).
+            $dir = dirname($source);
+            for ($up = 0; $up < 8; $up++) {
+                $dir = dirname($dir);
+                if (is_file($dir . '/composer.json')) {
+                    $candidate = $dir . '/' . $rel;
+                    if (is_file($candidate)) {
+                        $source = $candidate;
+                    }
+                    break;
+                }
+            }
+        }
+    }
 
     $payload = [
         'timestamp' => microtime(true),

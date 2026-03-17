@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { useDumpsStore } from '@/stores/dumps'
+import { useSitesStore } from '@/stores/sites'
 import DumpCard from '@/components/DumpCard.vue'
 import { Trash2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
 const store = useDumpsStore()
+const sitesStore = useSitesStore()
 
 onMounted(async () => {
   store.clearUnread()
-  await store.load()
+  await Promise.all([
+    store.load(),
+    sitesStore.sites.length === 0 ? sitesStore.load() : Promise.resolve(),
+  ])
 })
 
 onUnmounted(() => {

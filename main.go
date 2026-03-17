@@ -140,8 +140,7 @@ func run() error {
 
 	// --- PHP prepend setup ---
 	// Write prepend.php to disk on every startup — idempotent and harmless.
-	// ConfigurePrepend (which writes to php.ini and reloads FPM) is NOT called
-	// here; it runs only when a PHP version is explicitly installed via the UI.
+	// Must run before WriteConfigs so the file exists when FPM starts.
 	done = step("php prepend")
 	if err := php.InstallPrepend(cfg.ServerRoot); err != nil {
 		log.Printf("php: install prepend: %v", err)
@@ -149,9 +148,10 @@ func run() error {
 	done()
 
 	// --- PHP-FPM config refresh ---
-	// Re-write php-fpm.conf for every installed version on startup.
-	// This ensures the pool user/group is always up to date (e.g. if the
-	// site user changed since the last install).
+	// Re-write php.ini and php-fpm.conf for every installed version on startup.
+	// This ensures the pool user/group and auto_prepend_file are always current
+	// (e.g. if the site user or server root changed since the last install).
+	// InstallPrepend must run first so the prepend.php file exists on disk.
 	done = step("php-fpm config refresh")
 	if phpVersions, err := php.InstalledVersions(cfg.ServerRoot); err == nil {
 		for _, v := range phpVersions {
