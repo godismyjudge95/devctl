@@ -5,8 +5,8 @@ import { getPHPVersions, getSiteBranches, getWorktreeConfig, putWorktreeConfig, 
 import type { Site, Branch, WorktreeConfig } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import {
-  Plus, ExternalLink, Trash2, Shield, Zap, Bot, Loader2,
-  GitBranch, GitFork, CornerDownRight,
+  Plus, ExternalLink, Trash2, Zap, Bot, Loader2,
+  GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,12 +16,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
-} from '@/components/ui/card'
-import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import SiteSettingsDialog from './SiteSettingsDialog.vue'
 
 const store = useSitesStore()
 onMounted(() => {
@@ -44,11 +45,24 @@ async function loadVersions() {
   }
 }
 
+// ─── Search ──────────────────────────────────────────────────────────────────
+const searchQuery = ref('')
+
+const filteredSites = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return store.sites
+  return store.sites.filter((s) =>
+    s.domain.toLowerCase().includes(q) ||
+    s.root_path.toLowerCase().includes(q) ||
+    (s.framework ?? '').toLowerCase().includes(q),
+  )
+})
+
 // ─── Add Site dialog ─────────────────────────────────────────────────────────
 const dialogOpen = ref(false)
 const creating = ref(false)
 const removingId = ref<string | null>(null)
-const updatingPhpId = ref<string | null>(null)
+const removingWorktreeId = ref<string | null>(null)
 const form = ref({ domain: '', root_path: '', php_version: '8.3', https: true, aliases: '', public_dir: '' })
 const detectedFramework = ref('')
 
@@ -60,7 +74,7 @@ async function onRootPathBlur() {
     form.value.public_dir = result.public_dir
     detectedFramework.value = result.framework
   } catch {
-    // Detection failure is non-fatal; leave fields as-is.
+    // Detection failure is non-fatal.
   }
 }
 
@@ -99,24 +113,31 @@ async function removeSite(id: string, domain: string) {
   }
 }
 
-async function changePhpVersion(site: Site, ver: string) {
-  const aliases = (() => { try { return JSON.parse(site.aliases) } catch { return [] } })()
-  updatingPhpId.value = site.id
+async function removeWorktree(site: Site) {
+  if (!site.parent_site_id) return
+  removingWorktreeId.value = site.id
   try {
-    await store.update(site.id, {
-      domain: site.domain,
-      root_path: site.root_path,
-      php_version: ver,
-      https: site.https,
-      spx_enabled: site.spx_enabled,
-      aliases,
-      public_dir: site.public_dir,
-    })
-    toast.success(`${site.domain} switched to PHP ${ver}`)
+    await store.deleteWorktree(site.parent_site_id, site.id)
+    toast.success(`Worktree ${site.domain} removed`)
   } catch (e: any) {
-    toast.error(`Failed to change PHP version`, { description: e.message })
+    toast.error(`Failed to remove worktree`, { description: e.message })
   } finally {
-    updatingPhpId.value = null
+    removingWorktreeId.value = null
+  }
+}
+
+// ─── Refresh Metadata ────────────────────────────────────────────────────────
+const refreshingMetadata = ref(false)
+
+async function doRefreshMetadata() {
+  refreshingMetadata.value = true
+  try {
+    const result = await store.refreshMetadata()
+    toast.success(`Refreshed metadata for ${result} site${result === 1 ? '' : 's'}`)
+  } catch (e: any) {
+    toast.error('Failed to refresh metadata', { description: e.message })
+  } finally {
+    refreshingMetadata.value = false
   }
 }
 
@@ -137,7 +158,6 @@ const worktreeForm = ref({
   copiesInput: '',
 })
 
-/** Compute the expected domain for a new worktree given parent dir and branch. */
 function computeWorktreeDomain(parentRootPath: string, branch: string): string {
   const parentDir = parentRootPath.split('/').pop() ?? ''
   const slug = branch
@@ -169,7 +189,6 @@ async function openWorktreeDialog(site: Site) {
   }
   worktreeDialogOpen.value = true
 
-  // Load branches and config in parallel.
   worktreeBranchesLoading.value = true
   try {
     const [branches, config] = await Promise.all([
@@ -181,7 +200,6 @@ async function openWorktreeDialog(site: Site) {
     worktreeForm.value.symlinksInput = config.symlinks.join(', ')
     worktreeForm.value.copiesInput = config.copies.join(', ')
     if (branches.length > 0) {
-      // Pre-select the first non-current branch.
       const pick = branches.find((b) => !b.is_current) ?? branches[0]
       if (pick) worktreeForm.value.branch = pick.name
     }
@@ -200,18 +218,14 @@ async function createWorktree() {
     : worktreeForm.value.branch
   if (!branch.trim()) return
 
-  const symlinks = worktreeForm.value.symlinksInput
-    .split(',').map((s) => s.trim()).filter(Boolean)
-  const copies = worktreeForm.value.copiesInput
-    .split(',').map((s) => s.trim()).filter(Boolean)
+  const symlinks = worktreeForm.value.symlinksInput.split(',').map((s) => s.trim()).filter(Boolean)
+  const copies = worktreeForm.value.copiesInput.split(',').map((s) => s.trim()).filter(Boolean)
 
   worktreeCreating.value = true
   try {
-    // Optionally save the config as default for this site first.
     if (worktreeForm.value.saveConfig) {
       await putWorktreeConfig(worktreeParentSite.value.id, { symlinks, copies })
     }
-
     const newSite = await store.addWorktree(worktreeParentSite.value.id, {
       branch: branch.trim(),
       create_branch: worktreeForm.value.createBranch,
@@ -227,46 +241,59 @@ async function createWorktree() {
   }
 }
 
-// ─── Remove Worktree ──────────────────────────────────────────────────────────
-const removingWorktreeId = ref<string | null>(null)
-
-async function removeWorktree(site: Site) {
-  if (!site.parent_site_id) return
-  removingWorktreeId.value = site.id
-  try {
-    await store.deleteWorktree(site.parent_site_id, site.id)
-    toast.success(`Worktree ${site.domain} removed`)
-  } catch (e: any) {
-    toast.error(`Failed to remove worktree`, { description: e.message })
-  } finally {
-    removingWorktreeId.value = null
-  }
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Find the domain of a site's parent by ID. */
 function parentDomain(parentId: string): string {
   return store.sites.find((s) => s.id === parentId)?.domain ?? parentId
 }
 
-/** Count how many worktrees a parent site has. */
 function worktreeCount(siteId: string): number {
   return store.sites.filter((s) => s.parent_site_id === siteId).length
+}
+
+function frameworkLabel(fw: string): string {
+  switch (fw) {
+    case 'laravel':   return 'Laravel'
+    case 'statamic':  return 'Statamic'
+    case 'wordpress': return 'WordPress'
+    default:          return ''
+  }
+}
+
+function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
+  switch (fw) {
+    case 'laravel':   return 'default'
+    case 'statamic':  return 'secondary'
+    case 'wordpress': return 'outline'
+    default:          return 'outline'
+  }
 }
 </script>
 
 <template>
   <div class="space-y-4">
+    <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Sites</h1>
         <p class="text-sm text-muted-foreground mt-1">Manage local PHP virtual hosts.</p>
       </div>
-      <Button @click="dialogOpen = true">
-        <Plus class="w-4 h-4" />
-        Add Site
-      </Button>
+      <div class="flex items-center gap-2">
+        <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata">
+          <Loader2 v-if="refreshingMetadata" class="w-4 h-4 animate-spin" />
+          <RefreshCw v-else class="w-4 h-4" />
+          <span class="hidden sm:inline">Refresh Metadata</span>
+        </Button>
+        <Button @click="dialogOpen = true">
+          <Plus class="w-4 h-4" />
+          Add Site
+        </Button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="relative">
+      <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+      <Input v-model="searchQuery" placeholder="Search sites…" class="pl-8" />
     </div>
 
     <div v-if="store.error" class="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -275,116 +302,243 @@ function worktreeCount(siteId: string): number {
 
     <div v-if="store.loading" class="text-muted-foreground text-sm py-8 text-center">Loading…</div>
 
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      <template v-for="site in store.sites" :key="site.id">
-        <Card
-          :class="[
-            'hover:border-primary/40 transition-colors',
-            site.parent_site_id ? 'border-dashed' : '',
-          ]"
-        >
-          <CardHeader class="pb-2">
-            <!-- Worktree indicator row -->
-            <div v-if="site.parent_site_id" class="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-              <CornerDownRight class="w-3 h-3 shrink-0" />
-              <span>worktree of</span>
-              <span class="font-mono text-foreground">{{ parentDomain(site.parent_site_id) }}</span>
-            </div>
-            <div class="flex items-start justify-between gap-2">
-              <CardTitle class="text-base leading-snug">
-                <a
-                  :href="(site.https ? 'https' : 'http') + '://' + site.domain"
-                  target="_blank"
-                  class="hover:underline inline-flex items-center gap-1.5"
-                >
-                  {{ site.domain }}
-                  <ExternalLink class="w-3.5 h-3.5 text-muted-foreground" />
-                </a>
-              </CardTitle>
-              <Select
-                :model-value="site.php_version"
-                :disabled="updatingPhpId === site.id"
-                @update:model-value="(v) => v && changePhpVersion(site, String(v))"
-              >
-                <SelectTrigger class="h-6 w-28 text-xs font-mono px-2 py-0">
-                  <Loader2 v-if="updatingPhpId === site.id" class="w-3 h-3 animate-spin mr-1" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="ver in phpVersions" :key="ver" :value="ver" class="text-xs font-mono">
-                    PHP {{ ver }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <CardDescription class="font-mono text-xs truncate">{{ site.root_path }}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div class="flex items-center gap-2 flex-wrap">
-              <Badge v-if="site.https" variant="success">
-                <Shield class="w-3 h-3 mr-1" />HTTPS
-              </Badge>
-              <Badge v-if="site.spx_enabled" variant="secondary">
-                <Zap class="w-3 h-3 mr-1" />SPX
-              </Badge>
-              <Badge v-if="site.auto_discovered" variant="outline">
-                <Bot class="w-3 h-3 mr-1" />Auto
-              </Badge>
-              <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono">
-                <GitBranch class="w-3 h-3 mr-1" />{{ site.worktree_branch }}
-              </Badge>
-              <Badge v-if="site.public_dir" variant="outline" class="font-mono text-muted-foreground">
-                /{{ site.public_dir }}
-              </Badge>
+    <template v-else>
+      <!-- ── Desktop table (md+) ── -->
+      <div class="hidden md:block rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Domain</TableHead>
+              <TableHead>Framework</TableHead>
+              <TableHead class="font-mono text-xs">Root path</TableHead>
+              <TableHead>PHP</TableHead>
+              <TableHead class="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <template v-if="filteredSites.length === 0">
+              <TableRow>
+                <TableCell colspan="5" class="text-center text-muted-foreground py-10 text-sm">
+                  {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site or drop a folder in your watch directory.' }}
+                </TableCell>
+              </TableRow>
+            </template>
 
-              <div class="ml-auto flex items-center gap-1">
-                <!-- Add Worktree button (only on non-worktree sites) -->
-                <Button
-                  v-if="!site.parent_site_id"
-                  variant="ghost" size="sm"
-                  class="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
-                  @click="openWorktreeDialog(site)"
-                  :title="`Add worktree (${worktreeCount(site.id)} active)`"
-                >
-                  <GitFork class="w-3.5 h-3.5" />
-                  <span v-if="worktreeCount(site.id) > 0" class="text-xs">{{ worktreeCount(site.id) }}</span>
-                </Button>
+            <TableRow
+              v-for="site in filteredSites"
+              :key="site.id"
+              :class="site.parent_site_id ? 'border-l-2 border-l-muted' : ''"
+            >
+              <!-- Domain -->
+              <TableCell class="py-2">
+                <div class="flex flex-col gap-0.5">
+                  <div v-if="site.parent_site_id" class="flex items-center gap-1 text-xs text-muted-foreground">
+                    <CornerDownRight class="w-3 h-3 shrink-0" />
+                    <span>{{ parentDomain(site.parent_site_id) }}</span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <a
+                      :href="(site.https ? 'https' : 'http') + '://' + site.domain"
+                      target="_blank"
+                      class="font-medium hover:underline inline-flex items-center gap-1"
+                    >
+                      {{ site.domain }}
+                      <ExternalLink class="w-3 h-3 text-muted-foreground" />
+                    </a>
+                    <!-- Git remote link -->
+                    <a
+                      v-if="site.is_git_repo && site.git_remote_url"
+                      :href="site.git_remote_url.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '')"
+                      target="_blank"
+                      class="text-muted-foreground hover:text-foreground"
+                      title="View git repository"
+                    >
+                      <Github class="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div class="flex items-center gap-1 flex-wrap">
+                    <Badge v-if="site.spx_enabled" variant="secondary" class="text-xs h-4 px-1">
+                      <Zap class="w-2.5 h-2.5 mr-0.5" />SPX
+                    </Badge>
+                    <Badge v-if="site.auto_discovered" variant="outline" class="text-xs h-4 px-1">
+                      <Bot class="w-2.5 h-2.5 mr-0.5" />Auto
+                    </Badge>
+                    <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono text-xs h-4 px-1">
+                      <GitBranch class="w-2.5 h-2.5 mr-0.5" />{{ site.worktree_branch }}
+                    </Badge>
+                  </div>
+                </div>
+              </TableCell>
 
-                <!-- Remove Worktree button -->
-                <Button
-                  v-if="site.parent_site_id"
-                  variant="ghost" size="sm"
-                  class="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  :disabled="removingWorktreeId === site.id"
-                  @click="removeWorktree(site)"
-                  title="Remove worktree"
+              <!-- Framework -->
+              <TableCell class="py-2">
+                <Badge
+                  v-if="site.framework"
+                  :variant="frameworkVariant(site.framework)"
+                  class="text-xs"
                 >
-                  <Loader2 v-if="removingWorktreeId === site.id" class="w-3.5 h-3.5 animate-spin" />
-                  <Trash2 v-else class="w-3.5 h-3.5" />
-                </Button>
+                  {{ frameworkLabel(site.framework) }}
+                </Badge>
+                <span v-else class="text-muted-foreground text-xs">—</span>
+              </TableCell>
 
-                <!-- Regular delete button (non-worktree sites) -->
-                <Button
-                  v-if="!site.parent_site_id"
-                  variant="ghost" size="sm"
-                  class="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  :disabled="removingId === site.id"
-                  @click="removeSite(site.id, site.domain)"
-                >
-                  <Loader2 v-if="removingId === site.id" class="w-3.5 h-3.5 animate-spin" />
-                  <Trash2 v-else class="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </template>
+              <!-- Root path -->
+              <TableCell class="py-2 font-mono text-xs text-muted-foreground max-w-48 truncate">
+                {{ site.root_path }}<span v-if="site.public_dir" class="text-muted-foreground/60">/{{ site.public_dir }}</span>
+              </TableCell>
 
-      <div v-if="store.sites.length === 0 && !store.loading"
-        class="col-span-full rounded-lg border border-dashed border-border py-16 text-center text-muted-foreground text-sm">
-        No sites configured. Click <strong>Add Site</strong> or drop a folder in your watch directory.
+              <!-- PHP -->
+              <TableCell class="py-2">
+                <span class="font-mono text-xs">{{ site.php_version }}</span>
+              </TableCell>
+
+              <!-- Actions -->
+              <TableCell class="py-2 text-right">
+                <div class="flex items-center justify-end gap-1">
+                  <!-- Worktree count badge (non-worktree sites with children) -->
+                  <Button
+                    v-if="!site.parent_site_id && worktreeCount(site.id) > 0"
+                    variant="ghost" size="sm"
+                    class="h-7 px-1.5 text-xs text-muted-foreground gap-1"
+                    title="View worktrees"
+                    disabled
+                  >
+                    <GitFork class="w-3.5 h-3.5" />{{ worktreeCount(site.id) }}
+                  </Button>
+
+                  <!-- Settings gear -->
+                  <SiteSettingsDialog
+                    :site="site"
+                    :php-versions="phpVersions"
+                    @open-worktree="openWorktreeDialog"
+                  />
+
+                  <!-- Remove worktree -->
+                  <Button
+                    v-if="site.parent_site_id"
+                    variant="ghost" size="sm"
+                    class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    :disabled="removingWorktreeId === site.id"
+                    @click="removeWorktree(site)"
+                    title="Remove worktree"
+                  >
+                    <Loader2 v-if="removingWorktreeId === site.id" class="w-3.5 h-3.5 animate-spin" />
+                    <Trash2 v-else class="w-3.5 h-3.5" />
+                  </Button>
+
+                  <!-- Delete site -->
+                  <Button
+                    v-if="!site.parent_site_id"
+                    variant="ghost" size="sm"
+                    class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    :disabled="removingId === site.id"
+                    @click="removeSite(site.id, site.domain)"
+                    title="Delete site"
+                  >
+                    <Loader2 v-if="removingId === site.id" class="w-3.5 h-3.5 animate-spin" />
+                    <Trash2 v-else class="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
       </div>
-    </div>
+
+      <!-- ── Mobile cards (< md) ── -->
+      <div class="md:hidden grid grid-cols-1 gap-3">
+        <div v-if="filteredSites.length === 0" class="rounded-lg border border-dashed py-16 text-center text-muted-foreground text-sm">
+          {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site or drop a folder in your watch directory.' }}
+        </div>
+
+        <div
+          v-for="site in filteredSites"
+          :key="site.id"
+          class="rounded-lg border p-3 space-y-2"
+          :class="site.parent_site_id ? 'border-dashed' : ''"
+        >
+          <div v-if="site.parent_site_id" class="flex items-center gap-1 text-xs text-muted-foreground">
+            <CornerDownRight class="w-3 h-3 shrink-0" />
+            <span>worktree of {{ parentDomain(site.parent_site_id) }}</span>
+          </div>
+
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <a
+                :href="(site.https ? 'https' : 'http') + '://' + site.domain"
+                target="_blank"
+                class="font-medium hover:underline inline-flex items-center gap-1"
+              >
+                {{ site.domain }}
+                <ExternalLink class="w-3 h-3 text-muted-foreground" />
+              </a>
+              <p class="font-mono text-xs text-muted-foreground truncate">
+                {{ site.root_path }}<span v-if="site.public_dir">/{{ site.public_dir }}</span>
+              </p>
+            </div>
+
+            <div class="flex items-center gap-1 shrink-0">
+              <!-- Git link -->
+              <a
+                v-if="site.is_git_repo && site.git_remote_url"
+                :href="site.git_remote_url.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '')"
+                target="_blank"
+                class="text-muted-foreground hover:text-foreground p-1"
+                title="View git repository"
+              >
+                <Github class="w-3.5 h-3.5" />
+              </a>
+
+              <SiteSettingsDialog
+                :site="site"
+                :php-versions="phpVersions"
+                @open-worktree="openWorktreeDialog"
+              />
+
+              <Button
+                v-if="site.parent_site_id"
+                variant="ghost" size="sm"
+                class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                :disabled="removingWorktreeId === site.id"
+                @click="removeWorktree(site)"
+                title="Remove worktree"
+              >
+                <Loader2 v-if="removingWorktreeId === site.id" class="w-3.5 h-3.5 animate-spin" />
+                <Trash2 v-else class="w-3.5 h-3.5" />
+              </Button>
+
+              <Button
+                v-if="!site.parent_site_id"
+                variant="ghost" size="sm"
+                class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                :disabled="removingId === site.id"
+                @click="removeSite(site.id, site.domain)"
+                title="Delete site"
+              >
+                <Loader2 v-if="removingId === site.id" class="w-3.5 h-3.5 animate-spin" />
+                <Trash2 v-else class="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 flex-wrap">
+            <Badge v-if="site.framework" :variant="frameworkVariant(site.framework)" class="text-xs">
+              {{ frameworkLabel(site.framework) }}
+            </Badge>
+            <Badge v-if="site.spx_enabled" variant="secondary" class="text-xs">
+              <Zap class="w-2.5 h-2.5 mr-0.5" />SPX
+            </Badge>
+            <Badge v-if="site.auto_discovered" variant="outline" class="text-xs">
+              <Bot class="w-2.5 h-2.5 mr-0.5" />Auto
+            </Badge>
+            <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono text-xs">
+              <GitBranch class="w-2.5 h-2.5 mr-0.5" />{{ site.worktree_branch }}
+            </Badge>
+            <span class="text-xs text-muted-foreground font-mono ml-auto">PHP {{ site.php_version }}</span>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <!-- Add Site Dialog -->
     <Dialog v-model:open="dialogOpen">
@@ -465,24 +619,16 @@ function worktreeCount(siteId: string): number {
         </div>
 
         <div v-else class="grid gap-4 py-2">
-          <!-- Create new branch toggle -->
           <div class="flex items-center gap-2">
             <input type="checkbox" id="create_branch" v-model="worktreeForm.createBranch" class="rounded" />
             <Label for="create_branch" class="cursor-pointer">Create new branch</Label>
           </div>
 
-          <!-- New branch name input -->
           <div v-if="worktreeForm.createBranch" class="grid gap-1.5">
             <Label for="new_branch">New branch name</Label>
-            <Input
-              id="new_branch"
-              v-model="worktreeForm.newBranchName"
-              placeholder="feature/my-thing"
-              class="font-mono"
-            />
+            <Input id="new_branch" v-model="worktreeForm.newBranchName" placeholder="feature/my-thing" class="font-mono" />
           </div>
 
-          <!-- Existing branch selector -->
           <div v-else class="grid gap-1.5">
             <Label for="branch_select">Branch</Label>
             <Select v-model="worktreeForm.branch">
@@ -490,12 +636,7 @@ function worktreeCount(siteId: string): number {
                 <SelectValue placeholder="Select branch" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem
-                  v-for="b in worktreeBranches"
-                  :key="b.name"
-                  :value="b.name"
-                  class="font-mono text-xs"
-                >
+                <SelectItem v-for="b in worktreeBranches" :key="b.name" :value="b.name" class="font-mono text-xs">
                   <span class="flex items-center gap-2">
                     <GitBranch class="w-3 h-3 shrink-0 text-muted-foreground" />
                     {{ b.name }}
@@ -507,38 +648,24 @@ function worktreeCount(siteId: string): number {
             </Select>
           </div>
 
-          <!-- Domain preview -->
           <div v-if="worktreePreviewDomain" class="rounded-md bg-muted px-3 py-2 text-xs">
             <span class="text-muted-foreground">Will create: </span>
             <span class="font-mono text-foreground">{{ worktreePreviewDomain }}</span>
           </div>
 
-          <!-- Shared resources -->
           <div class="grid gap-2 border rounded-md p-3">
             <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Shared resources</p>
             <div class="grid gap-1.5">
               <Label for="wt_symlinks" class="text-xs">Symlink from parent <span class="text-muted-foreground">(comma-separated paths)</span></Label>
-              <Input
-                id="wt_symlinks"
-                v-model="worktreeForm.symlinksInput"
-                placeholder="vendor, node_modules"
-                class="font-mono text-xs h-8"
-              />
+              <Input id="wt_symlinks" v-model="worktreeForm.symlinksInput" placeholder="vendor, node_modules" class="font-mono text-xs h-8" />
             </div>
             <div class="grid gap-1.5">
               <Label for="wt_copies" class="text-xs">Copy from parent <span class="text-muted-foreground">(comma-separated paths)</span></Label>
-              <Input
-                id="wt_copies"
-                v-model="worktreeForm.copiesInput"
-                placeholder=".env"
-                class="font-mono text-xs h-8"
-              />
+              <Input id="wt_copies" v-model="worktreeForm.copiesInput" placeholder=".env" class="font-mono text-xs h-8" />
             </div>
             <div class="flex items-center gap-2 mt-1">
               <input type="checkbox" id="save_config" v-model="worktreeForm.saveConfig" class="rounded" />
-              <Label for="save_config" class="cursor-pointer text-xs text-muted-foreground">
-                Save as default for this site
-              </Label>
+              <Label for="save_config" class="cursor-pointer text-xs text-muted-foreground">Save as default for this site</Label>
             </div>
           </div>
         </div>

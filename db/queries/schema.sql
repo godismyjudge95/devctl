@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS sites (
     worktree_branch  TEXT DEFAULT NULL,
     public_dir       TEXT NOT NULL DEFAULT '',
     service_vhost    INTEGER NOT NULL DEFAULT 0,
+    is_git_repo      INTEGER NOT NULL DEFAULT 0,
+    git_remote_url   TEXT    NOT NULL DEFAULT '',
+    framework        TEXT    NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
 );

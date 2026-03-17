@@ -10,6 +10,7 @@ import {
   disableSPX,
   createWorktree,
   removeWorktree,
+  refreshSiteMetadata,
 } from '@/lib/api'
 
 export const useSitesStore = defineStore('sites', () => {
@@ -67,7 +68,14 @@ export const useSitesStore = defineStore('sites', () => {
     sites.value = sites.value.filter((s: Site) => s.id !== worktreeId)
   }
 
+  /** Re-inspect all sites and refresh git/framework metadata, then reload. */
+  async function refreshMetadata(): Promise<number> {
+    const result = await refreshSiteMetadata()
+    await load()
+    return result.updated
+  }
+
   const count = computed(() => sites.value.length)
 
-  return { sites, count, loading, error, load, create, update, remove, toggleSPX, addWorktree, deleteWorktree }
+  return { sites, count, loading, error, load, create, update, remove, toggleSPX, addWorktree, deleteWorktree, refreshMetadata }
 })

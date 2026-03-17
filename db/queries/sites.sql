@@ -17,15 +17,18 @@ SELECT * FROM sites WHERE root_path = ? LIMIT 1;
 SELECT * FROM sites WHERE parent_site_id = ? ORDER BY created_at ASC;
 
 -- name: CreateSite :one
-INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateSite :one
 UPDATE sites
-SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, public_dir = ?, updated_at = datetime('now')
+SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, public_dir = ?, is_git_repo = ?, git_remote_url = ?, framework = ?, updated_at = datetime('now')
 WHERE id = ?
 RETURNING *;
+
+-- name: UpdateSiteGitInfo :exec
+UPDATE sites SET is_git_repo = ?, git_remote_url = ?, framework = ?, updated_at = datetime('now') WHERE id = ?;
 
 -- name: UpdateSiteSettings :exec
 UPDATE sites SET settings = ?, updated_at = datetime('now') WHERE id = ?;

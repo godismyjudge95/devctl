@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -48,6 +47,12 @@ type CreateSiteInput struct {
 	// ServiceVhost marks this site as a managed service vhost (e.g. reverb.test).
 	// Service vhosts are excluded from the user-facing sites list.
 	ServiceVhost bool
+	// IsGitRepo indicates whether the root path is a git repository.
+	IsGitRepo bool
+	// GitRemoteURL is the fetch URL for the "origin" remote, if any.
+	GitRemoteURL string
+	// Framework is the detected project framework (laravel, statamic, wordpress, or "").
+	Framework string
 }
 
 // Create inserts a site into the DB and provisions its Caddy vhost.
@@ -90,6 +95,10 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 	}
 
 	id := DomainToID(input.Domain)
+	isGitRepoVal := int64(0)
+	if input.IsGitRepo {
+		isGitRepoVal = 1
+	}
 	site, err := m.db.CreateSite(ctx, dbq.CreateSiteParams{
 		ID:             id,
 		Domain:         input.Domain,
@@ -104,6 +113,9 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		WorktreeBranch: worktreeBranch,
 		PublicDir:      input.PublicDir,
 		ServiceVhost:   serviceVhostVal,
+		IsGitRepo:      isGitRepoVal,
+		GitRemoteURL:   input.GitRemoteURL,
+		Framework:      input.Framework,
 	})
 	if err != nil {
 		return dbq.Site{}, fmt.Errorf("create site db: %w", err)
@@ -171,10 +183,19 @@ func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 		Domain:         domain,
 		RootPath:       dirPath,
 		PHPVersion:     "8.3",
-		PublicDir:      detectPublicDir(dirPath),
+		PublicDir:      DetectPublicDir(dirPath),
 		Aliases:        nil,
 		HTTPS:          true,
 		AutoDiscovered: true,
+	}
+
+	// Enrich with git and framework info.
+	info := InspectPath(dirPath)
+	input.IsGitRepo = info.IsGitRepo
+	input.GitRemoteURL = info.GitRemoteURL
+	input.Framework = info.Framework
+	if input.PublicDir == "" && info.PublicDir != "" {
+		input.PublicDir = info.PublicDir
 	}
 
 	// Check if this directory is a git linked worktree whose parent is already tracked.
@@ -235,6 +256,10 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 	// filesystem watcher (AutoDiscover) sees the domain as already tracked and
 	// skips it — avoiding a UNIQUE constraint race when the watcher fires while
 	// git is still populating the worktree directory.
+	//
+	// Git info is inherited from the parent; framework will be re-detected once
+	// the worktree is fully populated on first real access. For now inherit
+	// the parent's framework so the badge shows immediately.
 	site, err := m.Create(ctx, CreateSiteInput{
 		Domain:         worktreeDomain,
 		RootPath:       worktreePath,
@@ -244,6 +269,9 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 		AutoDiscovered: false,
 		ParentSiteID:   parentID,
 		WorktreeBranch: branch,
+		IsGitRepo:      true,
+		GitRemoteURL:   parent.GitRemoteURL,
+		Framework:      parent.Framework,
 	})
 	if err != nil {
 		return dbq.Site{}, fmt.Errorf("register worktree site: %w", err)
@@ -343,18 +371,4 @@ func DomainToID(domain string) string {
 	id = strings.ReplaceAll(id, ".", "-")
 	id = strings.ReplaceAll(id, "_", "-")
 	return id
-}
-
-// detectPublicDir returns the public subdirectory for a project root path.
-// Laravel/Statamic projects (identified by an "artisan" file) use "public";
-// all other projects default to "".
-func detectPublicDir(rootPath string) string {
-	if _, err := filepath.Abs(rootPath); err != nil {
-		return ""
-	}
-	// artisan file → Laravel or Statamic → public/
-	if info, err := os.Stat(filepath.Join(rootPath, "artisan")); err == nil && !info.IsDir() {
-		return "public"
-	}
-	return ""
 }

@@ -47,6 +47,16 @@ func IsGitRepo(path string) bool {
 	return err == nil
 }
 
+// GetRemoteURL returns the fetch URL for the "origin" remote of the repo at path.
+// Returns an empty string if there is no origin remote or if path is not a git repo.
+func GetRemoteURL(path string) string {
+	out, err := runGit(path, "remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // IsLinkedWorktree reports whether path is a linked git worktree (has a .git FILE, not a dir).
 // Linked worktrees have a .git file containing the gitdir pointer.
 func IsLinkedWorktree(path string) bool {

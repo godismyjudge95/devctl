@@ -26,6 +26,9 @@ export interface Site {
   public_dir: string
   parent_site_id: string | null
   worktree_branch: string | null
+  is_git_repo: number
+  git_remote_url: string
+  framework: string
   created_at: string
   updated_at: string
 }
@@ -197,6 +200,8 @@ export const enableSPX = (id: string) => request<void>('POST', `/api/sites/${id}
 export const disableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/disable`)
 export const detectSite = (rootPath: string) =>
   request<{ public_dir: string; framework: string }>('GET', `/api/sites/detect?root_path=${encodeURIComponent(rootPath)}`)
+export const refreshSiteMetadata = () =>
+  request<{ updated: number }>('POST', '/api/sites/refresh-metadata')
 
 // --- Worktrees ---
 export const getSiteBranches = (id: string) =>

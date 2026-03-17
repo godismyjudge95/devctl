@@ -93,6 +93,7 @@ func (s *Server) registerRoutes() {
 
 	// Sites
 	s.mux.HandleFunc("GET /api/sites/detect", s.handleDetectSite)
+	s.mux.HandleFunc("POST /api/sites/refresh-metadata", s.handleRefreshSiteMetadata)
 	s.mux.HandleFunc("GET /api/sites", s.handleGetSites)
 	s.mux.HandleFunc("POST /api/sites", s.handleCreateSite)
 	s.mux.HandleFunc("GET /api/sites/{id}", s.handleGetSite)

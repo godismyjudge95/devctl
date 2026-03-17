@@ -43,19 +43,25 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-detect public_dir if the caller didn't supply one.
+	// Inspect the root path: detect framework, public dir, git info.
+	info := InspectSitePath(req.RootPath)
+
+	// Caller-supplied public_dir wins; fall back to detected value.
 	publicDir := req.PublicDir
 	if publicDir == "" {
-		publicDir = DetectPublicDir(req.RootPath)
+		publicDir = info.PublicDir
 	}
 
 	site, err := s.siteManager.Create(r.Context(), sites.CreateSiteInput{
-		Domain:     req.Domain,
-		RootPath:   req.RootPath,
-		PHPVersion: req.PHPVersion,
-		Aliases:    req.Aliases,
-		HTTPS:      req.HTTPS,
-		PublicDir:  publicDir,
+		Domain:       req.Domain,
+		RootPath:     req.RootPath,
+		PHPVersion:   req.PHPVersion,
+		Aliases:      req.Aliases,
+		HTTPS:        req.HTTPS,
+		PublicDir:    publicDir,
+		IsGitRepo:    info.IsGitRepo,
+		GitRemoteURL: info.GitRemoteURL,
+		Framework:    info.Framework,
 	})
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
@@ -102,16 +108,33 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		httpsVal = 0
 	}
 
+	// Re-inspect if root_path changed; otherwise preserve existing git/framework data.
+	isGitRepo := existing.IsGitRepo
+	gitRemoteURL := existing.GitRemoteURL
+	framework := existing.Framework
+	if req.RootPath != existing.RootPath {
+		info := InspectSitePath(req.RootPath)
+		isGitRepo = 0
+		if info.IsGitRepo {
+			isGitRepo = 1
+		}
+		gitRemoteURL = info.GitRemoteURL
+		framework = info.Framework
+	}
+
 	site, err := s.queries.UpdateSite(context.Background(), dbq.UpdateSiteParams{
-		Domain:     req.Domain,
-		RootPath:   req.RootPath,
-		PhpVersion: req.PHPVersion,
-		Aliases:    string(aliases),
-		SpxEnabled: spx,
-		Https:      httpsVal,
-		Settings:   existing.Settings,
-		PublicDir:  req.PublicDir,
-		ID:         id,
+		Domain:       req.Domain,
+		RootPath:     req.RootPath,
+		PhpVersion:   req.PHPVersion,
+		Aliases:      string(aliases),
+		SpxEnabled:   spx,
+		Https:        httpsVal,
+		Settings:     existing.Settings,
+		PublicDir:    req.PublicDir,
+		IsGitRepo:    isGitRepo,
+		GitRemoteURL: gitRemoteURL,
+		Framework:    framework,
+		ID:           id,
 	})
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
@@ -154,6 +177,38 @@ func (s *Server) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRefreshSiteMetadata re-inspects every site's root_path and updates
+// is_git_repo, git_remote_url, and framework in the DB.
+// POST /api/sites/refresh-metadata
+func (s *Server) handleRefreshSiteMetadata(w http.ResponseWriter, r *http.Request) {
+	all, err := s.queries.GetUserSites(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	updated := 0
+	for _, site := range all {
+		info := InspectSitePath(site.RootPath)
+		isGitRepo := int64(0)
+		if info.IsGitRepo {
+			isGitRepo = 1
+		}
+		if err := s.queries.UpdateSiteGitInfo(r.Context(), dbq.UpdateSiteGitInfoParams{
+			IsGitRepo:    isGitRepo,
+			GitRemoteURL: info.GitRemoteURL,
+			Framework:    info.Framework,
+			ID:           site.ID,
+		}); err != nil {
+			writeError(w, fmt.Sprintf("failed to update site %s: %v", site.ID, err), http.StatusInternalServerError)
+			return
+		}
+		updated++
+	}
+
+	writeJSON(w, map[string]int{"updated": updated})
 }
 
 func (s *Server) handleSPXEnable(w http.ResponseWriter, r *http.Request) {

@@ -2,49 +2,25 @@ package api
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
+
+	"github.com/danielgormly/devctl/sites"
 )
 
-// DetectFramework returns the framework name for the given root path.
-// Signals:
-//   - "artisan" file present + "content/" directory → "statamic"
-//   - "artisan" file present → "laravel"
-//   - "wp-config.php" or "wp-login.php" present → "wordpress"
-//   - otherwise → ""
+// InspectSitePath is the API-layer wrapper around sites.InspectPath.
+// It returns the auto-detected framework, public directory, git repo status,
+// and git remote URL for the given root path.
+func InspectSitePath(rootPath string) sites.SiteInspection {
+	return sites.InspectPath(rootPath)
+}
+
+// DetectFramework is kept for backward compatibility.
 func DetectFramework(rootPath string) string {
-	if fileExists(filepath.Join(rootPath, "artisan")) {
-		if dirExists(filepath.Join(rootPath, "content")) {
-			return "statamic"
-		}
-		return "laravel"
-	}
-	if fileExists(filepath.Join(rootPath, "wp-config.php")) || fileExists(filepath.Join(rootPath, "wp-login.php")) {
-		return "wordpress"
-	}
-	return ""
+	return sites.DetectFramework(rootPath)
 }
 
-// DetectPublicDir returns the public subdirectory for the given root path.
-// Laravel/Statamic use "public"; WordPress and unknown projects use "".
+// DetectPublicDir is kept for backward compatibility.
 func DetectPublicDir(rootPath string) string {
-	fw := DetectFramework(rootPath)
-	switch fw {
-	case "laravel", "statamic":
-		return "public"
-	default:
-		return ""
-	}
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+	return sites.DetectPublicDir(rootPath)
 }
 
 // handleDetectSite handles GET /api/sites/detect?root_path=...
@@ -56,11 +32,9 @@ func (s *Server) handleDetectSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	framework := DetectFramework(rootPath)
-	publicDir := DetectPublicDir(rootPath)
-
+	info := InspectSitePath(rootPath)
 	writeJSON(w, map[string]string{
-		"public_dir": publicDir,
-		"framework":  framework,
+		"public_dir": info.PublicDir,
+		"framework":  info.Framework,
 	})
 }

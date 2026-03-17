@@ -10,9 +10,9 @@ import (
 )
 
 const createSite = `-- name: CreateSite :one
-INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at
+INSERT INTO sites (id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at
 `
 
 type CreateSiteParams struct {
@@ -29,6 +29,9 @@ type CreateSiteParams struct {
 	WorktreeBranch *string `db:"worktree_branch" json:"worktree_branch"`
 	PublicDir      string  `db:"public_dir" json:"public_dir"`
 	ServiceVhost   int64   `db:"service_vhost" json:"service_vhost"`
+	IsGitRepo      int64   `db:"is_git_repo" json:"is_git_repo"`
+	GitRemoteURL   string  `db:"git_remote_url" json:"git_remote_url"`
+	Framework      string  `db:"framework" json:"framework"`
 }
 
 func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error) {
@@ -46,6 +49,9 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		arg.WorktreeBranch,
 		arg.PublicDir,
 		arg.ServiceVhost,
+		arg.IsGitRepo,
+		arg.GitRemoteURL,
+		arg.Framework,
 	)
 	var i Site
 	err := row.Scan(
@@ -62,6 +68,9 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) (Site, e
 		&i.WorktreeBranch,
 		&i.PublicDir,
 		&i.ServiceVhost,
+		&i.IsGitRepo,
+		&i.GitRemoteURL,
+		&i.Framework,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -78,7 +87,7 @@ func (q *Queries) DeleteSite(ctx context.Context, id string) error {
 }
 
 const getAllSites = `-- name: GetAllSites :many
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at FROM sites ORDER BY created_at ASC
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at FROM sites ORDER BY created_at ASC
 `
 
 func (q *Queries) GetAllSites(ctx context.Context) ([]Site, error) {
@@ -104,6 +113,9 @@ func (q *Queries) GetAllSites(ctx context.Context) ([]Site, error) {
 			&i.WorktreeBranch,
 			&i.PublicDir,
 			&i.ServiceVhost,
+			&i.IsGitRepo,
+			&i.GitRemoteURL,
+			&i.Framework,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -121,7 +133,7 @@ func (q *Queries) GetAllSites(ctx context.Context) ([]Site, error) {
 }
 
 const getSite = `-- name: GetSite :one
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at FROM sites WHERE id = ? LIMIT 1
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at FROM sites WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetSite(ctx context.Context, id string) (Site, error) {
@@ -141,6 +153,9 @@ func (q *Queries) GetSite(ctx context.Context, id string) (Site, error) {
 		&i.WorktreeBranch,
 		&i.PublicDir,
 		&i.ServiceVhost,
+		&i.IsGitRepo,
+		&i.GitRemoteURL,
+		&i.Framework,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -148,7 +163,7 @@ func (q *Queries) GetSite(ctx context.Context, id string) (Site, error) {
 }
 
 const getSiteByDomain = `-- name: GetSiteByDomain :one
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at FROM sites WHERE domain = ? LIMIT 1
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at FROM sites WHERE domain = ? LIMIT 1
 `
 
 func (q *Queries) GetSiteByDomain(ctx context.Context, domain string) (Site, error) {
@@ -168,6 +183,9 @@ func (q *Queries) GetSiteByDomain(ctx context.Context, domain string) (Site, err
 		&i.WorktreeBranch,
 		&i.PublicDir,
 		&i.ServiceVhost,
+		&i.IsGitRepo,
+		&i.GitRemoteURL,
+		&i.Framework,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -175,7 +193,7 @@ func (q *Queries) GetSiteByDomain(ctx context.Context, domain string) (Site, err
 }
 
 const getSiteByRootPath = `-- name: GetSiteByRootPath :one
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at FROM sites WHERE root_path = ? LIMIT 1
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at FROM sites WHERE root_path = ? LIMIT 1
 `
 
 func (q *Queries) GetSiteByRootPath(ctx context.Context, rootPath string) (Site, error) {
@@ -195,6 +213,9 @@ func (q *Queries) GetSiteByRootPath(ctx context.Context, rootPath string) (Site,
 		&i.WorktreeBranch,
 		&i.PublicDir,
 		&i.ServiceVhost,
+		&i.IsGitRepo,
+		&i.GitRemoteURL,
+		&i.Framework,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -202,7 +223,7 @@ func (q *Queries) GetSiteByRootPath(ctx context.Context, rootPath string) (Site,
 }
 
 const getUserSites = `-- name: GetUserSites :many
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at FROM sites WHERE service_vhost = 0 ORDER BY created_at ASC
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at FROM sites WHERE service_vhost = 0 ORDER BY created_at ASC
 `
 
 func (q *Queries) GetUserSites(ctx context.Context) ([]Site, error) {
@@ -228,6 +249,9 @@ func (q *Queries) GetUserSites(ctx context.Context) ([]Site, error) {
 			&i.WorktreeBranch,
 			&i.PublicDir,
 			&i.ServiceVhost,
+			&i.IsGitRepo,
+			&i.GitRemoteURL,
+			&i.Framework,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -245,7 +269,7 @@ func (q *Queries) GetUserSites(ctx context.Context) ([]Site, error) {
 }
 
 const getWorktreesBySite = `-- name: GetWorktreesBySite :many
-SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at FROM sites WHERE parent_site_id = ? ORDER BY created_at ASC
+SELECT id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at FROM sites WHERE parent_site_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) GetWorktreesBySite(ctx context.Context, parentSiteID *string) ([]Site, error) {
@@ -271,6 +295,9 @@ func (q *Queries) GetWorktreesBySite(ctx context.Context, parentSiteID *string) 
 			&i.WorktreeBranch,
 			&i.PublicDir,
 			&i.ServiceVhost,
+			&i.IsGitRepo,
+			&i.GitRemoteURL,
+			&i.Framework,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -318,21 +345,24 @@ func (q *Queries) SetSiteWorktreeInfo(ctx context.Context, arg SetSiteWorktreeIn
 
 const updateSite = `-- name: UpdateSite :one
 UPDATE sites
-SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, public_dir = ?, updated_at = datetime('now')
+SET domain = ?, root_path = ?, php_version = ?, aliases = ?, spx_enabled = ?, https = ?, settings = ?, public_dir = ?, is_git_repo = ?, git_remote_url = ?, framework = ?, updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, created_at, updated_at
+RETURNING id, domain, root_path, php_version, aliases, spx_enabled, https, auto_discovered, settings, parent_site_id, worktree_branch, public_dir, service_vhost, is_git_repo, git_remote_url, framework, created_at, updated_at
 `
 
 type UpdateSiteParams struct {
-	Domain     string `db:"domain" json:"domain"`
-	RootPath   string `db:"root_path" json:"root_path"`
-	PhpVersion string `db:"php_version" json:"php_version"`
-	Aliases    string `db:"aliases" json:"aliases"`
-	SpxEnabled int64  `db:"spx_enabled" json:"spx_enabled"`
-	Https      int64  `db:"https" json:"https"`
-	Settings   string `db:"settings" json:"settings"`
-	PublicDir  string `db:"public_dir" json:"public_dir"`
-	ID         string `db:"id" json:"id"`
+	Domain       string `db:"domain" json:"domain"`
+	RootPath     string `db:"root_path" json:"root_path"`
+	PhpVersion   string `db:"php_version" json:"php_version"`
+	Aliases      string `db:"aliases" json:"aliases"`
+	SpxEnabled   int64  `db:"spx_enabled" json:"spx_enabled"`
+	Https        int64  `db:"https" json:"https"`
+	Settings     string `db:"settings" json:"settings"`
+	PublicDir    string `db:"public_dir" json:"public_dir"`
+	IsGitRepo    int64  `db:"is_git_repo" json:"is_git_repo"`
+	GitRemoteURL string `db:"git_remote_url" json:"git_remote_url"`
+	Framework    string `db:"framework" json:"framework"`
+	ID           string `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateSite(ctx context.Context, arg UpdateSiteParams) (Site, error) {
@@ -345,6 +375,9 @@ func (q *Queries) UpdateSite(ctx context.Context, arg UpdateSiteParams) (Site, e
 		arg.Https,
 		arg.Settings,
 		arg.PublicDir,
+		arg.IsGitRepo,
+		arg.GitRemoteURL,
+		arg.Framework,
 		arg.ID,
 	)
 	var i Site
@@ -362,10 +395,29 @@ func (q *Queries) UpdateSite(ctx context.Context, arg UpdateSiteParams) (Site, e
 		&i.WorktreeBranch,
 		&i.PublicDir,
 		&i.ServiceVhost,
+		&i.IsGitRepo,
+		&i.GitRemoteURL,
+		&i.Framework,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateSiteGitInfo = `-- name: UpdateSiteGitInfo :exec
+UPDATE sites SET is_git_repo = ?, git_remote_url = ?, framework = ?, updated_at = datetime('now') WHERE id = ?
+`
+
+type UpdateSiteGitInfoParams struct {
+	IsGitRepo    int64  `db:"is_git_repo" json:"is_git_repo"`
+	GitRemoteURL string `db:"git_remote_url" json:"git_remote_url"`
+	Framework    string `db:"framework" json:"framework"`
+	ID           string `db:"id" json:"id"`
+}
+
+func (q *Queries) UpdateSiteGitInfo(ctx context.Context, arg UpdateSiteGitInfoParams) error {
+	_, err := q.db.ExecContext(ctx, updateSiteGitInfo, arg.IsGitRepo, arg.GitRemoteURL, arg.Framework, arg.ID)
+	return err
 }
 
 const updateSiteSettings = `-- name: UpdateSiteSettings :exec

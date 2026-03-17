@@ -36,6 +36,9 @@ type Site struct {
 	WorktreeBranch *string   `db:"worktree_branch" json:"worktree_branch"`
 	PublicDir      string    `db:"public_dir" json:"public_dir"`
 	ServiceVhost   int64     `db:"service_vhost" json:"service_vhost"`
+	IsGitRepo      int64     `db:"is_git_repo" json:"is_git_repo"`
+	GitRemoteURL   string    `db:"git_remote_url" json:"git_remote_url"`
+	Framework      string    `db:"framework" json:"framework"`
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
