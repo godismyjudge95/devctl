@@ -38,20 +38,25 @@ jobs:
           restore-keys: |
             spc-downloads-${{ matrix.php }}-linux-x86_64-
 
+      - name: Check and fix build environment
+        run: ./bin/spc-alpine-docker doctor --auto-fix
+
       - name: Download PHP sources and dependency tarballs
         run: |
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
             --for-extensions=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx \
             --prefer-pre-built \
-            --ignore-cache-sources=php-src
+            --ignore-cache-sources=php-src \
+            --retry=5
 
       - name: Build PHP CLI and FPM
         run: |
           ./bin/spc-alpine-docker build \
             apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx \
             --build-cli \
-            --build-fpm
+            --build-fpm \
+            --debug
 
       # Rename binaries to the asset names devctl expects.
       - name: Stage release assets
