@@ -41,11 +41,21 @@ jobs:
       - name: Check and fix build environment
         run: ./bin/spc-alpine-docker doctor --auto-fix
 
+      - name: Set extensions for PHP version
+        id: exts
+        run: |
+          # swoole requires PHP >= 8.2, exclude it for 8.1
+          if [ "${{ matrix.php }}" = "8.1" ]; then
+            echo "list=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx" >> "$GITHUB_OUTPUT"
+          else
+            echo "list=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download PHP sources and dependency tarballs
         run: |
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
-            --for-extensions=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx \
+            --for-extensions=${{ steps.exts.outputs.list }} \
             --prefer-pre-built \
             --ignore-cache-sources=php-src \
             --retry=5
@@ -53,21 +63,20 @@ jobs:
       - name: Build PHP CLI and FPM
         run: |
           ./bin/spc-alpine-docker build \
-            apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx \
+            ${{ steps.exts.outputs.list }} \
             --build-cli \
             --build-fpm \
             --debug
 
-      # Rename binaries to the asset names devctl expects.
-      - name: Stage release assets
-        run: |
-          mkdir -p dist
-          cp buildroot/bin/php      dist/php-${{ matrix.php }}-cli-linux-x86_64
-          cp buildroot/bin/php-fpm  dist/php-${{ matrix.php }}-fpm-linux-x86_64
+          # Copy out of Docker-owned buildroot before the container exits.
+          # buildroot/bin/ is owned by root (Docker), so we must copy here.
+          mkdir -p tmp_dist
+          cp buildroot/bin/php     tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
+          cp buildroot/bin/php-fpm tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
 
       - name: Upload binaries to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/php-${{ matrix.php }}-cli-linux-x86_64
-            dist/php-${{ matrix.php }}-fpm-linux-x86_64
+            tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
+            tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
