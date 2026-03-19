@@ -1,0 +1,68 @@
+name: Build PHP Binaries
+
+# Triggered when a devctl release is published so PHP binaries are attached to
+# the same release. Also supports manual dispatch for testing.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build PHP ${{ matrix.php }} (linux-x86_64)
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # required to upload release assets
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.1", "8.2", "8.3", "8.4"]
+
+    steps:
+      - name: Checkout static-php-cli
+        uses: actions/checkout@v4
+        with:
+          repository: crazywhalecc/static-php-cli
+          # Use HEAD of main — tracks the latest spc release.
+          ref: main
+
+      # spc caches downloaded source tarballs in ./downloads.
+      # Key includes the PHP version so each version gets its own cache slot.
+      - name: Cache downloaded sources
+        uses: actions/cache@v4
+        with:
+          path: downloads
+          key: spc-downloads-${{ matrix.php }}-linux-x86_64-${{ github.run_id }}
+          restore-keys: |
+            spc-downloads-${{ matrix.php }}-linux-x86_64-
+
+      - name: Download PHP sources and dependency tarballs
+        run: |
+          ./bin/spc-alpine-docker download \
+            --with-php=${{ matrix.php }} \
+            --for-extensions=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx \
+            --prefer-pre-built \
+            --ignore-cache-sources=php-src
+
+      - name: Build PHP CLI and FPM
+        run: |
+          ./bin/spc-alpine-docker build \
+            apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx \
+            --build-cli \
+            --build-fpm
+
+      # Rename binaries to the asset names devctl expects.
+      - name: Stage release assets
+        run: |
+          mkdir -p dist
+          cp buildroot/bin/php      dist/php-${{ matrix.php }}-cli-linux-x86_64
+          cp buildroot/bin/php-fpm  dist/php-${{ matrix.php }}-fpm-linux-x86_64
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/php-${{ matrix.php }}-cli-linux-x86_64
+            dist/php-${{ matrix.php }}-fpm-linux-x86_64

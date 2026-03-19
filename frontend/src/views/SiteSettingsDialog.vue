@@ -7,6 +7,7 @@ import { toast } from 'vue-sonner'
 import { Loader2, Settings } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -37,6 +38,7 @@ const form = ref({
   public_dir: '',
   php_version: '',
   aliases: '',
+  spx_enabled: false,
 })
 const detectedFramework = ref('')
 
@@ -51,6 +53,7 @@ function openDialog() {
     public_dir: props.site.public_dir,
     php_version: props.site.php_version,
     aliases,
+    spx_enabled: props.site.spx_enabled === 1,
   }
   detectedFramework.value = props.site.framework ?? ''
   open.value = true
@@ -74,6 +77,7 @@ async function save() {
     const aliasList = form.value.aliases
       ? form.value.aliases.split(',').map((a) => a.trim()).filter(Boolean)
       : []
+    const spxChanged = form.value.spx_enabled !== (props.site.spx_enabled === 1)
     await store.update(props.site.id, {
       domain: form.value.domain,
       root_path: form.value.root_path,
@@ -81,8 +85,11 @@ async function save() {
       php_version: form.value.php_version,
       aliases: aliasList,
       https: props.site.https,
-      spx_enabled: props.site.spx_enabled,
+      spx_enabled: form.value.spx_enabled ? 1 : 0,
     })
+    if (spxChanged) {
+      await store.toggleSPX(props.site.id, form.value.spx_enabled)
+    }
     toast.success(`${form.value.domain} settings saved`)
     open.value = false
   } catch (e: any) {
@@ -152,6 +159,14 @@ async function save() {
             <Label for="sd-aliases">Aliases</Label>
             <Input id="sd-aliases" v-model="form.aliases" placeholder="www.myapp.test" />
           </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <Checkbox id="sd-spx" v-model:checked="form.spx_enabled" />
+          <Label for="sd-spx" class="cursor-pointer">
+            Enable SPX Profiler
+            <span class="text-muted-foreground font-normal text-xs">(activates via cookie/query param)</span>
+          </Label>
         </div>
 
         <!-- Worktree button — only for non-worktree, git-backed sites -->

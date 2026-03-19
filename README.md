@@ -21,7 +21,9 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - **PHP CLI** — a global `/usr/local/bin/php` symlink always points at the highest installed PHP version; per-version symlinks (`php8.3`, `php8.4`, …) are also created
 - **Global php.ini** — set `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time` across all installed PHP versions at once
 - **Dumps** — receive and display `php_dd()` / `dd()` variable dumps from any site over TCP (no browser extension needed)
+- **Browser notifications** — native desktop notifications when new dumps or mail arrive while you are on another tab; uses the Service Worker Notification API with a direct-API fallback
 - **TLS** — download or auto-trust Caddy's root CA certificate so `*.test` sites work without browser warnings
+- **SPX Profiler** — per-site PHP profiling via [SPX](https://github.com/NoiseByNorthwest/php-spx); enable per site, then trigger profiles via cookies or query params. View results in the **Profiler** tab with a flat profile table, flamegraph, timeline, and metadata panel
 
 ---
 
@@ -216,6 +218,51 @@ Each version runs as:
 **CLI symlinks created on install:**
 - `/usr/local/bin/php{version}` — points at the version-specific CLI binary (e.g. `php8.4`)
 - `/usr/local/bin/php` — always points at the highest installed version
+
+---
+
+## Browser Notifications
+
+devctl can fire native desktop notifications when new dumps or mail arrive while you are viewing a different tab.
+
+- **Dumps** — a notification fires whenever a new `php_dd()` dump arrives and you are not currently on the `/dumps` page. A single dump shows a short plain-text value preview; multiple dumps arriving within 1.5 seconds are collapsed into one notification showing the total count. Clicking the notification navigates directly to that dump.
+- **Mail** — a notification fires whenever a new message arrives in Mailpit and you are not on the `/mail` page. A single message shows the sender and subject; bursts are collapsed. Clicking navigates to the Mail page.
+
+Notifications are requested automatically on first load. devctl uses the **Service Worker Notification API** when supported (enabling reliable window-focusing on all platforms), with a direct `Notification` API fallback for browsers without service worker support.
+
+---
+
+## SPX Profiler
+
+devctl includes native support for [SPX](https://github.com/NoiseByNorthwest/php-spx), a low-overhead PHP profiler. SPX is compiled directly into devctl's custom PHP binaries (available for PHP 8.1–8.4, x86_64) and has zero overhead when not actively profiling.
+
+**Enabling SPX for a site:**
+
+1. Open a site's settings dialog (gear icon on the site card).
+2. Toggle **SPX Profiling** on and save. devctl rewrites the PHP-FPM ini and restarts the pool.
+
+Once enabled, the **Profiler** navigation item appears in the sidebar.
+
+**Triggering a profile:**
+
+Activate profiling for a request by sending the `SPX_ENABLED=1` and `SPX_KEY=dev` cookies, or as query parameters:
+
+```
+https://mysite.test/some/page?SPX_ENABLED=1&SPX_KEY=dev
+```
+
+The profile is automatically saved to disk and appears in the Profiler tab.
+
+**Profiler views:**
+
+| Tab | Description |
+|---|---|
+| Flat Profile | Sorted table of all called functions with exclusive/inclusive time and call count |
+| Flamegraph | SVG call stack visualization — hover for details, colour by call depth |
+| Timeline | Chronological call timeline with function name labels |
+| Metadata | Request URL, duration, peak memory, and other profiler metadata |
+
+**Data storage:** profiles are stored at `{serverRoot}/php/{version}/spx-data/` and can be cleared from the UI.
 
 ---
 

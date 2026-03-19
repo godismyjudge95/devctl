@@ -4,11 +4,12 @@ import { useDumpsStore } from '@/stores/dumps'
 import { useServicesStore } from '@/stores/services'
 import { useMailStore } from '@/stores/mail'
 import { useSitesStore } from '@/stores/sites'
+import { useSpxStore } from '@/stores/spx'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,7 @@ const dumpsStore = useDumpsStore()
 const servicesStore = useServicesStore()
 const mailStore = useMailStore()
 const sitesStore = useSitesStore()
+const spxStore = useSpxStore()
 
 const mobileNavOpen = ref(false)
 
@@ -35,6 +37,8 @@ onMounted(() => {
   dumpsStore.connectWS()
   requestPermission()
   requestMailPermission()
+  // Load sites so spxAvailable computed is populated.
+  sitesStore.load()
   // Mail WS is connected reactively once Mailpit is known to be installed.
 
   // Handle navigation messages posted by the service worker (e.g. notification click).
@@ -102,16 +106,27 @@ watch(() => servicesStore.mailpitInstalled, (installed) => {
   }
 })
 
+// Clear new SPX badge when Profiler route is active.
+watch(() => route.path, (path) => {
+  if (path.startsWith('/spx')) spxStore.clearNewProfileCount()
+}, { immediate: true })
+
+const spxAvailable = computed(() => sitesStore.sites.some(s => s.spx_enabled === 1))
+
 const allNavItems = [
-  { path: '/services', label: 'Services', icon: Server },
-  { path: '/sites',    label: 'Sites',    icon: Globe },
-  { path: '/dumps',    label: 'Dumps',    icon: Bug },
-  { path: '/mail',     label: 'Mail',     icon: Mail, requiresMailpit: true },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/services',  label: 'Services',  icon: Server },
+  { path: '/sites',     label: 'Sites',     icon: Globe },
+  { path: '/dumps',     label: 'Dumps',     icon: Bug },
+  { path: '/mail',      label: 'Mail',      icon: Mail,     requiresMailpit: true },
+  { path: '/spx',       label: 'Profiler',  icon: Activity, requiresSPX: true },
+  { path: '/settings',  label: 'Settings',  icon: Settings },
 ]
 
 const navItems = computed(() =>
-  allNavItems.filter(item => !item.requiresMailpit || servicesStore.mailpitInstalled)
+  allNavItems.filter(item =>
+    (!item.requiresMailpit || servicesStore.mailpitInstalled) &&
+    (!item.requiresSPX || spxAvailable.value)
+  )
 )
 </script>
 
@@ -159,6 +174,11 @@ const navItems = computed(() =>
             variant="destructive"
             class="ml-auto text-xs px-1.5 py-0"
           >{{ mailStore.newMailCount }}</Badge>
+          <Badge
+            v-if="item.path === '/spx' && spxStore.newProfileCount > 0"
+            variant="destructive"
+            class="ml-auto text-xs px-1.5 py-0"
+          >{{ spxStore.newProfileCount }}</Badge>
         </RouterLink>
       </div>
 
@@ -224,6 +244,11 @@ const navItems = computed(() =>
                   variant="destructive"
                   class="ml-auto text-xs px-1.5 py-0"
                 >{{ mailStore.newMailCount }}</Badge>
+                <Badge
+                  v-if="item.path === '/spx' && spxStore.newProfileCount > 0"
+                  variant="destructive"
+                  class="ml-auto text-xs px-1.5 py-0"
+                >{{ spxStore.newProfileCount }}</Badge>
               </RouterLink>
             </div>
 

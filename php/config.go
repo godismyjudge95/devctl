@@ -95,23 +95,42 @@ func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
 // serverRoot is the absolute path to the devctl server directory.
 // siteUser is the non-root OS user who owns the sites directory (e.g. "daniel").
 // PHP-FPM worker processes run as this user so they can write to site storage dirs.
+// SPXDataDir returns the path where SPX writes profiling data for a given PHP version.
+func SPXDataDir(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "spx-data")
+}
+
 func WriteConfigs(ver, serverRoot, siteUser string) error {
 	phpDir := PHPDir(ver, serverRoot)
 	socketPath := FPMSocket(ver, serverRoot)
 	iniPath := fpmIniPath(ver, serverRoot)
 	fpmConfPath := FPMConfigPath(ver, serverRoot)
 	prependPath := paths.PrependPath(serverRoot)
+	spxDataDir := SPXDataDir(ver, serverRoot)
+
+	// Ensure spx-data directory exists and is writable by siteUser workers.
+	if err := os.MkdirAll(spxDataDir, 0755); err != nil {
+		return fmt.Errorf("create spx-data dir: %w", err)
+	}
 
 	// Write php.ini with sensible defaults.
 	// auto_prepend_file is always included so the dump interceptor is active
 	// for CLI usage. The FPM pool config also sets it via php_value for workers.
+	// SPX is loaded globally with zero overhead until activated per-request via
+	// cookies (SPX_ENABLED=1; SPX_KEY=dev) or query params (?SPX_KEY=dev&SPX_UI_URI=/).
 	ini := fmt.Sprintf(`; devctl-managed php.ini for PHP %s
 upload_max_filesize = 128M
 memory_limit = 256M
 max_execution_time = 120
 post_max_size = 128M
 auto_prepend_file = %s
-`, ver, prependPath)
+
+; SPX profiler — zero overhead when not activated per-request
+spx.http_enabled = 1
+spx.http_key = dev
+spx.http_ip_whitelist = 127.0.0.1
+spx.data_dir = %s
+`, ver, prependPath, spxDataDir)
 	if err := os.WriteFile(iniPath, []byte(ini), 0644); err != nil {
 		return fmt.Errorf("write php.ini: %w", err)
 	}
@@ -120,6 +139,8 @@ auto_prepend_file = %s
 	// Run workers as siteUser so they can write to site storage directories.
 	// php_value[auto_prepend_file] injects the dump interceptor into every
 	// FPM request; this is authoritative because it is set at the pool level.
+	// php_admin_value[spx.data_dir] ensures FPM workers write profiles to the
+	// correct per-version directory regardless of the global php.ini.
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
 [global]
 error_log = %s/php-fpm.log
@@ -139,7 +160,8 @@ pm.max_spare_servers = 4
 php_admin_value[error_log] = %s/php-fpm-www.log
 php_admin_flag[log_errors] = on
 php_value[auto_prepend_file] = %s
-`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir, prependPath)
+php_admin_value[spx.data_dir] = %s
+`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir, prependPath, spxDataDir)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}

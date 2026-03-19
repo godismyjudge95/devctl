@@ -398,3 +398,50 @@ export const trustTLS = () => request<{ status: string; output: string }>('POST'
 
 // --- System ---
 export const restartDevctl = () => request<{ status: string }>('POST', '/api/restart')
+
+// --- SPX Profiler ---
+export interface SpxProfile {
+  key: string
+  php_version: string
+  domain: string
+  method: string
+  uri: string
+  wall_time_ms: number
+  peak_memory_bytes: number
+  called_func_count: number
+  timestamp: number
+}
+
+export interface SpxFunction {
+  name: string
+  calls: number
+  inclusive_ms: number
+  exclusive_ms: number
+  inclusive_pct: number
+  exclusive_pct: number
+}
+
+export interface SpxEvent {
+  depth: number
+  name: string
+  start_ms: number
+  duration_ms: number
+}
+
+export interface SpxProfileDetail extends SpxProfile {
+  functions: SpxFunction[]
+  events: SpxEvent[]
+}
+
+export const getSpxProfiles = (domain?: string) => {
+  const q = domain ? `?domain=${encodeURIComponent(domain)}` : ''
+  return request<SpxProfile[]>('GET', `/api/spx/profiles${q}`)
+}
+export const getSpxProfile = (key: string) =>
+  request<SpxProfileDetail>('GET', `/api/spx/profiles/${encodeURIComponent(key)}`)
+export const deleteSpxProfile = (key: string) =>
+  request<void>('DELETE', `/api/spx/profiles/${encodeURIComponent(key)}`)
+export const clearSpxProfiles = (domain?: string) => {
+  const q = domain ? `?domain=${encodeURIComponent(domain)}` : ''
+  return request<void>('DELETE', `/api/spx/profiles${q}`)
+}

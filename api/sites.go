@@ -208,19 +208,54 @@ func (s *Server) handleRefreshSiteMetadata(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleSPXEnable(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	site, err := s.queries.GetSite(context.Background(), id)
+	if err != nil {
+		writeError(w, "site not found", http.StatusNotFound)
+		return
+	}
 	if err := s.queries.SetSiteSPX(context.Background(), dbq.SetSiteSPXParams{SpxEnabled: 1, ID: id}); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Rewrite PHP config and restart FPM so the new spx.data_dir is applied.
+	if ver := site.PhpVersion; ver != "" {
+		if err := php.WriteConfigs(ver, s.serverRoot, s.siteUser); err != nil {
+			// Non-fatal — log but don't fail the response.
+			fmt.Printf("spx enable: rewrite configs for %s: %v\n", ver, err)
+		} else {
+			def := s.phpFPMServiceDef(ver)
+			_ = s.supervisor.Restart(def)
+		}
+	}
+
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleSPXDisable(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	site, err := s.queries.GetSite(context.Background(), id)
+	if err != nil {
+		writeError(w, "site not found", http.StatusNotFound)
+		return
+	}
 	if err := s.queries.SetSiteSPX(context.Background(), dbq.SetSiteSPXParams{SpxEnabled: 0, ID: id}); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Rewrite PHP config and restart FPM.
+	if ver := site.PhpVersion; ver != "" {
+		if err := php.WriteConfigs(ver, s.serverRoot, s.siteUser); err != nil {
+			fmt.Printf("spx disable: rewrite configs for %s: %v\n", ver, err)
+		} else {
+			def := s.phpFPMServiceDef(ver)
+			_ = s.supervisor.Restart(def)
+		}
+	}
+
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 

@@ -1,32 +1,27 @@
 package php
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/danielgormly/devctl/paths"
 )
 
 const (
-	staticPHPIndex  = "https://dl.static-php.dev/static-php-cli/bulk/"
+	// ghReleaseBase is the prefix for PHP binary assets attached to devctl releases.
+	// Binaries are named php-{ver}-{sapi}-linux-x86_64 (raw executable, no archive).
+	ghReleaseBase   = "https://github.com/godismyjudge95/devctl/releases/latest/download/"
 	downloadTimeout = 10 * time.Minute
 )
 
 // Install downloads the static PHP-FPM and CLI binaries for the given minor
 // version (e.g. "8.3"), writes config files, and symlinks the CLI binary into
-// /usr/local/bin/php{ver}.
+// {serverRoot}/bin/php{ver}.
 //
 // serverRoot is the absolute path to the devctl server directory
 // (e.g. "/home/alice/ddev/sites/server").
@@ -34,11 +29,6 @@ const (
 // this user so they can write to site storage directories.
 // The binaries are installed to {serverRoot}/php/{ver}/.
 func Install(ctx context.Context, ver string, serverRoot string, siteUser string) error {
-	fullVer, err := resolveFullVersion(ctx, ver)
-	if err != nil {
-		return fmt.Errorf("php %s: resolve version: %w", ver, err)
-	}
-
 	phpDir := PHPDir(ver, serverRoot)
 	fpmBin := filepath.Join(phpDir, "php-fpm")
 	cliBin := filepath.Join(phpDir, "php")
@@ -52,31 +42,19 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 	//    not hold the conventional socket path we're about to use.
 	disableSystemFPM(ctx, ver)
 
-	// 3. Download and extract FPM binary.
-	fpmURL := fmt.Sprintf("%sphp-%s-fpm-linux-x86_64.tar.gz", staticPHPIndex, fullVer)
-	tmpFPM := filepath.Join(os.TempDir(), fmt.Sprintf("php-%s-fpm.tar.gz", fullVer))
-	defer os.Remove(tmpFPM)
-
-	if err := curlDownload(ctx, fpmURL, tmpFPM); err != nil {
+	// 3. Download FPM binary directly from the devctl GitHub release.
+	fpmURL := ghReleaseBase + fmt.Sprintf("php-%s-fpm-linux-x86_64", ver)
+	if err := curlDownload(ctx, fpmURL, fpmBin); err != nil {
 		return fmt.Errorf("php %s: download fpm: %w", ver, err)
-	}
-	if err := extractFromTar(tmpFPM, "php-fpm", fpmBin); err != nil {
-		return fmt.Errorf("php %s: extract fpm: %w", ver, err)
 	}
 	if err := os.Chmod(fpmBin, 0755); err != nil {
 		return fmt.Errorf("php %s: chmod fpm: %w", ver, err)
 	}
 
-	// 4. Download and extract CLI binary.
-	cliURL := fmt.Sprintf("%sphp-%s-cli-linux-x86_64.tar.gz", staticPHPIndex, fullVer)
-	tmpCLI := filepath.Join(os.TempDir(), fmt.Sprintf("php-%s-cli.tar.gz", fullVer))
-	defer os.Remove(tmpCLI)
-
-	if err := curlDownload(ctx, cliURL, tmpCLI); err != nil {
+	// 4. Download CLI binary directly from the devctl GitHub release.
+	cliURL := ghReleaseBase + fmt.Sprintf("php-%s-cli-linux-x86_64", ver)
+	if err := curlDownload(ctx, cliURL, cliBin); err != nil {
 		return fmt.Errorf("php %s: download cli: %w", ver, err)
-	}
-	if err := extractFromTar(tmpCLI, "php", cliBin); err != nil {
-		return fmt.Errorf("php %s: extract cli: %w", ver, err)
 	}
 	if err := os.Chmod(cliBin, 0755); err != nil {
 		return fmt.Errorf("php %s: chmod cli: %w", ver, err)
@@ -145,52 +123,8 @@ func Uninstall(ctx context.Context, ver string, serverRoot string) error {
 	return nil
 }
 
-// staticPHPEntry is one item from the ?format=json directory listing.
-type staticPHPEntry struct {
-	Name  string `json:"name"`
-	IsDir bool   `json:"is_dir"`
-}
-
-// resolveFullVersion fetches the static-php.dev JSON index and returns the
-// latest available patch version for the given minor version
-// (e.g. "8.3" → "8.3.30").
-func resolveFullVersion(ctx context.Context, minor string) (string, error) {
-	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, staticPHPIndex+"?format=json", nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("fetch index: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var entries []staticPHPEntry
-	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return "", fmt.Errorf("decode index: %w", err)
-	}
-
-	// Match filenames like: php-8.3.30-fpm-linux-x86_64.tar.gz
-	pattern := regexp.MustCompile(`^php-(` + regexp.QuoteMeta(minor) + `\.\d+)-fpm-linux-x86_64\.tar\.gz$`)
-	var latest string
-	for _, e := range entries {
-		if e.IsDir {
-			continue
-		}
-		if m := pattern.FindStringSubmatch(e.Name); m != nil {
-			latest = m[1]
-		}
-	}
-	if latest == "" {
-		return "", fmt.Errorf("no builds found for PHP %s", minor)
-	}
-	return latest, nil
-}
-
 // curlDownload fetches url and writes it to dest using curl.
+// Follows redirects (-L) and fails on HTTP errors (-f).
 func curlDownload(ctx context.Context, url, dest string) error {
 	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
@@ -247,43 +181,4 @@ func InstallWPCLI(ctx context.Context, binDir string) error {
 		return fmt.Errorf("chmod wp-cli: %w", err)
 	}
 	return nil
-}
-
-// extractFromTar finds the first entry whose base name matches binaryName in a
-// .tar.gz archive and writes it to destPath.
-func extractFromTar(tarPath, binaryName, destPath string) error {
-	f, err := os.Open(tarPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if hdr.Typeflag == tar.TypeReg && strings.TrimSuffix(filepath.Base(hdr.Name), ".exe") == binaryName {
-			out, err := os.Create(destPath)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return err
-			}
-			return out.Close()
-		}
-	}
-	return fmt.Errorf("%s not found in archive", binaryName)
 }

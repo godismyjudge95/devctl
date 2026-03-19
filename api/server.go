@@ -126,6 +126,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/dumps", s.handleClearDumps)
 	s.mux.HandleFunc("GET /ws/dumps", s.handleDumpsWS)
 
+	// SPX profiler
+	s.mux.HandleFunc("GET /api/spx/profiles", s.handleGetSpxProfiles)
+	s.mux.HandleFunc("DELETE /api/spx/profiles", s.handleClearSpxProfiles)
+	s.mux.HandleFunc("GET /api/spx/profiles/{key}", s.handleGetSpxProfile)
+	s.mux.HandleFunc("DELETE /api/spx/profiles/{key}", s.handleDeleteSpxProfile)
+
 	// TLS
 	s.mux.HandleFunc("GET /api/tls/cert", s.handleTLSCert)
 	s.mux.HandleFunc("POST /api/tls/trust", s.handleTLSTrust)
