@@ -43,7 +43,8 @@ type Installer interface {
 	// InstallW is like Install but writes command output to w in real-time.
 	InstallW(ctx context.Context, w io.Writer) error
 	// PurgeW is like Purge but writes command output to w in real-time.
-	PurgeW(ctx context.Context, w io.Writer) error
+	// If preserveData is true, service data directories are left intact.
+	PurgeW(ctx context.Context, w io.Writer, preserveData bool) error
 }
 
 // NewRegistry builds the full installer map, injecting dependencies into
@@ -68,23 +69,28 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		siteManager: siteManager,
 		supervisor:  supervisor,
 		serverRoot:  serverRoot,
+		siteUser:    siteUser,
 	}
 	m["typesense"] = &TypesenseInstaller{
 		siteManager: siteManager,
 		supervisor:  supervisor,
 		serverRoot:  serverRoot,
+		siteUser:    siteUser,
 	}
 	m["redis"] = &ValkeyInstaller{
 		supervisor: supervisor,
 		serverRoot: serverRoot,
+		siteUser:   siteUser,
 	}
 	m["mailpit"] = &MailpitInstaller{
 		supervisor: supervisor,
 		serverRoot: serverRoot,
+		siteUser:   siteUser,
 	}
 	m["mysql"] = &MySQLInstaller{
 		supervisor: supervisor,
 		serverRoot: serverRoot,
+		siteUser:   siteUser,
 	}
 	m["dns"] = &DNSInstaller{}
 	return m
@@ -330,4 +336,29 @@ func LinkIntoBinDir(binDir, name, targetBinary string) error {
 // not treated as an error.
 func UnlinkFromBinDir(binDir, name string) {
 	_ = os.Remove(filepath.Join(binDir, name))
+}
+
+// removeAllExcept removes all entries in dir except those whose base name
+// is listed in keep. The dir itself is not removed.
+func removeAllExcept(dir string, keep ...string) error {
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, k := range keep {
+		keepSet[k] = struct{}{}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range entries {
+		if _, skip := keepSet[e.Name()]; skip {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }

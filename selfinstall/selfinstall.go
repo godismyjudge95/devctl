@@ -690,7 +690,7 @@ func purgeInstalledServices(ctx context.Context, serverRoot, siteHome string, w 
 			continue
 		}
 		fmt.Fprintf(w, "Removing %s... ", id)
-		if err := installer.PurgeW(ctx, w); err != nil {
+		if err := installer.PurgeW(ctx, w, false); err != nil {
 			fmt.Fprintf(w, "warning: %v\n", err)
 		} else {
 			fmt.Fprintf(w, "✓\n")

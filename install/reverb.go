@@ -116,12 +116,12 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 func (r *ReverbInstaller) Purge(ctx context.Context) error {
-	return r.PurgeW(ctx, io.Discard)
+	return r.PurgeW(ctx, io.Discard, false)
 }
 
 // PurgeW stops the supervised process, removes the Caddy vhost and the
 // directory.
-func (r *ReverbInstaller) PurgeW(ctx context.Context, w io.Writer) error {
+func (r *ReverbInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error {
 	// Stop the supervised process first.
 	if err := r.supervisor.Stop("reverb"); err != nil {
 		fmt.Fprintf(w, "reverb: warning: stop process: %v\n", err)

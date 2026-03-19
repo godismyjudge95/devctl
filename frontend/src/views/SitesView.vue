@@ -9,7 +9,9 @@ import {
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -278,15 +280,21 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
         <p class="text-sm text-muted-foreground mt-1">Manage local PHP virtual hosts.</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata">
-          <Loader2 v-if="refreshingMetadata" class="w-4 h-4 animate-spin" />
-          <RefreshCw v-else class="w-4 h-4" />
-          <span class="hidden sm:inline">Refresh Metadata</span>
-        </Button>
-        <Button @click="dialogOpen = true">
-          <Plus class="w-4 h-4" />
-          Add Site
-        </Button>
+        <ButtonGroup>
+          <ButtonGroup>
+            <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata">
+              <Loader2 v-if="refreshingMetadata" class="w-4 h-4 animate-spin" />
+              <RefreshCw v-else class="w-4 h-4" />
+              <span class="hidden sm:inline">Refresh Metadata</span>
+            </Button>
+          </ButtonGroup>
+          <ButtonGroup>
+            <Button @click="dialogOpen = true">
+              <Plus class="w-4 h-4" />
+              Add Site
+            </Button>
+          </ButtonGroup>
+        </ButtonGroup>
       </div>
     </div>
 
@@ -586,16 +594,18 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <input type="checkbox" id="https" v-model="form.https" class="rounded" />
+            <Checkbox id="https" v-model:checked="form.https" />
             <Label for="https" class="cursor-pointer">Enable HTTPS</Label>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="dialogOpen = false" :disabled="creating">Cancel</Button>
-          <Button @click="addSite" :disabled="!form.domain || !form.root_path || creating">
-            <Loader2 v-if="creating" class="w-4 h-4 animate-spin mr-1" />
-            {{ creating ? 'Creating…' : 'Create' }}
-          </Button>
+          <ButtonGroup>
+            <Button variant="outline" @click="dialogOpen = false" :disabled="creating">Cancel</Button>
+            <Button @click="addSite" :disabled="!form.domain || !form.root_path || creating">
+              <Loader2 v-if="creating" class="w-4 h-4 animate-spin mr-1" />
+              {{ creating ? 'Creating…' : 'Create' }}
+            </Button>
+          </ButtonGroup>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -620,7 +630,7 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
 
         <div v-else class="grid gap-4 py-2">
           <div class="flex items-center gap-2">
-            <input type="checkbox" id="create_branch" v-model="worktreeForm.createBranch" class="rounded" />
+            <Checkbox id="create_branch" v-model:checked="worktreeForm.createBranch" />
             <Label for="create_branch" class="cursor-pointer">Create new branch</Label>
           </div>
 
@@ -664,22 +674,24 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
               <Input id="wt_copies" v-model="worktreeForm.copiesInput" placeholder=".env" class="font-mono text-xs h-8" />
             </div>
             <div class="flex items-center gap-2 mt-1">
-              <input type="checkbox" id="save_config" v-model="worktreeForm.saveConfig" class="rounded" />
+              <Checkbox id="save_config" v-model:checked="worktreeForm.saveConfig" />
               <Label for="save_config" class="cursor-pointer text-xs text-muted-foreground">Save as default for this site</Label>
             </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" @click="worktreeDialogOpen = false" :disabled="worktreeCreating">Cancel</Button>
-          <Button
-            @click="createWorktree"
-            :disabled="worktreeBranchesLoading || worktreeCreating ||
-              (worktreeForm.createBranch ? !worktreeForm.newBranchName : !worktreeForm.branch)"
-          >
-            <Loader2 v-if="worktreeCreating" class="w-4 h-4 animate-spin mr-1" />
-            {{ worktreeCreating ? 'Creating…' : 'Create Worktree' }}
-          </Button>
+          <ButtonGroup>
+            <Button variant="outline" @click="worktreeDialogOpen = false" :disabled="worktreeCreating">Cancel</Button>
+            <Button
+              @click="createWorktree"
+              :disabled="worktreeBranchesLoading || worktreeCreating ||
+                (worktreeForm.createBranch ? !worktreeForm.newBranchName : !worktreeForm.branch)"
+            >
+              <Loader2 v-if="worktreeCreating" class="w-4 h-4 animate-spin mr-1" />
+              {{ worktreeCreating ? 'Creating…' : 'Create Worktree' }}
+            </Button>
+          </ButtonGroup>
         </DialogFooter>
       </DialogContent>
     </Dialog>

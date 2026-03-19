@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Loader2, Download } from 'lucide-vue-next'
+import { Loader2, Download, Search } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty,
+} from '@/components/ui/table'
 import { useServicesStore } from '@/stores/services'
 import { installPHP } from '@/lib/api'
 
@@ -62,9 +66,50 @@ const availablePHPVersions = computed(() =>
   KNOWN_PHP_VERSIONS.filter(v => !installedPHPVersions.value.includes(v))
 )
 
-const hasAnythingToInstall = computed(() =>
-  uninstalledServices.value.length > 0 || availablePHPVersions.value.length > 0
-)
+// Flat list combining services + PHP versions for the table
+interface InstallRow {
+  id: string
+  label: string
+  version: string
+  description: string
+  icon: string
+  kind: 'service' | 'php'
+}
+
+const allRows = computed<InstallRow[]>(() => [
+  ...uninstalledServices.value.map(svc => ({
+    id: svc.id,
+    label: svc.label,
+    version: svc.install_version ?? '',
+    description: svc.description ?? '',
+    icon: SERVICE_ICONS[svc.id] ?? '',
+    kind: 'service' as const,
+  })),
+  ...availablePHPVersions.value.map(ver => ({
+    id: `php-${ver}`,
+    label: `PHP ${ver}`,
+    version: ver,
+    description: `PHP ${ver} FPM + CLI — static build from static-php.dev`,
+    icon: phpSvg,
+    kind: 'php' as const,
+  })),
+])
+
+const hasAnythingToInstall = computed(() => allRows.value.length > 0)
+
+// Search
+const searchQuery = ref('')
+
+const filteredRows = computed(() => {
+  const q = searchQuery.value.toLowerCase().trim()
+  if (!q) return allRows.value
+  return allRows.value.filter(
+    row =>
+      row.label.toLowerCase().includes(q) ||
+      row.description.toLowerCase().includes(q) ||
+      row.version.toLowerCase().includes(q)
+  )
+})
 
 // Per-item installing state (service id or "php-ver")
 const localInstalling = ref<Record<string, boolean>>({})
@@ -85,7 +130,6 @@ async function installService(id: string, label: string) {
         ? {
             label: 'View output',
             onClick: () => {
-              // Parent will handle showing the output if it wants to
               emit('installed', id)
             },
           }
@@ -95,7 +139,8 @@ async function installService(id: string, label: string) {
 }
 
 async function installPHPVersion(ver: string) {
-  localInstalling.value[ver] = true
+  const key = `php-${ver}`
+  localInstalling.value[key] = true
   emit('update:open', false)
   try {
     await installPHP(ver)
@@ -103,7 +148,20 @@ async function installPHPVersion(ver: string) {
   } catch (e: any) {
     toast.error(`Failed to install PHP ${ver}`, { description: e.message })
   } finally {
-    delete localInstalling.value[ver]
+    delete localInstalling.value[key]
+  }
+}
+
+function isInstalling(row: InstallRow): boolean {
+  if (row.kind === 'service') return !!store.installing[row.id]
+  return !!localInstalling.value[row.id]
+}
+
+function handleInstall(row: InstallRow) {
+  if (row.kind === 'service') {
+    installService(row.id, row.label)
+  } else {
+    installPHPVersion(row.version)
   }
 }
 </script>
@@ -122,72 +180,66 @@ async function installPHPVersion(ver: string) {
         All available services are already installed.
       </div>
 
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 py-2">
-        <!-- Regular services -->
-        <div
-          v-for="svc in uninstalledServices"
-          :key="svc.id"
-          class="flex flex-col gap-2 rounded-lg border border-border p-4 hover:bg-muted/40 transition-colors"
-        >
-          <div class="flex items-center gap-3">
-            <!-- Logo -->
-            <div
-              class="w-8 h-8 shrink-0 rounded overflow-hidden flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
-              v-html="SERVICE_ICONS[svc.id] ?? ''"
-            />
-            <div class="min-w-0">
-              <p class="text-sm font-medium leading-tight truncate">{{ svc.label }}</p>
-              <p class="text-xs text-muted-foreground font-mono leading-tight">{{ svc.install_version }}</p>
-            </div>
-          </div>
-          <p class="text-xs text-muted-foreground leading-snug line-clamp-2 flex-1">
-            {{ svc.description }}
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            class="w-full mt-auto"
-            :disabled="!!store.installing[svc.id]"
-            @click="installService(svc.id, svc.label)"
-          >
-            <Loader2 v-if="store.installing[svc.id]" class="w-3.5 h-3.5 animate-spin" />
-            <Download v-else class="w-3.5 h-3.5" />
-            Install
-          </Button>
+      <template v-else>
+        <!-- Search -->
+        <div class="relative">
+          <Search class="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            v-model="searchQuery"
+            placeholder="Search services..."
+            class="pl-8 h-8 text-sm"
+          />
         </div>
 
-        <!-- PHP versions -->
-        <div
-          v-for="ver in availablePHPVersions"
-          :key="`php-${ver}`"
-          class="flex flex-col gap-2 rounded-lg border border-border p-4 hover:bg-muted/40 transition-colors"
-        >
-          <div class="flex items-center gap-3">
-            <div
-              class="w-8 h-8 shrink-0 rounded overflow-hidden flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
-              v-html="phpSvg"
-            />
-            <div class="min-w-0">
-              <p class="text-sm font-medium leading-tight">PHP {{ ver }}</p>
-              <p class="text-xs text-muted-foreground font-mono leading-tight">{{ ver }}</p>
-            </div>
-          </div>
-          <p class="text-xs text-muted-foreground leading-snug line-clamp-2 flex-1">
-            PHP {{ ver }} FPM + CLI — static build from static-php.dev
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            class="w-full mt-auto"
-            :disabled="!!localInstalling[ver]"
-            @click="installPHPVersion(ver)"
-          >
-            <Loader2 v-if="localInstalling[ver]" class="w-3.5 h-3.5 animate-spin" />
-            <Download v-else class="w-3.5 h-3.5" />
-            Install
-          </Button>
+        <!-- Table -->
+        <div class="rounded-lg border border-border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead class="w-10"></TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead class="w-28">Version</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow
+                v-for="row in filteredRows"
+                :key="row.id"
+              >
+                <TableCell class="py-2 px-3">
+                  <div
+                    class="w-7 h-7 shrink-0 rounded overflow-hidden flex items-center justify-center bg-white [&>svg]:w-full [&>svg]:h-full"
+                    v-html="row.icon"
+                  />
+                </TableCell>
+                <TableCell class="py-2">
+                  <p class="text-sm font-medium leading-tight">{{ row.label }}</p>
+                  <p class="text-xs text-muted-foreground leading-snug line-clamp-1 mt-0.5">{{ row.description }}</p>
+                </TableCell>
+                <TableCell class="py-2 font-mono text-xs text-muted-foreground">
+                  {{ row.version || '—' }}
+                </TableCell>
+                <TableCell class="py-2 text-right">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    :disabled="isInstalling(row)"
+                    @click="handleInstall(row)"
+                  >
+                    <Loader2 v-if="isInstalling(row)" class="w-3.5 h-3.5 animate-spin" />
+                    <Download v-else class="w-3.5 h-3.5" />
+                    Install
+                  </Button>
+                </TableCell>
+              </TableRow>
+              <TableEmpty v-if="filteredRows.length === 0" :columns="4">
+                No services match "{{ searchQuery }}".
+              </TableEmpty>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </template>
     </DialogContent>
   </Dialog>
 </template>

@@ -24,6 +24,7 @@ type TypesenseInstaller struct {
 	siteManager *sites.Manager
 	supervisor  *services.Supervisor
 	serverRoot  string // absolute path to the devctl server directory
+	siteUser    string
 }
 
 func (t *TypesenseInstaller) ServiceID() string { return "typesense" }
@@ -103,15 +104,24 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "typesense: warning: create site: %v\n", err)
 	}
 
+	// 7. Transfer ownership to the site user.
+	if t.siteUser != "" {
+		fmt.Fprintf(w, "typesense: chowning %s to %s...\n", tsDir, t.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", t.siteUser, t.siteUser, tsDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("typesense: chown: %w\n%s", err, out)
+		}
+	}
+
 	fmt.Fprintln(w, "typesense: install complete")
 	return nil
 }
 
 func (t *TypesenseInstaller) Purge(ctx context.Context) error {
-	return t.PurgeW(ctx, io.Discard)
+	return t.PurgeW(ctx, io.Discard, false)
 }
 
-func (t *TypesenseInstaller) PurgeW(ctx context.Context, w io.Writer) error {
+func (t *TypesenseInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error {
 	// Stop the supervised process first.
 	if err := t.supervisor.Stop("typesense"); err != nil {
 		fmt.Fprintf(w, "typesense: warning: stop process: %v\n", err)

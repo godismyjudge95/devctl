@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { Download, ShieldCheck, RotateCw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -152,14 +153,16 @@ async function trustCert() {
         </CardHeader>
         <CardContent class="space-y-3">
           <div class="flex flex-wrap gap-2">
-            <Button variant="outline" @click="downloadCert">
-              <Download class="w-4 h-4" />
-              Download Root Certificate
-            </Button>
-            <Button variant="outline" :disabled="trusting" @click="trustCert">
-              <ShieldCheck class="w-4 h-4" :class="trusting ? 'animate-pulse' : ''" />
-              {{ trusting ? 'Trusting…' : 'Trust Certificate' }}
-            </Button>
+            <ButtonGroup>
+              <Button variant="outline" @click="downloadCert">
+                <Download class="w-4 h-4" />
+                Download Root Certificate
+              </Button>
+              <Button variant="outline" :disabled="trusting" @click="trustCert">
+                <ShieldCheck class="w-4 h-4" :class="trusting ? 'animate-pulse' : ''" />
+                {{ trusting ? 'Trusting…' : 'Trust Certificate' }}
+              </Button>
+            </ButtonGroup>
           </div>
           <p v-if="trustStatus === 'done'" class="text-sm text-green-600 whitespace-pre-wrap">{{ trustMessage }}</p>
           <p v-else-if="trustStatus === 'error'" class="text-sm text-destructive whitespace-pre-wrap">{{ trustMessage }}</p>

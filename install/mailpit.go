@@ -21,6 +21,7 @@ const (
 type MailpitInstaller struct {
 	supervisor *services.Supervisor
 	serverRoot string // absolute path to the devctl server directory
+	siteUser   string
 }
 
 func (m *MailpitInstaller) ServiceID() string { return "mailpit" }
@@ -79,15 +80,24 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("mailpit: write config.env: %w", err)
 	}
 
+	// 6. Transfer ownership to the site user.
+	if m.siteUser != "" {
+		fmt.Fprintf(w, "mailpit: chowning %s to %s...\n", mailpitDir, m.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, mailpitDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("mailpit: chown: %w\n%s", err, out)
+		}
+	}
+
 	fmt.Fprintln(w, "mailpit: install complete")
 	return nil
 }
 
 func (m *MailpitInstaller) Purge(ctx context.Context) error {
-	return m.PurgeW(ctx, io.Discard)
+	return m.PurgeW(ctx, io.Discard, false)
 }
 
-func (m *MailpitInstaller) PurgeW(ctx context.Context, w io.Writer) error {
+func (m *MailpitInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error {
 	// Stop the supervised process first.
 	if err := m.supervisor.Stop("mailpit"); err != nil {
 		fmt.Fprintf(w, "mailpit: warning: stop process: %v\n", err)

@@ -107,8 +107,9 @@ export const useServicesStore = defineStore('services', () => {
    * Stream the purge of a service.
    * Returns a Promise that resolves on success and rejects with an Error on failure.
    * The raw output lines are accumulated in installOutput[id].
+   * Pass preserveData=true to keep the service's data directory intact.
    */
-  function purge(id: string): Promise<void> {
+  function purge(id: string, preserveData = false): Promise<void> {
     installing.value[id] = true
     installOutput.value[id] = []
     return new Promise((resolve, reject) => {
@@ -124,7 +125,7 @@ export const useServicesStore = defineStore('services', () => {
           installing.value[id] = false
           reject(new Error(message))
         },
-      })
+      }, preserveData)
     })
   }
 

@@ -6,6 +6,7 @@ import { useSitesStore } from '@/stores/sites'
 import { toast } from 'vue-sonner'
 import { Loader2, Settings } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -167,11 +168,13 @@ async function save() {
       </div>
 
       <DialogFooter>
-        <Button variant="outline" @click="open = false" :disabled="saving">Cancel</Button>
-        <Button @click="save" :disabled="!form.domain || !form.root_path || saving">
-          <Loader2 v-if="saving" class="w-4 h-4 animate-spin mr-1" />
-          {{ saving ? 'Saving…' : 'Save' }}
-        </Button>
+        <ButtonGroup>
+          <Button variant="outline" @click="open = false" :disabled="saving">Cancel</Button>
+          <Button @click="save" :disabled="!form.domain || !form.root_path || saving">
+            <Loader2 v-if="saving" class="w-4 h-4 animate-spin mr-1" />
+            {{ saving ? 'Saving…' : 'Save' }}
+          </Button>
+        </ButtonGroup>
       </DialogFooter>
     </DialogContent>
   </Dialog>

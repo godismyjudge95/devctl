@@ -21,7 +21,7 @@ func (d *DNSInstaller) InstallW(_ context.Context, w io.Writer) error {
 	return nil
 }
 
-func (d *DNSInstaller) PurgeW(_ context.Context, w io.Writer) error {
+func (d *DNSInstaller) PurgeW(_ context.Context, w io.Writer, _ bool) error {
 	_, _ = w.Write([]byte("DNS server is built-in — nothing to purge.\n"))
 	return nil
 }

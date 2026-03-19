@@ -85,8 +85,8 @@ watch(() => props.open, (val) => {
   <Sheet :open="open" @update:open="(v) => { if (!v) closeLog() }">
     <SheetContent side="right" class="w-full sm:max-w-2xl flex flex-col p-0">
       <SheetHeader class="px-5 py-4 border-b border-border shrink-0">
-        <div class="flex items-center justify-between">
-          <SheetTitle class="font-mono text-sm">{{ serviceLabel }} — logs</SheetTitle>
+        <div class="flex items-center gap-2 pr-8">
+          <SheetTitle class="font-mono text-sm flex-1">{{ serviceLabel }} — logs</SheetTitle>
           <Button variant="ghost" size="sm" @click="clearLog">
             <Eraser class="w-3.5 h-3.5" />
             Clear

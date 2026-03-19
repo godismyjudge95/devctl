@@ -172,11 +172,15 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 func (p *PostgresInstaller) Purge(ctx context.Context) error {
-	return p.PurgeW(ctx, io.Discard)
+	return p.PurgeW(ctx, io.Discard, false)
 }
 
-func (p *PostgresInstaller) PurgeW(ctx context.Context, w io.Writer) error {
-	fmt.Fprintln(w, "postgres: WARNING: permanently deleting all PostgreSQL databases and data.")
+func (p *PostgresInstaller) PurgeW(ctx context.Context, w io.Writer, preserveData bool) error {
+	if preserveData {
+		fmt.Fprintln(w, "postgres: WARNING: removing PostgreSQL binaries (data/ will be preserved).")
+	} else {
+		fmt.Fprintln(w, "postgres: WARNING: permanently deleting all PostgreSQL databases and data.")
+	}
 
 	// Stop the supervised process before removing files.
 	if err := p.supervisor.Stop("postgres"); err != nil {
@@ -189,10 +193,19 @@ func (p *PostgresInstaller) PurgeW(ctx context.Context, w io.Writer) error {
 		UnlinkFromBinDir(binDir, name)
 	}
 
-	// Remove the entire postgres directory (binaries + data + config).
 	pgDir := paths.ServiceDir(p.serverRoot, "postgres")
-	if err := os.RemoveAll(pgDir); err != nil {
-		return fmt.Errorf("postgres: remove dir: %w", err)
+	if preserveData {
+		// Remove everything except data/ so the binaries are gone but
+		// databases survive.
+		fmt.Fprintln(w, "postgres: purging binaries (preserving data/)...")
+		if err := removeAllExcept(pgDir, "data"); err != nil {
+			return fmt.Errorf("postgres: remove binaries: %w", err)
+		}
+	} else {
+		// Remove the entire postgres directory (binaries + data + config).
+		if err := os.RemoveAll(pgDir); err != nil {
+			return fmt.Errorf("postgres: remove dir: %w", err)
+		}
 	}
 
 	fmt.Fprintln(w, "postgres: purge complete")

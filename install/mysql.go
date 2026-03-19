@@ -6,35 +6,38 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
-// mysqlVersion is the MySQL 8.4 LTS version to download.
+// mysqlVersion is the MySQL 8.4 LTS version to install.
 // Update this constant to pick up a newer release.
-const mysqlVersion = "8.4.7"
+const mysqlVersion = "8.4.8"
 
-// mysqlTarURL returns the download URL for the MySQL minimal generic Linux
-// tarball. The "minimal" variant strips debug symbols and reduces the download
-// to ~65 MB instead of ~875 MB for the full build.
-func mysqlTarURL() string {
+// mysqlDebURL returns the CDN URL for one of the Ubuntu-specific MySQL
+// community .deb packages. These debs bundle their own private copies of
+// libabsl / libprotobuf-lite under usr/lib/mysql/private/, so no MySQL
+// libraries need to be installed system-wide.
+func mysqlDebURL(pkg string) string {
 	return fmt.Sprintf(
-		"https://cdn.mysql.com/archives/mysql-8.4/mysql-%s-linux-glibc2.28-x86_64-minimal.tar.xz",
-		mysqlVersion,
+		"https://repo.mysql.com/apt/ubuntu/pool/mysql-8.4-lts/m/mysql-community/%s_%s-1ubuntu24.04_amd64.deb",
+		pkg, mysqlVersion,
 	)
 }
 
-// MySQLInstaller downloads the MySQL 8.4 LTS "Linux Generic" minimal binary
-// tarball to {serverRoot}/mysql/, initialises the data directory, and
-// runs mysqld as a supervised child process of devctl.
+// MySQLInstaller downloads the Ubuntu-specific MySQL 8.4 LTS .deb packages
+// and extracts their contents directly into {serverRoot}/mysql/, keeping
+// MySQL fully self-contained in the devctl server directory.
 //
-// No PPA, no APT packages, no systemd unit for MySQL itself.
-// libaio (required by the generic binary) is installed via APT as a lightweight
-// system dependency.
+// Only libnuma1 is installed system-wide via APT — it is a tiny NUMA policy
+// library (≈23 kB) that the MySQL binary requires and that is not bundled
+// inside the deb packages.
 type MySQLInstaller struct {
 	supervisor *services.Supervisor
-	serverRoot string // absolute path to the devctl server directory
+	serverRoot string
+	siteUser   string
 }
 
 func (m *MySQLInstaller) ServiceID() string { return "mysql" }
@@ -54,80 +57,116 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
+	binDir := filepath.Join(mysqlDir, "bin")
+	libDir := filepath.Join(mysqlDir, "lib")
 	dataDir := filepath.Join(mysqlDir, "data")
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-%s-minimal.tar.xz", mysqlVersion))
-	defer os.Remove(tmpTar)
 
-	// 1. Install libaio — required by the MySQL generic binary.
-	//    Ubuntu 24.04 (Noble) ships libaio1t64; Ubuntu 22.04 and Debian ship libaio1.
-	fmt.Fprintln(w, "mysql: installing libaio system dependency...")
-	if err := aptInstallW(ctx, w, "libaio1t64"); err != nil {
-		fmt.Fprintln(w, "mysql: libaio1t64 not found, trying libaio1...")
-		if err2 := aptInstallW(ctx, w, "libaio1"); err2 != nil {
-			return fmt.Errorf("mysql: install libaio: %w", err2)
-		}
+	// 1. Install libnuma1 — the one system library not bundled in the debs.
+	fmt.Fprintln(w, "mysql: installing libnuma1...")
+	if err := aptInstallW(ctx, w, "libnuma1"); err != nil {
+		return fmt.Errorf("mysql: install libnuma1: %w", err)
 	}
 
 	// 2. Create directories.
 	fmt.Fprintln(w, "mysql: creating directories...")
-	if err := os.MkdirAll(dataDir, 0750); err != nil {
-		return fmt.Errorf("mysql: create data dir: %w", err)
+	for _, dir := range []string{binDir, libDir, dataDir, filepath.Join(mysqlDir, "mysql-files")} {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return fmt.Errorf("mysql: create dir %s: %w", dir, err)
+		}
 	}
 
-	// 3. Download the minimal tarball.
-	fmt.Fprintf(w, "mysql: downloading %s...\n", mysqlVersion)
-	if err := curlDownloadW(ctx, w, mysqlTarURL(), tmpTar); err != nil {
-		return fmt.Errorf("mysql: download: %w", err)
+	// 3. Download and extract the three deb packages.
+	//    - server-core: mysqld + private libabsl/libprotobuf .so files
+	//    - client-core: mysql, mysqldump
+	//    - client:      mysqladmin
+	debs := []struct {
+		pkg  string
+		desc string
+	}{
+		{"mysql-community-server-core", "server"},
+		{"mysql-community-client-core", "client-core"},
+		{"mysql-community-client", "client"},
 	}
 
-	// 4. Extract the full tarball into mysqlDir, stripping the versioned top-level dir.
-	fmt.Fprintln(w, "mysql: extracting tarball...")
-	if err := extractFromTarXz(tmpTar, mysqlDir); err != nil {
-		return fmt.Errorf("mysql: extract: %w", err)
+	for _, d := range debs {
+		tmpDeb := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-%s-%s.deb", d.pkg, mysqlVersion))
+		defer os.Remove(tmpDeb)
+
+		fmt.Fprintf(w, "mysql: downloading %s...\n", d.desc)
+		if err := curlDownloadW(ctx, w, mysqlDebURL(d.pkg), tmpDeb); err != nil {
+			return fmt.Errorf("mysql: download %s: %w", d.pkg, err)
+		}
+
+		fmt.Fprintf(w, "mysql: extracting %s...\n", d.desc)
+		if err := extractMySQLDeb(tmpDeb, binDir, libDir); err != nil {
+			return fmt.Errorf("mysql: extract %s: %w", d.pkg, err)
+		}
 	}
 
-	// 5. Write my.cnf so mysqld knows where everything lives.
+	// 4. Write mysql.env so the supervisor sets LD_LIBRARY_PATH, allowing
+	//    mysqld to find its bundled private .so files at runtime.
+	fmt.Fprintln(w, "mysql: writing mysql.env...")
+	envContent := fmt.Sprintf("LD_LIBRARY_PATH=%s\n", libDir)
+	if err := os.WriteFile(filepath.Join(mysqlDir, "mysql.env"), []byte(envContent), 0644); err != nil {
+		return fmt.Errorf("mysql: write mysql.env: %w", err)
+	}
+
+	// 5. Write my.cnf — both [client] and [mysqld] sections so that CLI tools
+	//    (mysql, mysqldump, mysqladmin) automatically find the socket without
+	//    needing an explicit --socket flag.
 	fmt.Fprintln(w, "mysql: writing my.cnf...")
+	sockPath := filepath.Join(mysqlDir, "mysql.sock")
 	myCnf := fmt.Sprintf(
-		"[mysqld]\nbasedir=%s\ndatadir=%s\nsocket=%s\npid-file=%s\nlog-error=%s\nport=3306\nbind-address=127.0.0.1\n",
+		"[client]\nsocket=%s\n\n[mysqld]\nbasedir=%s\ndatadir=%s\nsocket=%s\npid-file=%s\nlog-error=%s\nport=3306\nbind-address=127.0.0.1\nsecure-file-priv=%s\n",
+		sockPath,
 		mysqlDir,
 		dataDir,
-		filepath.Join(mysqlDir, "mysql.sock"),
+		sockPath,
 		filepath.Join(mysqlDir, "mysql.pid"),
 		filepath.Join(mysqlDir, "mysql-error.log"),
+		filepath.Join(mysqlDir, "mysql-files"),
 	)
 	if err := os.WriteFile(filepath.Join(mysqlDir, "my.cnf"), []byte(myCnf), 0644); err != nil {
 		return fmt.Errorf("mysql: write my.cnf: %w", err)
 	}
 
-	// 6. Initialise the data directory (creates system tables, no root password).
+	// 6. Initialise the data directory.
 	fmt.Fprintln(w, "mysql: initialising data directory...")
 	initCmd := fmt.Sprintf(
-		"%s --initialize-insecure --user=root --datadir=%s --basedir=%s",
-		filepath.Join(mysqlDir, "bin", "mysqld"),
+		"LD_LIBRARY_PATH=%s %s --initialize-insecure --user=root --datadir=%s --basedir=%s",
+		libDir,
+		filepath.Join(binDir, "mysqld"),
 		dataDir,
 		mysqlDir,
 	)
-	out, err := runShellW(ctx, w, initCmd)
-	if err != nil {
+	if out, err := runShellW(ctx, w, initCmd); err != nil {
 		return fmt.Errorf("mysql: initialize: %w\n%s", err, out)
 	}
 
-	// 7. Write config.env with connection info for the credentials panel.
+	// 7. Write config.env for the credentials panel.
 	fmt.Fprintln(w, "mysql: writing config.env...")
-	envContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_USERNAME=root\nDB_PASSWORD=\n"
-	if err := os.WriteFile(filepath.Join(mysqlDir, "config.env"), []byte(envContent), 0600); err != nil {
+	credContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_USERNAME=root\nDB_PASSWORD=\n"
+	if err := os.WriteFile(filepath.Join(mysqlDir, "config.env"), []byte(credContent), 0600); err != nil {
 		return fmt.Errorf("mysql: write config.env: %w", err)
 	}
 
-	// 8. Symlink client tools into the shared bin dir.
-	binDir := paths.BinDir(m.serverRoot)
-	for _, name := range []string{"mysql", "mysqldump", "mysqladmin"} {
-		target := filepath.Join(mysqlDir, "bin", name)
-		if fileExists(target) {
-			if err := LinkIntoBinDir(binDir, name, target); err != nil {
-				fmt.Fprintf(w, "mysql: warning: %v\n", err)
-			}
+	// 8. Symlink client binaries into the shared bin dir so they are in PATH.
+	fmt.Fprintln(w, "mysql: symlinking client binaries...")
+	sharedBinDir := paths.BinDir(m.serverRoot)
+	for _, bin := range []string{"mysql", "mysqldump", "mysqladmin"} {
+		if err := LinkIntoBinDir(sharedBinDir, bin, filepath.Join(binDir, bin)); err != nil {
+			fmt.Fprintf(w, "mysql: warning: symlink %s: %v\n", bin, err)
+		}
+	}
+
+	// 9. Transfer ownership to the site user so the MySQL process (running
+	//    as root but inside the devctl server dir) and the user's CLI tools
+	//    can both access the files without permission errors.
+	if m.siteUser != "" {
+		fmt.Fprintf(w, "mysql: chowning %s to %s...\n", mysqlDir, m.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, mysqlDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("mysql: chown: %w\n%s", err, out)
 		}
 	}
 
@@ -136,27 +175,118 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 func (m *MySQLInstaller) Purge(ctx context.Context) error {
-	return m.PurgeW(ctx, io.Discard)
+	return m.PurgeW(ctx, io.Discard, false)
 }
 
-func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer) error {
-	// Stop the supervised process first.
+func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer, preserveData bool) error {
 	if err := m.supervisor.Stop("mysql"); err != nil {
 		fmt.Fprintf(w, "mysql: warning: stop process: %v\n", err)
 	}
 
 	// Remove bin dir symlinks.
-	binDir := paths.BinDir(m.serverRoot)
-	for _, name := range []string{"mysql", "mysqldump", "mysqladmin"} {
-		UnlinkFromBinDir(binDir, name)
+	sharedBinDir := paths.BinDir(m.serverRoot)
+	for _, bin := range []string{"mysql", "mysqldump", "mysqladmin"} {
+		UnlinkFromBinDir(sharedBinDir, bin)
 	}
 
-	// Remove the entire mysql directory (binary tree + data + config).
 	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
-	if err := os.RemoveAll(mysqlDir); err != nil {
-		return fmt.Errorf("mysql: remove dir: %w", err)
+	if preserveData {
+		// Remove everything in mysqlDir except the data/ subdirectory.
+		fmt.Fprintln(w, "mysql: purging binaries (preserving data/)...")
+		if err := removeAllExcept(mysqlDir, "data"); err != nil {
+			return fmt.Errorf("mysql: remove binaries: %w", err)
+		}
+	} else {
+		if err := os.RemoveAll(mysqlDir); err != nil {
+			return fmt.Errorf("mysql: remove dir: %w", err)
+		}
 	}
 
 	fmt.Fprintln(w, "mysql: purge complete")
+	return nil
+}
+
+// extractMySQLDeb reads a .deb archive and extracts:
+//   - usr/sbin/mysqld and usr/bin/mysql* → binDir
+//   - usr/lib/mysql/private/*.so          → libDir
+//
+// A .deb is an ar(1) archive containing data.tar.xz (or .gz/.zst).
+// We shell out to dpkg-deb to avoid implementing ar parsing in Go.
+func extractMySQLDeb(debPath, binDir, libDir string) error {
+	tmpDir, err := os.MkdirTemp("", "mysql-deb-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// dpkg-deb --extract unpacks the full file tree under tmpDir.
+	ctx := context.Background()
+	if out, err := runShell(ctx, fmt.Sprintf("dpkg-deb --extract %s %s", debPath, tmpDir)); err != nil {
+		return fmt.Errorf("dpkg-deb extract: %w\n%s", err, out)
+	}
+
+	// Copy usr/sbin/mysqld → binDir/mysqld
+	// Copy usr/bin/mysql*  → binDir/
+	for _, srcDir := range []string{
+		filepath.Join(tmpDir, "usr", "sbin"),
+		filepath.Join(tmpDir, "usr", "bin"),
+	} {
+		entries, err := os.ReadDir(srcDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasPrefix(e.Name(), "mysql") {
+				continue
+			}
+			if err := copyFile(filepath.Join(srcDir, e.Name()), filepath.Join(binDir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Copy usr/lib/mysql/private/*.so → libDir/
+	privateDir := filepath.Join(tmpDir, "usr", "lib", "mysql", "private")
+	entries, err := os.ReadDir(privateDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if err := copyFile(filepath.Join(privateDir, e.Name()), filepath.Join(libDir, e.Name())); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies src to dst, preserving the source file mode.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return fmt.Errorf("copy %s → %s: %w", src, dst, err)
+	}
 	return nil
 }

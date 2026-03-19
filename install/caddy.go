@@ -89,10 +89,10 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 func (c *CaddyInstaller) Purge(ctx context.Context) error {
-	return c.PurgeW(ctx, io.Discard)
+	return c.PurgeW(ctx, io.Discard, false)
 }
 
-func (c *CaddyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
+func (c *CaddyInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error {
 	// Stop the supervised process first.
 	if err := c.supervisor.Stop("caddy"); err != nil {
 		fmt.Fprintf(w, "caddy: warning: stop process: %v\n", err)

@@ -26,6 +26,7 @@ type MeilisearchInstaller struct {
 	siteManager *sites.Manager
 	supervisor  *services.Supervisor
 	serverRoot  string // absolute path to the devctl server directory
+	siteUser    string
 }
 
 func (m *MeilisearchInstaller) ServiceID() string { return "meilisearch" }
@@ -94,15 +95,24 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		fmt.Fprintf(w, "meilisearch: warning: create site: %v\n", err)
 	}
 
+	// 6. Transfer ownership to the site user.
+	if m.siteUser != "" {
+		fmt.Fprintf(w, "meilisearch: chowning %s to %s...\n", meiliDir, m.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, meiliDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("meilisearch: chown: %w\n%s", err, out)
+		}
+	}
+
 	fmt.Fprintln(w, "meilisearch: install complete")
 	return nil
 }
 
 func (m *MeilisearchInstaller) Purge(ctx context.Context) error {
-	return m.PurgeW(ctx, io.Discard)
+	return m.PurgeW(ctx, io.Discard, false)
 }
 
-func (m *MeilisearchInstaller) PurgeW(ctx context.Context, w io.Writer) error {
+func (m *MeilisearchInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error {
 	// Stop the supervised process first.
 	if err := m.supervisor.Stop("meilisearch"); err != nil {
 		fmt.Fprintf(w, "meilisearch: warning: stop process: %v\n", err)

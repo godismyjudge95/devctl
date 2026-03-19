@@ -37,6 +37,7 @@ func valkeyTarURL(ctx context.Context) string {
 type ValkeyInstaller struct {
 	supervisor *services.Supervisor
 	serverRoot string // absolute path to the devctl server directory
+	siteUser   string
 }
 
 func (v *ValkeyInstaller) ServiceID() string { return "redis" }
@@ -108,15 +109,24 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("valkey: write config.env: %w", err)
 	}
 
+	// 8. Transfer ownership to the site user.
+	if v.siteUser != "" {
+		fmt.Fprintf(w, "valkey: chowning %s to %s...\n", valkeyDir, v.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", v.siteUser, v.siteUser, valkeyDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("valkey: chown: %w\n%s", err, out)
+		}
+	}
+
 	fmt.Fprintln(w, "valkey: install complete")
 	return nil
 }
 
 func (v *ValkeyInstaller) Purge(ctx context.Context) error {
-	return v.PurgeW(ctx, io.Discard)
+	return v.PurgeW(ctx, io.Discard, false)
 }
 
-func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer) error {
+func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error {
 	// Stop the supervised process first.
 	if err := v.supervisor.Stop("redis"); err != nil {
 		fmt.Fprintf(w, "valkey: warning: stop process: %v\n", err)

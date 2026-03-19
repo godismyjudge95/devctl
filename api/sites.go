@@ -17,8 +17,8 @@ type siteRequest struct {
 	RootPath   string   `json:"root_path"`
 	PHPVersion string   `json:"php_version"`
 	Aliases    []string `json:"aliases"`
-	SPXEnabled bool     `json:"spx_enabled"`
-	HTTPS      bool     `json:"https"`
+	SPXEnabled int64    `json:"spx_enabled"`
+	HTTPS      int64    `json:"https"`
 	PublicDir  string   `json:"public_dir"`
 }
 
@@ -57,7 +57,7 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		RootPath:     req.RootPath,
 		PHPVersion:   req.PHPVersion,
 		Aliases:      req.Aliases,
-		HTTPS:        req.HTTPS,
+		HTTPS:        req.HTTPS == 1,
 		PublicDir:    publicDir,
 		IsGitRepo:    info.IsGitRepo,
 		GitRemoteURL: info.GitRemoteURL,
@@ -99,14 +99,8 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	aliases, _ := json.Marshal(req.Aliases)
-	spx := int64(0)
-	if req.SPXEnabled {
-		spx = 1
-	}
-	httpsVal := int64(1)
-	if !req.HTTPS {
-		httpsVal = 0
-	}
+	httpsVal := req.HTTPS
+	spx := req.SPXEnabled
 
 	// Re-inspect if root_path changed; otherwise preserve existing git/framework data.
 	isGitRepo := existing.IsGitRepo

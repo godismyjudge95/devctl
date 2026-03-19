@@ -6,6 +6,7 @@ import { useMailStore } from '@/stores/mail'
 import { useSitesStore } from '@/stores/sites'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
+import { useMailNotifications } from '@/composables/useMailNotifications'
 import { onMounted, watch, computed, ref } from 'vue'
 import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
@@ -17,7 +18,8 @@ import {
 } from '@/components/ui/sheet'
 
 const { isDark, toggleDark } = useDarkMode()
-const { requestPermission, notify } = useDumpNotifications()
+const { requestPermission, notify: notifyDump } = useDumpNotifications()
+const { requestPermission: requestMailPermission, notify: notifyMail } = useMailNotifications()
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +34,7 @@ onMounted(() => {
   servicesStore.connectSSE()
   dumpsStore.connectWS()
   requestPermission()
+  requestMailPermission()
   // Mail WS is connected reactively once Mailpit is known to be installed.
 
   // Handle navigation messages posted by the service worker (e.g. notification click).
@@ -61,13 +64,30 @@ watch(() => dumpsStore.dumps.length, (newLen) => {
   }
   lastDumpsLength = newLen
   const newest = dumpsStore.dumps[0]
-  if (newest) notify(newest)
+  if (newest) notifyDump(newest)
 })
 
 // Connect/disconnect mail WS based on Mailpit install state.
 watch(() => servicesStore.mailpitInstalled, (installed) => {
   if (installed) mailStore.connectWS()
   else mailStore.disconnectWS()
+})
+
+// Fire a native notification when new mail arrives (only when not on /mail).
+// -1 sentinel means "not initialized yet" — first fire sets the baseline silently.
+let lastMailCount = -1
+watch(() => mailStore.messages.length, (newLen) => {
+  if (lastMailCount === -1) {
+    lastMailCount = newLen
+    return
+  }
+  if (newLen <= lastMailCount) {
+    lastMailCount = newLen
+    return
+  }
+  lastMailCount = newLen
+  const newest = mailStore.messages[0]
+  if (newest && !route.path.startsWith('/mail')) notifyMail(newest)
 })
 
 // Clear new mail badge when Mail route is active.

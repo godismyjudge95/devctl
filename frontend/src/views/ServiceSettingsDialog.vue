@@ -3,8 +3,10 @@ import { ref, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -265,11 +267,13 @@ watch(() => props.open, (val) => {
             <p class="text-xs text-muted-foreground">Mailpit will be restarted automatically when you save.</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-            <Button @click="saveSettings" :disabled="saving">
-              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-              Save &amp; Restart
-            </Button>
+            <ButtonGroup>
+              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+              <Button @click="saveSettings" :disabled="saving">
+                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+                Save &amp; Restart
+              </Button>
+            </ButtonGroup>
           </DialogFooter>
         </template>
 
@@ -304,11 +308,13 @@ watch(() => props.open, (val) => {
                 <p class="text-xs text-muted-foreground">PHP-FPM will be restarted automatically when you save.</p>
               </div>
               <DialogFooter>
-                <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                <Button @click="saveSettings" :disabled="saving">
-                  <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                  Save &amp; Restart
-                </Button>
+                <ButtonGroup>
+                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+                  <Button @click="saveSettings" :disabled="saving">
+                    <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+                    Save &amp; Restart
+                  </Button>
+                </ButtonGroup>
               </DialogFooter>
             </TabsContent>
 
@@ -323,19 +329,21 @@ watch(() => props.open, (val) => {
                 <div v-if="phpConfigLoading" class="text-center text-muted-foreground text-sm py-4">
                   <Loader2 class="w-4 h-4 animate-spin inline-block mr-2" />Loading…
                 </div>
-                <textarea
+                <Textarea
                   v-else
                   v-model="phpConfigContent"
-                  class="w-full h-72 font-mono text-xs bg-muted/40 border border-border rounded-md p-3 resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+                  class="h-72 font-mono text-xs resize-y"
                   spellcheck="false"
                 />
               </div>
               <DialogFooter class="mt-4">
-                <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                <Button @click="savePHPConfig" :disabled="phpConfigSaving || phpConfigLoading">
-                  <Loader2 v-if="phpConfigSaving" class="w-3.5 h-3.5 animate-spin" />
-                  Save File
-                </Button>
+                <ButtonGroup>
+                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+                  <Button @click="savePHPConfig" :disabled="phpConfigSaving || phpConfigLoading">
+                    <Loader2 v-if="phpConfigSaving" class="w-3.5 h-3.5 animate-spin" />
+                    Save File
+                  </Button>
+                </ButtonGroup>
               </DialogFooter>
             </TabsContent>
           </Tabs>
@@ -364,11 +372,13 @@ watch(() => props.open, (val) => {
                 <p class="text-xs text-muted-foreground">MySQL will be restarted automatically when you save.</p>
               </div>
               <DialogFooter>
-                <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                <Button @click="saveSettings" :disabled="saving">
-                  <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                  Save &amp; Restart
-                </Button>
+                <ButtonGroup>
+                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+                  <Button @click="saveSettings" :disabled="saving">
+                    <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+                    Save &amp; Restart
+                  </Button>
+                </ButtonGroup>
               </DialogFooter>
             </TabsContent>
 
@@ -378,19 +388,21 @@ watch(() => props.open, (val) => {
                 <div v-if="mysqlConfigLoading" class="text-center text-muted-foreground text-sm py-4">
                   <Loader2 class="w-4 h-4 animate-spin inline-block mr-2" />Loading…
                 </div>
-                <textarea
+                <Textarea
                   v-else
                   v-model="mysqlConfigContent"
-                  class="w-full h-72 font-mono text-xs bg-muted/40 border border-border rounded-md p-3 resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+                  class="h-72 font-mono text-xs resize-y"
                   spellcheck="false"
                 />
               </div>
               <DialogFooter class="mt-4">
-                <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                <Button @click="saveMySQLConfig" :disabled="mysqlConfigSaving || mysqlConfigLoading">
-                  <Loader2 v-if="mysqlConfigSaving" class="w-3.5 h-3.5 animate-spin" />
-                  Save &amp; Restart
-                </Button>
+                <ButtonGroup>
+                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+                  <Button @click="saveMySQLConfig" :disabled="mysqlConfigSaving || mysqlConfigLoading">
+                    <Loader2 v-if="mysqlConfigSaving" class="w-3.5 h-3.5 animate-spin" />
+                    Save &amp; Restart
+                  </Button>
+                </ButtonGroup>
               </DialogFooter>
             </TabsContent>
           </Tabs>
@@ -449,11 +461,13 @@ watch(() => props.open, (val) => {
             <p class="text-xs text-muted-foreground">DNS server will be restarted automatically when you save.</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-            <Button @click="saveSettings" :disabled="saving">
-              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-              Save &amp; Restart
-            </Button>
+            <ButtonGroup>
+              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+              <Button @click="saveSettings" :disabled="saving">
+                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+                Save &amp; Restart
+              </Button>
+            </ButtonGroup>
           </DialogFooter>
         </template>
       </template>

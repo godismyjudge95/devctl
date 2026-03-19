@@ -318,7 +318,8 @@ func (s *Server) handleServicePurge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
-	if err := inst.PurgeW(r.Context(), pw); err != nil {
+	preserveData := r.URL.Query().Get("preserve_data") == "true"
+	if err := inst.PurgeW(r.Context(), pw, preserveData); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
 	}

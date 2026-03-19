@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	staticPHPIndex  = "https://dl.static-php.dev/static-php-cli/common/"
+	staticPHPIndex  = "https://dl.static-php.dev/static-php-cli/bulk/"
 	downloadTimeout = 10 * time.Minute
 )
 

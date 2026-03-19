@@ -20,6 +20,8 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { uninstallPHP } from '@/lib/api'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import ServiceLogSheet from './ServiceLogSheet.vue'
 import ServiceSettingsDialog from './ServiceSettingsDialog.vue'
 import ServiceInstallModal from './ServiceInstallModal.vue'
@@ -159,18 +161,27 @@ const addServiceOpen = ref(false)
 // --- Purge confirm dialog (non-PHP services) ---
 const purgeTarget = ref<{ id: string; label: string } | null>(null)
 const purgeOpen = ref(false)
+const preserveData = ref(false)
+
+// Services that have meaningful data worth preserving
+function hasPreserveData(id: string): boolean {
+  return id === 'mysql' || id === 'postgres'
+}
 
 function confirmPurge(id: string, label: string) {
   purgeTarget.value = { id, label }
+  preserveData.value = false
   purgeOpen.value = true
 }
 
 async function executePurge() {
   if (!purgeTarget.value) return
   const { id, label } = purgeTarget.value
+  const keepData = preserveData.value
   purgeOpen.value = false
+  preserveData.value = false
   try {
-    await store.purge(id)
+    await store.purge(id, keepData)
     toast.success(`${label} uninstalled`)
   } catch (e: any) {
     toast.error(`Failed to uninstall ${label}`, { description: e.message })
@@ -395,14 +406,17 @@ async function doPHPUninstall() {
             <TableRow>
               <!-- Chevron toggle for credentials / connection details -->
               <TableCell class="w-8 pr-0">
-                <button
+                <Button
                   v-if="hasExpandable(svc.id)"
-                  class="flex items-center justify-center w-5 h-5 text-muted-foreground hover:text-foreground transition-colors"
+                  variant="ghost"
+                  size="icon"
+                  class="w-5 h-5 text-muted-foreground"
+                  :title="expandedCredentials.has(svc.id) ? 'Hide connection info' : 'Show connection info'"
                   @click="toggleCredentials(svc.id)"
                 >
                   <ChevronDown v-if="expandedCredentials.has(svc.id)" class="w-3.5 h-3.5" />
                   <ChevronRight v-else class="w-3.5 h-3.5" />
-                </button>
+                </Button>
               </TableCell>
               <TableCell class="font-medium">{{ svc.label }}</TableCell>
               <TableCell>
@@ -568,15 +582,22 @@ async function doPHPUninstall() {
   />
 
   <!-- Purge confirm dialog -->
-  <AlertDialog :open="purgeOpen" @update:open="(v) => { if (!v) purgeOpen = false }">
+  <AlertDialog :open="purgeOpen" @update:open="(v) => { if (!v) { purgeOpen = false; preserveData = false } }">
     <AlertDialogContent>
       <AlertDialogHeader>
         <AlertDialogTitle>Uninstall {{ purgeTarget?.label }}?</AlertDialogTitle>
         <AlertDialogDescription>
-          This will stop the service, remove its packages, and delete all associated data.
+          This will stop the service, remove its binaries, and delete all associated data.
           This action cannot be undone.
         </AlertDialogDescription>
       </AlertDialogHeader>
+      <!-- Preserve data option for database services -->
+      <div v-if="purgeTarget && hasPreserveData(purgeTarget.id)" class="flex items-center gap-2 py-1">
+        <Checkbox id="preserve-data" :checked="preserveData" @update:checked="preserveData = $event" />
+        <Label for="preserve-data" class="text-sm font-normal cursor-pointer">
+          Keep database data (data/ directory)
+        </Label>
+      </div>
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
         <AlertDialogAction

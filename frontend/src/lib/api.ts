@@ -109,9 +109,11 @@ export function installServiceStream(id: string, callbacks: StreamCallbacks): Ab
 
 /**
  * Streams purge output via SSE-over-fetch.
+ * Pass preserveData=true to keep the service's data directory.
  */
-export function purgeServiceStream(id: string, callbacks: StreamCallbacks): AbortController {
-  return runServiceStream('DELETE', `/api/services/${id}`, callbacks)
+export function purgeServiceStream(id: string, callbacks: StreamCallbacks, preserveData = false): AbortController {
+  const path = preserveData ? `/api/services/${id}?preserve_data=true` : `/api/services/${id}`
+  return runServiceStream('DELETE', path, callbacks)
 }
 
 function runServiceStream(method: string, path: string, callbacks: StreamCallbacks): AbortController {

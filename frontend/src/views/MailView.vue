@@ -3,12 +3,15 @@ import { onMounted, watch, ref, computed } from 'vue'
 import { useMailStore } from '@/stores/mail'
 import { mailHtmlUrl, mailPartUrl } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Separator } from '@/components/ui/separator'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 import {
   Search, Trash2, Mail, MailOpen, Paperclip, ChevronLeft, ChevronRight,
   Inbox, Download, ArrowLeft
@@ -131,12 +134,45 @@ function senderName(msg: { From: { Name: string; Address: string } }): string {
   return msg.From.Name || msg.From.Address
 }
 
-function addressList(addrs: { Name: string; Address: string }[] | null): string {
-  if (!addrs?.length) return ''
-  return addrs.map(a => a.Name || a.Address).join(', ')
+function formatAddress(a: { Name: string; Address: string }): string {
+  return a.Name ? `${a.Name} <${a.Address}>` : a.Address
 }
 
-function selectMessage(id: string) {
+function addressList(addrs: { Name: string; Address: string }[] | null): string {
+  if (!addrs?.length) return ''
+  return addrs.map(formatAddress).join(', ')
+}
+
+// Track last-clicked index for shift+click range selection
+const lastClickedIndex = ref(-1)
+
+function handleMessageClick(event: MouseEvent, id: string, index: number) {
+  const isMeta = event.metaKey || event.ctrlKey
+  const isShift = event.shiftKey
+
+  if (isShift && lastClickedIndex.value >= 0) {
+    // Range select: select all messages between lastClickedIndex and current
+    const lo = Math.min(lastClickedIndex.value, index)
+    const hi = Math.max(lastClickedIndex.value, index)
+    const next = new Set(store.selectedIds)
+    for (let i = lo; i <= hi; i++) {
+      const m = store.messages[i]
+      if (m) next.add(m.ID)
+    }
+    store.selectedIds = next
+    // Don't update lastClickedIndex on shift-click (allows extending range)
+    return
+  }
+
+  if (isMeta) {
+    // Toggle selection without opening detail
+    store.toggleSelect(id)
+    lastClickedIndex.value = index
+    return
+  }
+
+  // Plain click: open detail and update anchor
+  lastClickedIndex.value = index
   store.selectMessage(id)
   showDetail.value = true
 }
@@ -174,36 +210,38 @@ function selectMessage(id: string) {
           @update:checked="handleSelectAll"
           class="mr-1"
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7"
-          :disabled="!store.hasSelection"
-          title="Delete selected"
-          @click="handleDeleteSelected"
-        >
-          <Trash2 class="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7"
-          :disabled="!store.hasSelection"
-          title="Mark selected as read"
-          @click="store.markMessages([...store.selectedIds], true)"
-        >
-          <MailOpen class="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7"
-          :disabled="!store.hasSelection"
-          title="Mark selected as unread"
-          @click="store.markMessages([...store.selectedIds], false)"
-        >
-          <Mail class="w-3.5 h-3.5" />
-        </Button>
+        <ButtonGroup>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-7 w-7"
+            :disabled="!store.hasSelection"
+            title="Delete selected"
+            @click="handleDeleteSelected"
+          >
+            <Trash2 class="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-7 w-7"
+            :disabled="!store.hasSelection"
+            title="Mark selected as read"
+            @click="store.markMessages([...store.selectedIds], true)"
+          >
+            <MailOpen class="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-7 w-7"
+            :disabled="!store.hasSelection"
+            title="Mark selected as unread"
+            @click="store.markMessages([...store.selectedIds], false)"
+          >
+            <Mail class="w-3.5 h-3.5" />
+          </Button>
+        </ButtonGroup>
         <div class="flex-1" />
         <span class="text-xs text-muted-foreground">
           {{ store.unread > 0 ? `${store.unread} unread` : '' }}
@@ -232,14 +270,14 @@ function selectMessage(id: string) {
         </div>
 
         <div
-          v-for="msg in store.messages"
+          v-for="(msg, index) in store.messages"
           :key="msg.ID"
           class="flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent/50 transition-colors"
           :class="{
             'bg-accent': store.selectedMessage?.ID === msg.ID,
             'border-l-2 border-l-primary': store.selectedMessage?.ID === msg.ID,
           }"
-          @click="selectMessage(msg.ID)"
+          @click="handleMessageClick($event, msg.ID, index)"
         >
           <!-- Unread dot / checkbox -->
           <div class="flex items-center gap-1.5 pt-0.5 shrink-0">
@@ -277,14 +315,16 @@ function selectMessage(id: string) {
       <!-- Pagination -->
       <div class="flex items-center justify-between px-3 py-2 border-t border-border text-xs text-muted-foreground">
         <span>{{ store.total }} message{{ store.total !== 1 ? 's' : '' }}</span>
-        <div class="flex items-center gap-1">
-          <Button variant="ghost" size="icon" class="h-6 w-6" :disabled="store.page <= 1" @click="prevPage">
-            <ChevronLeft class="w-3.5 h-3.5" />
-          </Button>
+        <div class="flex items-center gap-1.5">
+          <ButtonGroup>
+            <Button variant="ghost" size="icon" class="h-6 w-6" :disabled="store.page <= 1" @click="prevPage">
+              <ChevronLeft class="w-3.5 h-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" class="h-6 w-6" :disabled="store.page >= store.totalPages" @click="nextPage">
+              <ChevronRight class="w-3.5 h-3.5" />
+            </Button>
+          </ButtonGroup>
           <span>{{ store.page }} / {{ store.totalPages }}</span>
-          <Button variant="ghost" size="icon" class="h-6 w-6" :disabled="store.page >= store.totalPages" @click="nextPage">
-            <ChevronRight class="w-3.5 h-3.5" />
-          </Button>
         </div>
       </div>
     </div>
@@ -323,39 +363,49 @@ function selectMessage(id: string) {
               {{ store.selectedMessage.Subject || '(no subject)' }}
             </h2>
             <div class="flex items-center gap-1.5 shrink-0">
-              <Button variant="outline" size="sm" class="h-7 text-xs" @click="handleMarkUnread">
-                Mark unread
-              </Button>
-              <Button variant="destructive" size="sm" class="h-7 text-xs" @click="handleDeleteCurrent">
-                <Trash2 class="w-3.5 h-3.5 mr-1" />
-                Delete
-              </Button>
+              <ButtonGroup>
+                <ButtonGroup>
+                  <Button variant="outline" size="sm" class="h-7 text-xs" @click="handleMarkUnread">
+                    Mark unread
+                  </Button>
+                </ButtonGroup>
+                <ButtonGroup>
+                  <Button variant="destructive" size="sm" class="h-7 text-xs" @click="handleDeleteCurrent">
+                    <Trash2 class="w-3.5 h-3.5 mr-1" />
+                    Delete
+                  </Button>
+                </ButtonGroup>
+              </ButtonGroup>
             </div>
           </div>
 
           <div class="space-y-0.5 text-sm">
             <div class="flex gap-2">
-              <span class="text-muted-foreground w-8 shrink-0">From</span>
-              <span class="break-all">{{ store.selectedMessage.From.Name || store.selectedMessage.From.Address }}
-                <span v-if="store.selectedMessage.From.Name" class="text-muted-foreground text-xs">
-                  &lt;{{ store.selectedMessage.From.Address }}&gt;
-                </span>
-              </span>
+              <span class="text-muted-foreground w-14 shrink-0">From</span>
+              <span class="break-all">{{ formatAddress(store.selectedMessage.From) }}</span>
             </div>
             <div class="flex gap-2">
-              <span class="text-muted-foreground w-8 shrink-0">To</span>
+              <span class="text-muted-foreground w-14 shrink-0">To</span>
               <span class="break-all">{{ addressList(store.selectedMessage.To) }}</span>
             </div>
             <div v-if="store.selectedMessage.Cc?.length" class="flex gap-2">
-              <span class="text-muted-foreground w-8 shrink-0">Cc</span>
+              <span class="text-muted-foreground w-14 shrink-0">Cc</span>
               <span class="break-all">{{ addressList(store.selectedMessage.Cc) }}</span>
             </div>
+            <div v-if="store.selectedMessage.Bcc?.length" class="flex gap-2">
+              <span class="text-muted-foreground w-14 shrink-0">Bcc</span>
+              <span class="break-all">{{ addressList(store.selectedMessage.Bcc) }}</span>
+            </div>
+            <div v-if="store.selectedMessage.ReplyTo?.length" class="flex gap-2">
+              <span class="text-muted-foreground w-14 shrink-0">Reply-To</span>
+              <span class="break-all">{{ addressList(store.selectedMessage.ReplyTo) }}</span>
+            </div>
             <div class="flex gap-2">
-              <span class="text-muted-foreground w-8 shrink-0">Date</span>
+              <span class="text-muted-foreground w-14 shrink-0">Date</span>
               <span>{{ formatFullDate(store.selectedMessage.Date || store.selectedMessage.Created) }}</span>
             </div>
             <div v-if="store.selectedMessage.Tags?.length" class="flex gap-2 pt-0.5">
-              <span class="text-muted-foreground w-8 shrink-0"></span>
+              <span class="text-muted-foreground w-14 shrink-0"></span>
               <div class="flex flex-wrap gap-1">
                 <Badge v-for="tag in store.selectedMessage.Tags" :key="tag" variant="secondary" class="text-xs">
                   {{ tag }}
@@ -395,18 +445,18 @@ function selectMessage(id: string) {
 
           <TabsContent value="headers" class="flex-1 overflow-hidden m-0 mt-2">
             <ScrollArea class="h-full">
-              <table class="w-full text-xs font-mono">
-                <tbody>
-                  <tr
+              <Table>
+                <TableBody>
+                  <TableRow
                     v-for="(h, i) in headersArray"
                     :key="i"
-                    class="border-b border-border/40 hover:bg-accent/30"
+                    class="hover:bg-accent/30"
                   >
-                    <td class="px-4 py-1.5 text-muted-foreground font-semibold align-top w-32 md:w-44 shrink-0">{{ h.key }}</td>
-                    <td class="px-4 py-1.5 break-all">{{ h.value }}</td>
-                  </tr>
-                </tbody>
-              </table>
+                    <TableCell class="py-1.5 text-muted-foreground font-semibold font-mono text-xs align-top w-32 md:w-44 shrink-0">{{ h.key }}</TableCell>
+                    <TableCell class="py-1.5 font-mono text-xs break-all">{{ h.value }}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
             </ScrollArea>
           </TabsContent>
 

@@ -268,24 +268,70 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 			{
 				"handler": "subroute",
 				"routes": []map[string]interface{}{
-					// Serve real static files directly (exact file match only).
+					// 1. Canonical-path redirect: if the path (without trailing slash)
+					// maps to a directory that has an index.php, redirect to add
+					// the trailing slash (308). Mirrors the first block of Caddy's
+					// php_fastcgi expanded form and prevents /wp-admin → /wp-admin/
+					// redirect loops in WordPress.
+					{
+						"match": []map[string]interface{}{
+							{
+								"file": map[string]interface{}{
+									"root":      effectiveRoot,
+									"try_files": []string{"{http.request.uri.path}/index.php"},
+								},
+								"not": []map[string]interface{}{
+									{"path": []string{"*/"}},
+								},
+							},
+						},
+						"handle": []map[string]interface{}{
+							{
+								"handler":     "static_response",
+								"status_code": 308,
+								"headers": map[string]interface{}{
+									"Location": []string{"{http.request.orig_uri.path}/"},
+								},
+							},
+						},
+					},
+					// 2. Rewrite to the best matching file (exact path, directory
+					// index, or root index.php). Uses try_policy first_exist_fallback
+					// so index.php is always the final fallback even if not on disk.
 					{
 						"match": []map[string]interface{}{
 							{"file": map[string]interface{}{
-								"root":      effectiveRoot,
-								"try_files": []string{"{http.request.uri.path}"},
+								"root":       effectiveRoot,
+								"try_files":  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
+								"try_policy": "first_exist_fallback",
+								"split_path": []string{".php"},
 							}},
+						},
+						"handle": []map[string]interface{}{
+							{
+								"handler": "rewrite",
+								"uri":     "{http.matchers.file.relative}",
+							},
+						},
+					},
+					// 3. Serve real static non-PHP files directly.
+					{
+						"match": []map[string]interface{}{
+							{
+								"file": map[string]interface{}{
+									"root":      effectiveRoot,
+									"try_files": []string{"{http.request.uri.path}"},
+								},
+								"not": []map[string]interface{}{
+									{"path": []string{"*.php"}},
+								},
+							},
 						},
 						"handle": []map[string]interface{}{
 							{"handler": "file_server", "root": effectiveRoot},
 						},
 					},
-					// Everything else: rewrite to index.php and pass to PHP-FPM.
-					{
-						"handle": []map[string]interface{}{
-							{"handler": "rewrite", "uri": "/index.php?{http.request.uri.query}"},
-						},
-					},
+					// 4. Pass all *.php requests to PHP-FPM via FastCGI.
 					{
 						"match": []map[string]interface{}{
 							{"path": []string{"*.php"}},
@@ -298,6 +344,15 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 									"protocol":   "fastcgi",
 									"root":       effectiveRoot,
 									"split_path": []string{".php"},
+									// Tell PHP it is behind HTTPS. Caddy terminates TLS for
+									// all *.test sites, but the FastCGI protocol carries no
+									// TLS signal by default. Without these, WordPress (and
+									// other frameworks) think the request is plain HTTP and
+									// issue an infinite HTTPS redirect loop.
+									"env": map[string]string{
+										"HTTPS":                  "on",
+										"HTTP_X_FORWARDED_PROTO": "https",
+									},
 								},
 							},
 						},
