@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
@@ -108,5 +109,48 @@ func (c *CaddyInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error 
 	}
 
 	fmt.Fprintln(w, "caddy: purge complete")
+	return nil
+}
+
+// LatestVersion queries GitHub Releases for the latest Caddy version.
+func (c *CaddyInstaller) LatestVersion(ctx context.Context) (string, error) {
+	return fetchGitHubLatestVersion(ctx, "caddyserver/caddy")
+}
+
+// UpdateW stops Caddy and replaces the binary with the latest version.
+// The caller (API handler) is responsible for restarting the service.
+func (c *CaddyInstaller) UpdateW(ctx context.Context, w io.Writer) error {
+	latest, err := c.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("caddy: update: %w", err)
+	}
+	// Strip leading "v" for the tarball filename (e.g. "v2.10.0" → "2.10.0").
+	ver := strings.TrimPrefix(latest, "v")
+	dlURL := fmt.Sprintf("https://github.com/caddyserver/caddy/releases/download/%s/caddy_%s_linux_amd64.tar.gz", latest, ver)
+
+	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
+	binPath := filepath.Join(caddyDir, "caddy")
+	tmpTar := filepath.Join(os.TempDir(), "caddy-update-linux-amd64.tar.gz")
+	defer os.Remove(tmpTar)
+
+	fmt.Fprintf(w, "caddy: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+		return fmt.Errorf("caddy: update download: %w", err)
+	}
+
+	fmt.Fprintln(w, "caddy: stopping caddy...")
+	if err := c.supervisor.Stop("caddy"); err != nil {
+		fmt.Fprintf(w, "caddy: warning: stop: %v\n", err)
+	}
+
+	fmt.Fprintln(w, "caddy: replacing binary...")
+	if err := extractFromTar(tmpTar, "caddy", binPath); err != nil {
+		return fmt.Errorf("caddy: update extract: %w", err)
+	}
+	if err := os.Chmod(binPath, 0755); err != nil {
+		return fmt.Errorf("caddy: update chmod: %w", err)
+	}
+
+	fmt.Fprintf(w, "caddy: binary replaced with %s\n", latest)
 	return nil
 }

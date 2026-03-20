@@ -10,11 +10,14 @@ package install
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
@@ -45,6 +48,14 @@ type Installer interface {
 	// PurgeW is like Purge but writes command output to w in real-time.
 	// If preserveData is true, service data directories are left intact.
 	PurgeW(ctx context.Context, w io.Writer, preserveData bool) error
+	// LatestVersion queries the upstream release source and returns the latest
+	// available version string (e.g. "v2.10.0"). Returns ("", nil) for services
+	// that do not support version checks (e.g. built-in DNS).
+	LatestVersion(ctx context.Context) (string, error)
+	// UpdateW stops the service, replaces its binary with the latest version,
+	// and restarts it. Progress is written to w in real-time. It is a no-op
+	// when the service is already at the latest version.
+	UpdateW(ctx context.Context, w io.Writer) error
 }
 
 // NewRegistry builds the full installer map, injecting dependencies into
@@ -361,4 +372,95 @@ func removeAllExcept(dir string, keep ...string) error {
 		}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Version-check helpers
+// ---------------------------------------------------------------------------
+
+// fetchGitHubLatestVersion queries the GitHub Releases API and returns the
+// tag_name of the latest release for the given owner/repo (e.g. "caddyserver/caddy").
+// The returned string includes any "v" prefix present in the tag (e.g. "v2.10.0").
+func fetchGitHubLatestVersion(ctx context.Context, ownerRepo string) (string, error) {
+	url := "https://api.github.com/repos/" + ownerRepo + "/releases/latest"
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "devctl/1")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github version check %s: HTTP %d", ownerRepo, resp.StatusCode)
+	}
+
+	var payload struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("github version check %s: decode: %w", ownerRepo, err)
+	}
+	if payload.TagName == "" {
+		return "", fmt.Errorf("github version check %s: empty tag_name", ownerRepo)
+	}
+	return payload.TagName, nil
+}
+
+// fetchPackagistLatestVersion queries the Packagist API and returns the latest
+// stable release version string for the given package (e.g. "laravel/reverb").
+func fetchPackagistLatestVersion(ctx context.Context, pkg string) (string, error) {
+	url := "https://repo.packagist.org/p2/" + pkg + ".json"
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("packagist version check %s: %w", pkg, err)
+	}
+	req.Header.Set("User-Agent", "devctl/1")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("packagist version check %s: %w", pkg, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("packagist version check %s: HTTP %d", pkg, resp.StatusCode)
+	}
+
+	// Packagist p2 format: {"packages":{"laravel/reverb":[{version:...},{...}]}}
+	// Versions are sorted newest-first. We want the first stable (non-dev) version.
+	var payload struct {
+		Packages map[string][]struct {
+			Version string `json:"version"`
+		} `json:"packages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("packagist version check %s: decode: %w", pkg, err)
+	}
+	versions, ok := payload.Packages[pkg]
+	if !ok || len(versions) == 0 {
+		return "", fmt.Errorf("packagist version check %s: no versions found", pkg)
+	}
+	for _, v := range versions {
+		ver := v.Version
+		// Skip dev/alpha/beta/RC releases.
+		lower := strings.ToLower(ver)
+		if strings.Contains(lower, "dev") || strings.Contains(lower, "alpha") ||
+			strings.Contains(lower, "beta") || strings.Contains(lower, "rc") {
+			continue
+		}
+		return ver, nil
+	}
+	return versions[0].Version, nil
 }

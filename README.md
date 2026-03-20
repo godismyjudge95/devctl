@@ -25,6 +25,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - **TLS** — download or auto-trust Caddy's root CA certificate so `*.test` sites work without browser warnings
 - **SPX Profiler** — per-site PHP profiling via [SPX](https://github.com/NoiseByNorthwest/php-spx); enable per site, then trigger profiles via cookies or query params. View results in the **Profiler** tab with a flat profile table, flamegraph, timeline, and metadata panel
 - **Logs** — central log viewer for all managed services. All service logs are written to `~/sites/server/logs/` as `<service>.log` files. Logs rotate automatically at 10 MB (3 backups kept). The **Logs** tab in the dashboard streams live log output via SSE and lets you clear any log file with one click
+- **Config editor** — full-screen CodeMirror 6 editor for service config files. Click the file icon next to any config-enabled service (Valkey, MySQL, Meilisearch, Typesense, Mailpit, PHP-FPM) to open its config file in a syntax-highlighted editor with line numbers and Ctrl+F search. PHP has two tabs (`php.ini` / `php-fpm.conf`). Ctrl+S or the **Save & Restart** button writes the file and restarts the service automatically
 
 ---
 
@@ -100,6 +101,8 @@ sudo devctl uninstall --yes --purge-services
 
 Manage dev services and PHP-FPM versions. Caddy is always running. Other services can be installed and started on demand. Expand any row to see connection info (socket path, credentials).
 
+When a newer version of an installed service is available, an amber **"update"** badge appears next to the version string and an **"Update"** button is shown in the actions column. Hovering the button shows a tooltip with the exact from/to versions. Updates run the appropriate migration steps automatically (e.g. Meilisearch dumps and re-imports its data; other services simply replace the binary). devctl checks for updates on startup and again daily at 3 am.
+
 ![Services page](docs/screenshot-services.png)
 
 ### Sites
@@ -169,6 +172,8 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
 
 Supervised services run as direct child processes of devctl. Valkey's service ID is `redis` for Laravel `.env` compatibility.
 
+Each service that supports a config file is started with a native config file (e.g. `valkey.conf`, `config.toml`, `typesense.ini`). These files are written once on install and are user-editable — devctl never overwrites them on restart. Mailpit is configured via `MP_*` environment variables in `config.env`. Click the file (FileText) icon on any config-enabled service row in the dashboard to open the file in the full-screen config editor.
+
 ---
 
 ## DNS
@@ -216,6 +221,16 @@ Each version runs as:
 {siteHome}/sites/server/php/{version}/php-fpm --nodaemonize --fpm-config {siteHome}/sites/server/php/{version}/php-fpm.conf
 ```
 
+**PHP configuration:**
+
+On first install, devctl creates a `php.ini` based on the full upstream `php.ini-development` template with the following devctl-specific overrides appended:
+
+- `upload_max_filesize = 128M`, `memory_limit = 256M`, `post_max_size = 128M`, `max_execution_time = 120`
+- OPcache enabled with `validate_timestamps=1` and `revalidate_freq=0` (dev-safe: file changes are always picked up)
+- SPX profiler settings and `auto_prepend_file` for `php_dd()` support
+
+The `php.ini` is user-editable and never overwritten on restart. The **Global PHP Settings** UI patches the resource-limit keys directly in the file. Click the file icon on the PHP-FPM row in the Services tab to open `php.ini` or `php-fpm.conf` in the full-screen config editor. To regenerate the file with updated defaults, delete it and restart devctl.
+
 **CLI symlinks created on install:**
 - `/usr/local/bin/php{version}` — points at the version-specific CLI binary (e.g. `php8.4`)
 - `/usr/local/bin/php` — always points at the highest installed version
@@ -228,6 +243,7 @@ devctl can fire native desktop notifications when new dumps or mail arrive while
 
 - **Dumps** — a notification fires whenever a new `php_dd()` dump arrives and you are not currently on the `/dumps` page. A single dump shows a short plain-text value preview; multiple dumps arriving within 1.5 seconds are collapsed into one notification showing the total count. Clicking the notification navigates directly to that dump.
 - **Mail** — a notification fires whenever a new message arrives in Mailpit and you are not on the `/mail` page. A single message shows the sender and subject; bursts are collapsed. Clicking navigates to the Mail page.
+- **Service updates** — a notification fires when the update checker (runs on startup and daily at 3 am) finds a newer version for any installed service.
 
 Notifications are requested automatically on first load. devctl uses the **Service Worker Notification API** when supported (enabling reliable window-focusing on all platforms), with a direct `Notification` API fallback for browsers without service worker support.
 

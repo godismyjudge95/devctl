@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
@@ -34,6 +35,11 @@ type Server struct {
 	devctlAddr  string // listen address passed to EnsureHTTPServer (e.g. "127.0.0.1:4000")
 	mux         *http.ServeMux
 	uiFS        embed.FS
+
+	// latestVersions caches the most recently fetched latest version string for
+	// each installer, keyed by service ID. Protected by latestVersionsMu.
+	latestVersionsMu sync.RWMutex
+	latestVersions   map[string]string
 }
 
 // NewServer creates and configures the HTTP server.
@@ -53,21 +59,22 @@ func NewServer(
 	devctlAddr string,
 ) *Server {
 	s := &Server{
-		db:          db,
-		queries:     dbq.New(db),
-		registry:    registry,
-		manager:     manager,
-		supervisor:  supervisor,
-		poller:      poller,
-		dumps:       dumpsServer,
-		caddy:       caddyClient,
-		siteManager: siteManager,
-		installers:  installers,
-		serverRoot:  serverRoot,
-		siteUser:    siteUser,
-		devctlAddr:  devctlAddr,
-		mux:         http.NewServeMux(),
-		uiFS:        uiFS,
+		db:             db,
+		queries:        dbq.New(db),
+		registry:       registry,
+		manager:        manager,
+		supervisor:     supervisor,
+		poller:         poller,
+		dumps:          dumpsServer,
+		caddy:          caddyClient,
+		siteManager:    siteManager,
+		installers:     installers,
+		serverRoot:     serverRoot,
+		siteUser:       siteUser,
+		devctlAddr:     devctlAddr,
+		mux:            http.NewServeMux(),
+		uiFS:           uiFS,
+		latestVersions: make(map[string]string),
 	}
 	s.registerRoutes()
 	return s
@@ -89,6 +96,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/services/{id}/settings", s.handlePutServiceSettings)
 	s.mux.HandleFunc("GET /api/services/{id}/config/{file}", s.handleGetServiceConfig)
 	s.mux.HandleFunc("PUT /api/services/{id}/config/{file}", s.handlePutServiceConfig)
+	s.mux.HandleFunc("POST /api/services/{id}/update", s.handleServiceUpdate)
 	s.mux.HandleFunc("GET /api/services/events", s.handleServiceEvents)
 
 	// Logs

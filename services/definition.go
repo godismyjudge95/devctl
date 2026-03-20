@@ -81,15 +81,17 @@ type Definition struct {
 
 // ServiceState is the live status of a service returned by the API.
 type ServiceState struct {
-	ID             string `json:"id"`
-	Label          string `json:"label"`
-	Status         Status `json:"status"`
-	Version        string `json:"version"`
-	Log            string `json:"log"`
-	Installed      bool   `json:"installed"`
-	Installable    bool   `json:"installable"`
-	Required       bool   `json:"required"`
-	Description    string `json:"description"`
-	InstallVersion string `json:"install_version"`
-	HasCredentials bool   `json:"has_credentials"`
+	ID              string `json:"id"`
+	Label           string `json:"label"`
+	Status          Status `json:"status"`
+	Version         string `json:"version"`
+	Log             string `json:"log"`
+	Installed       bool   `json:"installed"`
+	Installable     bool   `json:"installable"`
+	Required        bool   `json:"required"`
+	Description     string `json:"description"`
+	InstallVersion  string `json:"install_version"`
+	HasCredentials  bool   `json:"has_credentials"`
+	LatestVersion   string `json:"latest_version"`
+	UpdateAvailable bool   `json:"update_available"`
 }

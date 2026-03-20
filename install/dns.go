@@ -25,3 +25,12 @@ func (d *DNSInstaller) PurgeW(_ context.Context, w io.Writer, _ bool) error {
 	_, _ = w.Write([]byte("DNS server is built-in — nothing to purge.\n"))
 	return nil
 }
+
+// LatestVersion returns ("", nil) — the built-in DNS server has no upstream release.
+func (d *DNSInstaller) LatestVersion(_ context.Context) (string, error) { return "", nil }
+
+// UpdateW is a no-op for the built-in DNS server.
+func (d *DNSInstaller) UpdateW(_ context.Context, w io.Writer) error {
+	_, _ = w.Write([]byte("DNS server is built-in — nothing to update.\n"))
+	return nil
+}

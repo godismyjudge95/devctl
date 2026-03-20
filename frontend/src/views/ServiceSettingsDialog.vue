@@ -6,15 +6,11 @@ import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import {
-  Tabs, TabsContent, TabsList, TabsTrigger,
-} from '@/components/ui/tabs'
-import {
-  getServiceSettings, putServiceSettings, getServiceConfig, putServiceConfig,
+  getServiceSettings, putServiceSettings,
   detectDNSIP, setupSystemDNS, teardownSystemDNS,
 } from '@/lib/api'
 import type { MailpitServiceSettings, MySQLServiceSettings, PHPSettings, DNSServiceSettings } from '@/lib/api'
@@ -36,7 +32,6 @@ function isDNS(id: string) { return id === 'dns' }
 
 const loading = ref(false)
 const saving = ref(false)
-const tab = ref('settings')
 
 // Mailpit
 const mailpitHttpPort = ref('')
@@ -45,21 +40,12 @@ const mailpitSmtpPort = ref('')
 // MySQL
 const mysqlPort = ref('')
 const mysqlBindAddress = ref('')
-const mysqlConfigContent = ref('')
-const mysqlConfigLoading = ref(false)
-const mysqlConfigSaving = ref(false)
 
 // PHP FPM settings
 const phpMemoryLimit = ref('')
 const phpUploadMaxFilesize = ref('')
 const phpPostMaxSize = ref('')
 const phpMaxExecutionTime = ref('')
-
-// PHP config file editor
-const phpConfigFile = ref<'php.ini' | 'php-fpm.conf'>('php.ini')
-const phpConfigContent = ref('')
-const phpConfigLoading = ref(false)
-const phpConfigSaving = ref(false)
 
 // DNS
 const dnsPort = ref('')
@@ -71,7 +57,6 @@ const dnsSetupLoading = ref(false)
 
 async function loadSettings() {
   loading.value = true
-  tab.value = 'settings'
   try {
     const data = await getServiceSettings(props.serviceId)
     if (isMailpit(props.serviceId)) {
@@ -82,15 +67,12 @@ async function loadSettings() {
       const my = data as MySQLServiceSettings
       mysqlPort.value = my.port
       mysqlBindAddress.value = my.bind_address
-      loadMySQLConfig()
     } else if (isPHPFPM(props.serviceId)) {
       const php = data as PHPSettings
       phpMemoryLimit.value = php.memory_limit
       phpUploadMaxFilesize.value = php.upload_max_filesize
       phpPostMaxSize.value = php.post_max_size
       phpMaxExecutionTime.value = php.max_execution_time
-      phpConfigFile.value = 'php.ini'
-      loadPHPConfigFile('php.ini')
     } else if (isDNS(props.serviceId)) {
       const d = data as DNSServiceSettings
       dnsPort.value = d.port
@@ -103,33 +85,6 @@ async function loadSettings() {
     emit('update:open', false)
   } finally {
     loading.value = false
-  }
-}
-
-async function loadPHPConfigFile(file: 'php.ini' | 'php-fpm.conf') {
-  phpConfigLoading.value = true
-  phpConfigFile.value = file
-  try {
-    const res = await getServiceConfig(props.serviceId, file)
-    phpConfigContent.value = res.content
-  } catch (e: any) {
-    phpConfigContent.value = ''
-    toast.error(`Failed to load ${file}`, { description: e.message })
-  } finally {
-    phpConfigLoading.value = false
-  }
-}
-
-async function loadMySQLConfig() {
-  mysqlConfigLoading.value = true
-  try {
-    const res = await getServiceConfig(props.serviceId, 'my.cnf')
-    mysqlConfigContent.value = res.content
-  } catch (e: any) {
-    mysqlConfigContent.value = ''
-    toast.error('Failed to load my.cnf', { description: e.message })
-  } finally {
-    mysqlConfigLoading.value = false
   }
 }
 
@@ -171,30 +126,6 @@ async function saveSettings() {
     toast.error('Failed to save settings', { description: e.message })
   } finally {
     saving.value = false
-  }
-}
-
-async function savePHPConfig() {
-  phpConfigSaving.value = true
-  try {
-    await putServiceConfig(props.serviceId, phpConfigFile.value, phpConfigContent.value)
-    toast.success(`${phpConfigFile.value} saved`)
-  } catch (e: any) {
-    toast.error(`Failed to save ${phpConfigFile.value}`, { description: e.message })
-  } finally {
-    phpConfigSaving.value = false
-  }
-}
-
-async function saveMySQLConfig() {
-  mysqlConfigSaving.value = true
-  try {
-    await putServiceConfig(props.serviceId, 'my.cnf', mysqlConfigContent.value)
-    toast.success('my.cnf saved — restarting MySQL…')
-  } catch (e: any) {
-    toast.error('Failed to save my.cnf', { description: e.message })
-  } finally {
-    mysqlConfigSaving.value = false
   }
 }
 
@@ -279,133 +210,62 @@ watch(() => props.open, (val) => {
 
         <!-- PHP FPM -->
         <template v-else-if="isPHPFPM(serviceId)">
-          <Tabs v-model="tab" class="w-full">
-            <TabsList class="mb-3">
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-              <TabsTrigger value="config">Config</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="settings">
-              <div class="grid gap-4 py-2">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div class="grid gap-1.5">
-                    <Label for="php_memory_limit">memory_limit</Label>
-                    <Input id="php_memory_limit" v-model="phpMemoryLimit" class="font-mono" placeholder="256M" />
-                  </div>
-                  <div class="grid gap-1.5">
-                    <Label for="php_upload_max">upload_max_filesize</Label>
-                    <Input id="php_upload_max" v-model="phpUploadMaxFilesize" class="font-mono" placeholder="128M" />
-                  </div>
-                  <div class="grid gap-1.5">
-                    <Label for="php_post_max">post_max_size</Label>
-                    <Input id="php_post_max" v-model="phpPostMaxSize" class="font-mono" placeholder="128M" />
-                  </div>
-                  <div class="grid gap-1.5">
-                    <Label for="php_max_exec">max_execution_time</Label>
-                    <Input id="php_max_exec" v-model="phpMaxExecutionTime" class="font-mono" placeholder="120" />
-                  </div>
-                </div>
-                <p class="text-xs text-muted-foreground">PHP-FPM will be restarted automatically when you save.</p>
+          <div class="grid gap-4 py-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="grid gap-1.5">
+                <Label for="php_memory_limit">memory_limit</Label>
+                <Input id="php_memory_limit" v-model="phpMemoryLimit" class="font-mono" placeholder="256M" />
               </div>
-              <DialogFooter>
-                <ButtonGroup>
-                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                  <Button @click="saveSettings" :disabled="saving">
-                    <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                    Save &amp; Restart
-                  </Button>
-                </ButtonGroup>
-              </DialogFooter>
-            </TabsContent>
-
-            <TabsContent value="config">
-              <div class="space-y-3">
-                <Tabs :model-value="phpConfigFile" @update:model-value="(f) => loadPHPConfigFile(f as 'php.ini' | 'php-fpm.conf')">
-                  <TabsList>
-                    <TabsTrigger value="php.ini">php.ini</TabsTrigger>
-                    <TabsTrigger value="php-fpm.conf">php-fpm.conf</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <div v-if="phpConfigLoading" class="text-center text-muted-foreground text-sm py-4">
-                  <Loader2 class="w-4 h-4 animate-spin inline-block mr-2" />Loading…
-                </div>
-                <Textarea
-                  v-else
-                  v-model="phpConfigContent"
-                  class="h-72 font-mono text-xs resize-y"
-                  spellcheck="false"
-                />
+              <div class="grid gap-1.5">
+                <Label for="php_upload_max">upload_max_filesize</Label>
+                <Input id="php_upload_max" v-model="phpUploadMaxFilesize" class="font-mono" placeholder="128M" />
               </div>
-              <DialogFooter class="mt-4">
-                <ButtonGroup>
-                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                  <Button @click="savePHPConfig" :disabled="phpConfigSaving || phpConfigLoading">
-                    <Loader2 v-if="phpConfigSaving" class="w-3.5 h-3.5 animate-spin" />
-                    Save File
-                  </Button>
-                </ButtonGroup>
-              </DialogFooter>
-            </TabsContent>
-          </Tabs>
+              <div class="grid gap-1.5">
+                <Label for="php_post_max">post_max_size</Label>
+                <Input id="php_post_max" v-model="phpPostMaxSize" class="font-mono" placeholder="128M" />
+              </div>
+              <div class="grid gap-1.5">
+                <Label for="php_max_exec">max_execution_time</Label>
+                <Input id="php_max_exec" v-model="phpMaxExecutionTime" class="font-mono" placeholder="120" />
+              </div>
+            </div>
+            <p class="text-xs text-muted-foreground">PHP-FPM will be restarted automatically when you save.</p>
+          </div>
+          <DialogFooter>
+            <ButtonGroup>
+              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+              <Button @click="saveSettings" :disabled="saving">
+                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+                Save &amp; Restart
+              </Button>
+            </ButtonGroup>
+          </DialogFooter>
         </template>
 
         <!-- MySQL -->
         <template v-else-if="isMySQL(serviceId)">
-          <Tabs v-model="tab" class="w-full">
-            <TabsList class="mb-3">
-              <TabsTrigger value="settings">Settings</TabsTrigger>
-              <TabsTrigger value="config">Config</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="settings">
-              <div class="grid gap-4 py-2">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div class="grid gap-1.5">
-                    <Label for="mysql_port">Port</Label>
-                    <Input id="mysql_port" v-model="mysqlPort" class="font-mono" placeholder="3306" />
-                  </div>
-                  <div class="grid gap-1.5">
-                    <Label for="mysql_bind">Bind Address</Label>
-                    <Input id="mysql_bind" v-model="mysqlBindAddress" class="font-mono" placeholder="127.0.0.1" />
-                  </div>
-                </div>
-                <p class="text-xs text-muted-foreground">MySQL will be restarted automatically when you save.</p>
+          <div class="grid gap-4 py-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="grid gap-1.5">
+                <Label for="mysql_port">Port</Label>
+                <Input id="mysql_port" v-model="mysqlPort" class="font-mono" placeholder="3306" />
               </div>
-              <DialogFooter>
-                <ButtonGroup>
-                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                  <Button @click="saveSettings" :disabled="saving">
-                    <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                    Save &amp; Restart
-                  </Button>
-                </ButtonGroup>
-              </DialogFooter>
-            </TabsContent>
-
-            <TabsContent value="config">
-              <div class="space-y-3">
-                <p class="text-xs text-muted-foreground">my.cnf</p>
-                <div v-if="mysqlConfigLoading" class="text-center text-muted-foreground text-sm py-4">
-                  <Loader2 class="w-4 h-4 animate-spin inline-block mr-2" />Loading…
-                </div>
-                <Textarea
-                  v-else
-                  v-model="mysqlConfigContent"
-                  class="h-72 font-mono text-xs resize-y"
-                  spellcheck="false"
-                />
+              <div class="grid gap-1.5">
+                <Label for="mysql_bind">Bind Address</Label>
+                <Input id="mysql_bind" v-model="mysqlBindAddress" class="font-mono" placeholder="127.0.0.1" />
               </div>
-              <DialogFooter class="mt-4">
-                <ButtonGroup>
-                  <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-                  <Button @click="saveMySQLConfig" :disabled="mysqlConfigSaving || mysqlConfigLoading">
-                    <Loader2 v-if="mysqlConfigSaving" class="w-3.5 h-3.5 animate-spin" />
-                    Save &amp; Restart
-                  </Button>
-                </ButtonGroup>
-              </DialogFooter>
-            </TabsContent>
-          </Tabs>
+            </div>
+            <p class="text-xs text-muted-foreground">MySQL will be restarted automatically when you save.</p>
+          </div>
+          <DialogFooter>
+            <ButtonGroup>
+              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+              <Button @click="saveSettings" :disabled="saving">
+                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+                Save &amp; Restart
+              </Button>
+            </ButtonGroup>
+          </DialogFooter>
         </template>
 
         <!-- DNS -->

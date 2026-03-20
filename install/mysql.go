@@ -50,6 +50,59 @@ func (m *MySQLInstaller) Install(ctx context.Context) error {
 	return m.InstallW(ctx, io.Discard)
 }
 
+// EnsureMySQLPlugins downloads and extracts the MySQL plugin .so files and
+// ICU data into the plugin/lib directories if they are missing from an
+// existing installation. This fixes installations created before plugin
+// extraction was added. It is a no-op if all required files are already present.
+func EnsureMySQLPlugins(serverRoot string) error {
+	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
+	mysqldPath := filepath.Join(mysqlDir, "bin", "mysqld")
+	if !fileExists(mysqldPath) {
+		return nil // MySQL not installed — nothing to do
+	}
+
+	pluginDir := filepath.Join(mysqlDir, "lib", "mysql", "plugin")
+	componentSO := filepath.Join(pluginDir, "component_reference_cache.so")
+	libDir := filepath.Join(mysqlDir, "lib")
+	// Check for ICU data directory under lib/mysql/private/ (e.g. icudt77l/).
+	// MySQL looks there for ICU regex data when basedir is set.
+	icuMissing := true
+	privateLibDir := filepath.Join(libDir, "mysql", "private")
+	if entries, err := os.ReadDir(privateLibDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && len(e.Name()) > 4 && e.Name()[:5] == "icudt" {
+				icuMissing = false
+				break
+			}
+		}
+	}
+
+	if fileExists(componentSO) && !icuMissing {
+		return nil // all present — no-op
+	}
+
+	// Something is missing — re-extract from the mysql-community-server-core deb.
+	if err := os.MkdirAll(pluginDir, 0750); err != nil {
+		return fmt.Errorf("mysql plugins: create plugin dir: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*60*1e9) // 5 min
+	defer cancel()
+
+	tmpDeb := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-server-core-%s-migrate.deb", mysqlVersion))
+	defer os.Remove(tmpDeb)
+
+	if err := curlDownload(ctx, mysqlDebURL("mysql-community-server-core"), tmpDeb); err != nil {
+		return fmt.Errorf("mysql plugins: download server-core deb: %w", err)
+	}
+
+	if err := extractMySQLDeb(tmpDeb, "", libDir, pluginDir); err != nil {
+		return fmt.Errorf("mysql plugins: extract plugins: %w", err)
+	}
+
+	return nil
+}
+
 func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if m.IsInstalled() {
 		fmt.Fprintln(w, "mysql: already installed")
@@ -59,6 +112,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
 	binDir := filepath.Join(mysqlDir, "bin")
 	libDir := filepath.Join(mysqlDir, "lib")
+	pluginDir := filepath.Join(mysqlDir, "lib", "mysql", "plugin")
 	dataDir := filepath.Join(mysqlDir, "data")
 
 	// 1. Install libnuma1 — the one system library not bundled in the debs.
@@ -69,7 +123,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	// 2. Create directories.
 	fmt.Fprintln(w, "mysql: creating directories...")
-	for _, dir := range []string{binDir, libDir, dataDir, filepath.Join(mysqlDir, "mysql-files")} {
+	for _, dir := range []string{binDir, libDir, pluginDir, dataDir, filepath.Join(mysqlDir, "mysql-files")} {
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			return fmt.Errorf("mysql: create dir %s: %w", dir, err)
 		}
@@ -98,7 +152,7 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		}
 
 		fmt.Fprintf(w, "mysql: extracting %s...\n", d.desc)
-		if err := extractMySQLDeb(tmpDeb, binDir, libDir); err != nil {
+		if err := extractMySQLDeb(tmpDeb, binDir, libDir, pluginDir); err != nil {
 			return fmt.Errorf("mysql: extract %s: %w", d.pkg, err)
 		}
 	}
@@ -174,6 +228,59 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+// LatestVersion returns ("", nil) — MySQL does not have a simple upstream
+// API to check for the latest version. Update the mysqlVersion constant
+// in this file manually when a new release is available.
+func (m *MySQLInstaller) LatestVersion(_ context.Context) (string, error) {
+	return "", nil
+}
+
+// UpdateW re-downloads the MySQL deb packages and extracts the new binaries
+// over the existing installation. The data directory is preserved.
+// The caller (API handler) is responsible for restarting the service.
+func (m *MySQLInstaller) UpdateW(ctx context.Context, w io.Writer) error {
+	if !m.IsInstalled() {
+		return fmt.Errorf("mysql: not installed")
+	}
+
+	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
+	binDir := filepath.Join(mysqlDir, "bin")
+	libDir := filepath.Join(mysqlDir, "lib")
+	pluginDir := filepath.Join(mysqlDir, "lib", "mysql", "plugin")
+
+	fmt.Fprintln(w, "mysql: stopping service...")
+	if err := m.supervisor.Stop("mysql"); err != nil {
+		fmt.Fprintf(w, "mysql: warning: stop: %v\n", err)
+	}
+
+	debs := []struct {
+		pkg  string
+		desc string
+	}{
+		{"mysql-community-server-core", "server"},
+		{"mysql-community-client-core", "client-core"},
+		{"mysql-community-client", "client"},
+	}
+
+	for _, d := range debs {
+		tmpDeb := filepath.Join(os.TempDir(), fmt.Sprintf("mysql-%s-%s-update.deb", d.pkg, mysqlVersion))
+		defer os.Remove(tmpDeb)
+
+		fmt.Fprintf(w, "mysql: downloading %s...\n", d.desc)
+		if err := curlDownloadW(ctx, w, mysqlDebURL(d.pkg), tmpDeb); err != nil {
+			return fmt.Errorf("mysql: update download %s: %w", d.pkg, err)
+		}
+
+		fmt.Fprintf(w, "mysql: extracting %s...\n", d.desc)
+		if err := extractMySQLDeb(tmpDeb, binDir, libDir, pluginDir); err != nil {
+			return fmt.Errorf("mysql: update extract %s: %w", d.pkg, err)
+		}
+	}
+
+	fmt.Fprintf(w, "mysql: binary replaced with %s\n", mysqlVersion)
+	return nil
+}
+
 func (m *MySQLInstaller) Purge(ctx context.Context) error {
 	return m.PurgeW(ctx, io.Discard, false)
 }
@@ -209,10 +316,11 @@ func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer, preserveData b
 // extractMySQLDeb reads a .deb archive and extracts:
 //   - usr/sbin/mysqld and usr/bin/mysql* → binDir
 //   - usr/lib/mysql/private/*.so          → libDir
+//   - usr/lib/mysql/plugin/*.so           → pluginDir
 //
 // A .deb is an ar(1) archive containing data.tar.xz (or .gz/.zst).
 // We shell out to dpkg-deb to avoid implementing ar parsing in Go.
-func extractMySQLDeb(debPath, binDir, libDir string) error {
+func extractMySQLDeb(debPath, binDir, libDir, pluginDir string) error {
 	tmpDir, err := os.MkdirTemp("", "mysql-deb-*")
 	if err != nil {
 		return err
@@ -227,39 +335,61 @@ func extractMySQLDeb(debPath, binDir, libDir string) error {
 
 	// Copy usr/sbin/mysqld → binDir/mysqld
 	// Copy usr/bin/mysql*  → binDir/
-	for _, srcDir := range []string{
-		filepath.Join(tmpDir, "usr", "sbin"),
-		filepath.Join(tmpDir, "usr", "bin"),
-	} {
-		entries, err := os.ReadDir(srcDir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasPrefix(e.Name(), "mysql") {
-				continue
-			}
-			if err := copyFile(filepath.Join(srcDir, e.Name()), filepath.Join(binDir, e.Name())); err != nil {
+	if binDir != "" {
+		for _, srcDir := range []string{
+			filepath.Join(tmpDir, "usr", "sbin"),
+			filepath.Join(tmpDir, "usr", "bin"),
+		} {
+			entries, err := os.ReadDir(srcDir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
 				return err
+			}
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasPrefix(e.Name(), "mysql") {
+					continue
+				}
+				if err := copyFile(filepath.Join(srcDir, e.Name()), filepath.Join(binDir, e.Name())); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	// Copy usr/lib/mysql/private/*.so → libDir/
+	// Copy usr/lib/mysql/private/ → libDir/mysql/private/ (recursive — includes
+	// .so files and subdirectories like icudt77l/ for ICU regular expression data).
+	// MySQL (with basedir=mysqlDir) expects private libs at {basedir}/lib/mysql/private/.
 	privateDir := filepath.Join(tmpDir, "usr", "lib", "mysql", "private")
-	entries, err := os.ReadDir(privateDir)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	if _, err := os.Stat(privateDir); err == nil {
+		privateDestDir := filepath.Join(libDir, "mysql", "private")
+		if err := os.MkdirAll(privateDestDir, 0750); err != nil {
+			return fmt.Errorf("create private lib dir: %w", err)
 		}
-		if err := copyFile(filepath.Join(privateDir, e.Name()), filepath.Join(libDir, e.Name())); err != nil {
+		if out, err := runShell(context.Background(), fmt.Sprintf("cp -r %s/. %s/", privateDir, privateDestDir)); err != nil {
+			return fmt.Errorf("copy private dir: %w\n%s", err, out)
+		}
+		// Also copy .so files directly into libDir so LD_LIBRARY_PATH finds them.
+		if out, err := runShell(context.Background(), fmt.Sprintf("find %s -maxdepth 1 -name '*.so*' -exec cp {} %s/ \\;", privateDir, libDir)); err != nil {
+			return fmt.Errorf("copy private .so files: %w\n%s", err, out)
+		}
+	}
+
+	// Copy usr/lib/mysql/plugin/*.so → pluginDir/
+	if pluginDir != "" {
+		pluginSrcDir := filepath.Join(tmpDir, "usr", "lib", "mysql", "plugin")
+		pluginEntries, err := os.ReadDir(pluginSrcDir)
+		if err != nil && !os.IsNotExist(err) {
 			return err
+		}
+		for _, e := range pluginEntries {
+			if e.IsDir() {
+				continue
+			}
+			if err := copyFile(filepath.Join(pluginSrcDir, e.Name()), filepath.Join(pluginDir, e.Name())); err != nil {
+				return err
+			}
 		}
 	}
 

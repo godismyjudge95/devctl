@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
@@ -84,14 +85,20 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("typesense: generate api key: %w", err)
 	}
 
-	// 5. Write config.env.
+	// 6. Write config.env with Laravel/app connection info.
 	fmt.Fprintln(w, "typesense: writing config.env...")
 	envContent := fmt.Sprintf("TYPESENSE_API_KEY=%s\nTYPESENSE_HOST=https://typesense.test\n", key)
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("typesense: write config.env: %w", err)
 	}
 
-	// 6. Register Caddy reverse-proxy vhost at typesense.test.
+	// 7. Write typesense.ini with full defaults.
+	fmt.Fprintln(w, "typesense: writing typesense.ini...")
+	if err := writeTypesenseConf(tsDir, key); err != nil {
+		return fmt.Errorf("typesense: write typesense.ini: %w", err)
+	}
+
+	// 8. Register Caddy reverse-proxy vhost at typesense.test.
 	fmt.Fprintln(w, "typesense: creating typesense.test Caddy vhost...")
 	_, err = t.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:     "typesense.test",
@@ -104,7 +111,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "typesense: warning: create site: %v\n", err)
 	}
 
-	// 7. Transfer ownership to the site user.
+	// 9. Transfer ownership to the site user.
 	if t.siteUser != "" {
 		fmt.Fprintf(w, "typesense: chowning %s to %s...\n", tsDir, t.siteUser)
 		chownCmd := fmt.Sprintf("chown -R %s:%s %s", t.siteUser, t.siteUser, tsDir)
@@ -114,6 +121,53 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "typesense: install complete")
+	return nil
+}
+
+// LatestVersion queries GitHub Releases for the latest Typesense version.
+func (t *TypesenseInstaller) LatestVersion(ctx context.Context) (string, error) {
+	tag, err := fetchGitHubLatestVersion(ctx, "typesense/typesense")
+	if err != nil {
+		return "", err
+	}
+	// Typesense tags may be prefixed with "v" (e.g. "v30.1"); strip it to
+	// match the version format used in download URLs ("30.1").
+	return strings.TrimPrefix(tag, "v"), nil
+}
+
+// UpdateW stops Typesense and replaces the binary with the latest version.
+// The caller (API handler) is responsible for restarting the service.
+func (t *TypesenseInstaller) UpdateW(ctx context.Context, w io.Writer) error {
+	latest, err := t.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("typesense: update: %w", err)
+	}
+	dlURL := fmt.Sprintf("https://dl.typesense.org/releases/%s/typesense-server-%s-linux-amd64.tar.gz", latest, latest)
+
+	tsDir := paths.ServiceDir(t.serverRoot, "typesense")
+	binPath := filepath.Join(tsDir, "typesense-server")
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("typesense-%s-update.tar.gz", latest))
+	defer os.Remove(tmpTar)
+
+	fmt.Fprintf(w, "typesense: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+		return fmt.Errorf("typesense: update download: %w", err)
+	}
+
+	fmt.Fprintln(w, "typesense: stopping typesense...")
+	if err := t.supervisor.Stop("typesense"); err != nil {
+		fmt.Fprintf(w, "typesense: warning: stop: %v\n", err)
+	}
+
+	fmt.Fprintln(w, "typesense: replacing binary...")
+	if err := extractFromTar(tmpTar, "typesense-server", binPath); err != nil {
+		return fmt.Errorf("typesense: update extract: %w", err)
+	}
+	if err := os.Chmod(binPath, 0755); err != nil {
+		return fmt.Errorf("typesense: update chmod: %w", err)
+	}
+
+	fmt.Fprintf(w, "typesense: binary replaced with %s\n", latest)
 	return nil
 }
 
@@ -145,4 +199,65 @@ func (t *TypesenseInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) er
 
 	fmt.Fprintln(w, "typesense: purge complete")
 	return nil
+}
+
+// EnsureTypesenseConf writes typesense.ini to the Typesense service directory
+// if the file is missing. Reads the API key from the existing config.env so it
+// matches the already-provisioned key. Safe to call on every startup — it is a
+// no-op when typesense.ini already exists.
+func EnsureTypesenseConf(serverRoot string) error {
+	tsDir := paths.ServiceDir(serverRoot, "typesense")
+	key := readEnvKey(filepath.Join(tsDir, "config.env"), "TYPESENSE_API_KEY")
+	return writeTypesenseConf(tsDir, key)
+}
+
+// writeTypesenseConf writes a typesense.ini to dir/typesense.ini.
+// Typesense has no official default config template; the INI format mirrors
+// CLI flags without the leading -- (see https://typesense.org/docs/30.1/api/server-configuration.html).
+// The file is only written if it does not yet exist so user edits are preserved.
+func writeTypesenseConf(dir, apiKey string) error {
+	confPath := filepath.Join(dir, "typesense.ini")
+	if _, err := os.Stat(confPath); err == nil {
+		return nil // already exists — don't overwrite
+	}
+	conf := fmt.Sprintf(`; devctl-managed Typesense configuration
+; See https://typesense.org/docs/30.1/api/server-configuration.html
+; Format: key = value  (same as CLI flags, without the leading --)
+
+[server]
+
+; Required settings
+api-key = %s
+data-dir = ./data
+
+; Networking
+api-address = 127.0.0.1
+api-port = 8108
+
+; CORS — allow browser JS clients to access Typesense directly
+enable-cors = true
+; cors-domains = https://example.com,https://example2.com
+
+; Logging (logs to stdout by default; set log-dir to write to files)
+; log-dir = ./logs
+; enable-access-logging = false
+; enable-search-logging = false
+; log-slow-requests-time-ms = -1
+
+; Resource limits (defaults shown)
+; thread-pool-size = <NUM_CORES * 8>
+; num-collections-parallel-load = <NUM_CORES * 4>
+; num-documents-parallel-load = 1000
+; cache-num-entries = 1000
+; disk-used-max-percentage = 100
+; memory-used-max-percentage = 100
+
+; On-disk DB fine tuning (RocksDB)
+; db-write-buffer-size = 4194304
+; db-max-write-buffer-number = 2
+; db-max-log-file-size = 4194304
+; db-keep-log-file-num = 5
+; max-indexing-concurrency = 4
+`, apiKey)
+	return os.WriteFile(confPath, []byte(conf), 0644)
 }

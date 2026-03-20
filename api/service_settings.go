@@ -232,8 +232,48 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 	writeError(w, fmt.Sprintf("service %q has no configurable settings", id), http.StatusNotFound)
 }
 
+// serviceConfigFilePath resolves the absolute path for a service config file
+// and validates that the filename is one of the service's allowed files.
+// Returns ("", false) if the service or file is not supported.
+func serviceConfigFilePath(serverRoot, id, file string) (string, bool) {
+	switch id {
+	case "mysql":
+		if file != "my.cnf" {
+			return "", false
+		}
+		return filepath.Join(paths.ServiceDir(serverRoot, "mysql"), "my.cnf"), true
+	case "redis":
+		if file != "valkey.conf" {
+			return "", false
+		}
+		return filepath.Join(paths.ServiceDir(serverRoot, "valkey"), "valkey.conf"), true
+	case "meilisearch":
+		if file != "config.toml" {
+			return "", false
+		}
+		return filepath.Join(paths.ServiceDir(serverRoot, "meilisearch"), "config.toml"), true
+	case "typesense":
+		if file != "typesense.ini" {
+			return "", false
+		}
+		return filepath.Join(paths.ServiceDir(serverRoot, "typesense"), "typesense.ini"), true
+	case "mailpit":
+		if file != "config.env" {
+			return "", false
+		}
+		return filepath.Join(paths.ServiceDir(serverRoot, "mailpit"), "config.env"), true
+	}
+	if strings.HasPrefix(id, "php-fpm-") {
+		ver := strings.TrimPrefix(id, "php-fpm-")
+		return configFilePath(ver, serverRoot, file)
+	}
+	return "", false
+}
+
 // handleGetServiceConfig reads a config file for a service.
-// Supported: php-fpm-* (php.ini, php-fpm.conf) and mysql (my.cnf).
+// Supported: php-fpm-* (php.ini, php-fpm.conf), mysql (my.cnf),
+// valkey (valkey.conf), meilisearch (config.toml),
+// typesense (typesense.ini), mailpit (config.env).
 func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	file := r.PathValue("file")
@@ -242,29 +282,9 @@ func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if id == "mysql" {
-		path, ok := mysqlConfigFilePath(s.serverRoot, file)
-		if !ok {
-			writeError(w, "file must be my.cnf", http.StatusBadRequest)
-			return
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			writeError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, map[string]string{"content": string(content)})
-		return
-	}
-
-	if !strings.HasPrefix(id, "php-fpm-") {
-		writeError(w, "config files are only available for php-fpm-* and mysql services", http.StatusBadRequest)
-		return
-	}
-	ver := strings.TrimPrefix(id, "php-fpm-")
-	path, ok := configFilePath(ver, s.serverRoot, file)
+	path, ok := serviceConfigFilePath(s.serverRoot, id, file)
 	if !ok {
-		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("service %q does not support config file %q", id, file), http.StatusBadRequest)
 		return
 	}
 	content, err := os.ReadFile(path)
@@ -276,7 +296,9 @@ func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) 
 }
 
 // handlePutServiceConfig writes a config file for a service and restarts it.
-// Supported: php-fpm-* (php.ini, php-fpm.conf) and mysql (my.cnf).
+// Supported: php-fpm-* (php.ini, php-fpm.conf), mysql (my.cnf),
+// valkey (valkey.conf), meilisearch (config.toml),
+// typesense (typesense.ini), mailpit (config.env).
 func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	file := r.PathValue("file")
@@ -293,45 +315,52 @@ func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if id == "mysql" {
-		path, ok := mysqlConfigFilePath(s.serverRoot, file)
-		if !ok {
-			writeError(w, "file must be my.cnf", http.StatusBadRequest)
-			return
-		}
-		if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
-			writeError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// Restart MySQL so the new config takes effect.
-		def, ok := s.registry.Get("mysql")
-		if ok {
-			def = s.mysqlDef(r.Context(), def)
-			_ = s.manager.Restart(def)
-		}
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	if !strings.HasPrefix(id, "php-fpm-") {
-		writeError(w, "config files are only available for php-fpm-* and mysql services", http.StatusBadRequest)
-		return
-	}
-	ver := strings.TrimPrefix(id, "php-fpm-")
-	path, ok := configFilePath(ver, s.serverRoot, file)
+	path, ok := serviceConfigFilePath(s.serverRoot, id, file)
 	if !ok {
-		writeError(w, "file must be php.ini or php-fpm.conf", http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("service %q does not support config file %q", id, file), http.StatusBadRequest)
 		return
 	}
 	if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Restart the service so the new config takes effect.
+	s.restartServiceAfterConfigSave(r, id)
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// restartServiceAfterConfigSave restarts the appropriate service process after
+// its config file has been saved.
+func (s *Server) restartServiceAfterConfigSave(r *http.Request, id string) {
+	if strings.HasPrefix(id, "php-fpm-") {
+		ver := strings.TrimPrefix(id, "php-fpm-")
+		def := s.phpFPMServiceDef(ver)
+		_ = s.supervisor.Restart(def)
+		return
+	}
+	ctx := r.Context()
+	switch id {
+	case "mysql":
+		if def, ok := s.registry.Get("mysql"); ok {
+			_ = s.manager.Restart(s.mysqlDef(ctx, def))
+		}
+	case "mailpit":
+		if def, ok := s.registry.Get("mailpit"); ok {
+			_ = s.manager.Restart(s.mailpitDef(ctx, def))
+		}
+	default:
+		// valkey, meilisearch, typesense — restart by plain ID
+		if def, ok := s.registry.Get(id); ok {
+			_ = s.manager.Restart(def)
+		}
+	}
 }
 
 // mysqlConfigFilePath returns the absolute path for a mysql config file,
 // validating that only my.cnf is accessible.
+// Deprecated: use serviceConfigFilePath instead.
 func mysqlConfigFilePath(serverRoot, file string) (string, bool) {
 	if file != "my.cnf" {
 		return "", false

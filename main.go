@@ -162,6 +162,25 @@ func run() error {
 	}
 	done()
 
+	// --- Service config migration ---
+	// Ensure native config files exist for services that were installed before
+	// config-file support was added. Each Ensure* call is a no-op if the file
+	// already exists, so this is safe to run on every startup.
+	done = step("service config migration")
+	if err := install.EnsureValkeyConf(cfg.ServerRoot); err != nil {
+		log.Printf("startup: valkey config: %v", err)
+	}
+	if err := install.EnsureMeilisearchConf(cfg.ServerRoot); err != nil {
+		log.Printf("startup: meilisearch config: %v", err)
+	}
+	if err := install.EnsureTypesenseConf(cfg.ServerRoot); err != nil {
+		log.Printf("startup: typesense config: %v", err)
+	}
+	if err := install.EnsureMySQLPlugins(cfg.ServerRoot); err != nil {
+		log.Printf("startup: mysql plugins: %v", err)
+	}
+	done()
+
 	// --- Services ---
 	done = step("services registry")
 	registry := services.NewRegistry(config.DefaultServices(cfg.ServerRoot, cfg.SiteUser))
@@ -303,6 +322,10 @@ func run() error {
 		}
 	}()
 
+	// --- Update checker ---
+	// Runs once on startup, then again every day at 3am.
+	go runUpdateChecker(runCtx, srv, installRegistry)
+
 	// --- Graceful shutdown ---
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -357,4 +380,43 @@ func phpFPMDefinition(ver, serverRoot string) services.Definition {
 // isPHPFPMDef reports whether a Definition was created by phpFPMDefinition.
 func isPHPFPMDef(def services.Definition) bool {
 	return strings.HasPrefix(def.ID, "php-fpm-")
+}
+
+// runUpdateChecker checks for updates for all installed services on startup
+// and then again every day at 3am. When a newer version is found it stores the
+// result in srv so the API can surface it to the frontend.
+func runUpdateChecker(ctx context.Context, srv *api.Server, installers map[string]install.Installer) {
+	check := func() {
+		log.Printf("update-checker: checking for updates...")
+		for id, inst := range installers {
+			if !inst.IsInstalled() {
+				continue
+			}
+			latest, err := inst.LatestVersion(ctx)
+			if err != nil {
+				log.Printf("update-checker: %s: %v", id, err)
+				continue
+			}
+			if latest == "" {
+				continue // version check not supported for this service
+			}
+			srv.SetLatestVersion(id, latest)
+		}
+		log.Printf("update-checker: done")
+	}
+
+	// Run immediately on startup.
+	check()
+
+	// Then run again every day at 3am.
+	for {
+		now := time.Now()
+		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(next3am)):
+			check()
+		}
+	}
 }

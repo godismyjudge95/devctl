@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,9 @@ import (
 	"github.com/danielgormly/devctl/services"
 	"github.com/ulikunitz/xz"
 )
+
+//go:embed valkey.conf
+var valkeyConfTemplate []byte
 
 const valkeyVersion = "9.0.3"
 
@@ -109,7 +113,13 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("valkey: write config.env: %w", err)
 	}
 
-	// 8. Transfer ownership to the site user.
+	// 8. Write valkey.conf with full defaults.
+	fmt.Fprintln(w, "valkey: writing valkey.conf...")
+	if err := writeValkeyConf(valkeyDir); err != nil {
+		return fmt.Errorf("valkey: write valkey.conf: %w", err)
+	}
+
+	// 10. Transfer ownership to the site user.
 	if v.siteUser != "" {
 		fmt.Fprintf(w, "valkey: chowning %s to %s...\n", valkeyDir, v.siteUser)
 		chownCmd := fmt.Sprintf("chown -R %s:%s %s", v.siteUser, v.siteUser, valkeyDir)
@@ -119,6 +129,58 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "valkey: install complete")
+	return nil
+}
+
+// LatestVersion queries GitHub Releases for the latest Valkey version.
+func (v *ValkeyInstaller) LatestVersion(ctx context.Context) (string, error) {
+	return fetchGitHubLatestVersion(ctx, "valkey-io/valkey")
+}
+
+// UpdateW stops Valkey, replaces the binary with the latest version.
+// The caller (API handler) is responsible for restarting the service.
+func (v *ValkeyInstaller) UpdateW(ctx context.Context, w io.Writer) error {
+	latest, err := v.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("valkey: update: %w", err)
+	}
+	// Valkey tags have no "v" prefix (e.g. "9.0.3"). Detect which distro to use.
+	codename, _ := lsbReleaseName(ctx)
+	distro := "jammy"
+	if codename == "noble" {
+		distro = "noble"
+	}
+	dlURL := fmt.Sprintf("https://download.valkey.io/releases/valkey-%s-%s-x86_64.tar.gz", latest, distro)
+
+	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")
+	binPath := filepath.Join(valkeyDir, "valkey-server")
+	cliBinPath := filepath.Join(valkeyDir, "valkey-cli")
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s-update.tar.gz", latest))
+	defer os.Remove(tmpTar)
+
+	fmt.Fprintf(w, "valkey: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+		return fmt.Errorf("valkey: update download: %w", err)
+	}
+
+	fmt.Fprintln(w, "valkey: stopping valkey...")
+	if err := v.supervisor.Stop("redis"); err != nil {
+		fmt.Fprintf(w, "valkey: warning: stop: %v\n", err)
+	}
+
+	fmt.Fprintln(w, "valkey: replacing binary...")
+	if err := extractFromTar(tmpTar, "valkey-server", binPath); err != nil {
+		return fmt.Errorf("valkey: update extract: %w", err)
+	}
+	if err := os.Chmod(binPath, 0755); err != nil {
+		return fmt.Errorf("valkey: update chmod: %w", err)
+	}
+	// Also update valkey-cli if present.
+	if err := extractFromTar(tmpTar, "valkey-cli", cliBinPath); err == nil {
+		_ = os.Chmod(cliBinPath, 0755)
+	}
+
+	fmt.Fprintf(w, "valkey: binary replaced with %s\n", latest)
 	return nil
 }
 
@@ -145,6 +207,55 @@ func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error
 
 	fmt.Fprintln(w, "valkey: purge complete")
 	return nil
+}
+
+// EnsureValkeyConf writes valkey.conf to the Valkey service directory if the
+// file is missing. Safe to call on every startup — it is a no-op when the file
+// already exists. Use this to migrate installs that pre-date config-file support.
+func EnsureValkeyConf(serverRoot string) error {
+	return writeValkeyConf(paths.ServiceDir(serverRoot, "valkey"))
+}
+
+// writeValkeyConf writes valkey.conf to dir/valkey.conf using the official
+// Valkey 9.0.3 default config as a base, then stamps in devctl-specific values.
+// The file is only written if it does not yet exist so user edits are preserved.
+func writeValkeyConf(dir string) error {
+	confPath := filepath.Join(dir, "valkey.conf")
+	if _, err := os.Stat(confPath); err == nil {
+		return nil // already exists — don't overwrite
+	}
+
+	// Start from the official Valkey default config and apply our overrides.
+	// The official file already has `bind 127.0.0.1 -::1` and `port 6379`;
+	// we override bind to IPv4-only and ensure daemonize is off.
+	overrides := map[string]string{
+		"bind":      "127.0.0.1",
+		"port":      "6379",
+		"daemonize": "no",
+		"logfile":   `""`,
+		"dir":       "./",
+	}
+
+	lines := strings.Split(string(valkeyConfTemplate), "\n")
+	applied := map[string]bool{}
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip comments and blank lines.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		parts := strings.Fields(trimmed)
+		if len(parts) < 1 {
+			continue
+		}
+		key := parts[0]
+		if newVal, ok := overrides[key]; ok && !applied[key] {
+			lines[i] = key + " " + newVal
+			applied[key] = true
+		}
+	}
+
+	return os.WriteFile(confPath, []byte(strings.Join(lines, "\n")), 0644)
 }
 
 // extractFromTarXz extracts all files from a .tar.xz archive into destDir,

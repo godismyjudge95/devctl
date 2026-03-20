@@ -16,6 +16,9 @@ import (
 //go:embed prepend.php
 var prependPHP []byte
 
+//go:embed php.ini-development
+var phpIniDevelopment []byte
+
 // InstallPrepend writes the embedded prepend.php to paths.PrependPath(serverRoot).
 // Safe to call on every startup — it is idempotent.
 func InstallPrepend(serverRoot string) error {
@@ -101,6 +104,20 @@ func SPXDataDir(ver, serverRoot string) string {
 	return filepath.Join(PHPDir(ver, serverRoot), "spx-data")
 }
 
+// WriteConfigs writes php.ini (first time only) and always regenerates php-fpm.conf.
+//
+// php.ini strategy:
+//   - If the file does not yet exist, it is created from the embedded
+//     php.ini-development template (full upstream defaults) with a devctl
+//     overrides block appended at the end. PHP processes the whole file in
+//     order; the last assignment wins, so our overrides take effect even
+//     though the base file sets the same keys earlier.
+//   - If the file already exists it is left untouched — the user may have
+//     customised it. Only the GlobalSettings keys (upload limits, memory
+//     limit, etc.) are patched in-place by ApplySettings / writeIni.
+//
+// php-fpm.conf is always regenerated because it contains runtime paths
+// (socket, log dirs, site user) that must reflect the current environment.
 func WriteConfigs(ver, serverRoot, siteUser string) error {
 	socketPath := FPMSocket(ver, serverRoot)
 	iniPath := fpmIniPath(ver, serverRoot)
@@ -120,29 +137,53 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 		_ = os.Chown(spxDataDir, uid, gid)
 	}
 
-	// Write php.ini with sensible defaults.
-	// auto_prepend_file is set here for CLI usage; FPM workers get it via the
-	// pool config php_value which takes precedence for FPM requests.
-	// SPX settings are loaded globally — zero overhead until activated per-request
-	// via cookies (SPX_ENABLED=1; SPX_KEY=dev) or query params.
-	ini := fmt.Sprintf(`; devctl-managed php.ini for PHP %s
+	// Write php.ini only if it does not already exist.
+	// The file is seeded from the full php.ini-development upstream template so
+	// the user gets sensible defaults for all PHP directives. devctl overrides
+	// are appended at the end and take precedence (last-assignment-wins).
+	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
+		overrides := fmt.Sprintf(`
+; ============================================================
+; devctl overrides for PHP %s
+; These settings are appended after the php.ini-development
+; baseline above. Edit them here to customise your environment.
+; The GlobalSettings keys (upload_max_filesize, memory_limit,
+; max_execution_time, post_max_size) are also managed via the
+; devctl Settings UI — changes there patch these lines in-place.
+; ============================================================
+
+; --- Resource limits (dev-friendly defaults) ---
 upload_max_filesize = 128M
 memory_limit = 256M
 max_execution_time = 120
 post_max_size = 128M
+
+; --- Auto-prepend for dd() dump interception (CLI) ---
+; FPM processes override this via php_value in php-fpm.conf.
 auto_prepend_file = %s
 
-; SPX profiler — zero overhead when not activated per-request
+; --- OPcache — enabled with dev-safe revalidation ---
+; validate_timestamps=1 ensures file changes are picked up immediately.
+; revalidate_freq=0 checks on every request (no stale cache in dev).
+opcache.enable = 1
+opcache.validate_timestamps = 1
+opcache.revalidate_freq = 0
+
+; --- SPX profiler — zero overhead when not activated per-request ---
+; Activate via browser: ?SPX_KEY=dev&SPX_ENABLED=1 (or cookies).
 spx.http_enabled = 1
 spx.http_key = dev
 spx.http_ip_whitelist = 127.0.0.1
 spx.data_dir = %s
 `, ver, prependPath, spxDataDir)
-	if err := os.WriteFile(iniPath, []byte(ini), 0644); err != nil {
-		return fmt.Errorf("write php.ini: %w", err)
+
+		content := append(phpIniDevelopment, []byte(overrides)...)
+		if err := os.WriteFile(iniPath, content, 0644); err != nil {
+			return fmt.Errorf("write php.ini: %w", err)
+		}
 	}
 
-	// Write php-fpm.conf.
+	// Write php-fpm.conf — always regenerated.
 	// FPM is launched with -c php.ini so all php.ini settings apply to workers.
 	// php_value[auto_prepend_file] is set at the pool level as an authoritative
 	// override so the dump interceptor is always active for FPM requests.

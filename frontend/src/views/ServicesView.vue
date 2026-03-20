@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useServicesStore } from '@/stores/services'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  Play, Square, RotateCcw, ScrollText, Loader2,
-  Trash2, Settings2, Plus, ChevronDown, ChevronRight, Copy,
+  Play, Square, RotateCcw, Loader2,
+  Trash2, Settings2, Plus, ChevronDown, ChevronRight, Copy, FileText,
+  ArrowUpCircle, MoreHorizontal,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
@@ -19,6 +21,14 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { uninstallPHP } from '@/lib/api'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -28,6 +38,7 @@ import ServiceInstallModal from './ServiceInstallModal.vue'
 
 const store = useServicesStore()
 const settingsStore = useSettingsStore()
+const router = useRouter()
 
 // Load credentials for already-installed services once states arrive
 let credentialsFetched = false
@@ -41,6 +52,10 @@ watch(() => store.states, (states) => {
 
 onMounted(() => {
   settingsStore.load()
+  // Request permission for browser notifications (update alerts)
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
 })
 
 // Only show installed services in the table
@@ -101,6 +116,34 @@ async function restart(id: string, label: string) {
   }
 }
 
+async function update(id: string, label: string) {
+  pending.value[id] = 'update'
+  try {
+    await store.update(id)
+    toast.success(`${label} updated`)
+  } catch (e: any) {
+    toast.error(`Failed to update ${label}`, { description: e.message })
+  } finally {
+    delete pending.value[id]
+  }
+}
+
+// Fire a browser notification when any service first becomes update_available
+const notifiedUpdates = new Set<string>()
+watch(() => store.states, (states) => {
+  for (const svc of states) {
+    if (svc.update_available && !notifiedUpdates.has(svc.id)) {
+      notifiedUpdates.add(svc.id)
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification('devctl: update available', {
+          body: `${svc.label} can be updated to ${svc.latest_version}`,
+          tag: `devctl-update-${svc.id}`,
+        })
+      }
+    }
+  }
+}, { deep: true })
+
 // --- Log sheet ---
 const logOpen = ref(false)
 const logServiceId = ref('')
@@ -142,6 +185,25 @@ function hasExpandable(id: string): boolean {
 // --- Settings gear visibility ---
 function hasSettingsGear(id: string) {
   return id === 'mailpit' || id === 'mysql' || id === 'dns' || id.startsWith('php-fpm-')
+}
+
+// --- Config editor button visibility ---
+const CONFIG_PRIMARY_FILE: Record<string, string> = {
+  mysql:       'my.cnf',
+  redis:       'valkey.conf',
+  meilisearch: 'config.toml',
+  typesense:   'typesense.ini',
+  mailpit:     'config.env',
+}
+
+function hasConfigEditor(id: string): boolean {
+  if (id.startsWith('php-fpm-')) return true
+  return id in CONFIG_PRIMARY_FILE
+}
+
+function configEditorPath(id: string): string {
+  const file = id.startsWith('php-fpm-') ? 'php.ini' : CONFIG_PRIMARY_FILE[id]
+  return `/services/${id}/config/${file}`
 }
 
 // --- Per-service settings dialog ---
@@ -237,96 +299,118 @@ async function doPHPUninstall() {
       <template v-for="svc in installedServices" :key="svc.id">
         <Card>
           <CardContent class="p-4">
-            <!-- Name + status row -->
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="font-medium text-sm truncate">{{ svc.label }}</span>
-                <Badge :variant="statusVariant(svc.status)" class="shrink-0 text-xs">
-                  <span class="flex items-center gap-1">
-                    <Loader2
-                      v-if="pending[svc.id] || store.installing[svc.id] || svc.status === 'pending'"
-                      class="w-2.5 h-2.5 animate-spin"
-                    />
-                    <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
-                      :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
-                    />
-                    {{ store.installing[svc.id] ? 'working…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
-                  </span>
-                </Badge>
+              <div class="flex items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-medium text-sm truncate">{{ svc.label }}</span>
+                  <Badge :variant="statusVariant(svc.status)" class="shrink-0 text-xs">
+                    <span class="flex items-center gap-1">
+                      <Loader2
+                        v-if="pending[svc.id] || store.installing[svc.id] || svc.status === 'pending'"
+                        class="w-2.5 h-2.5 animate-spin"
+                      />
+                      <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
+                        :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
+                      />
+                      {{ store.installing[svc.id] ? 'working…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
+                    </span>
+                  </Badge>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <span class="font-mono text-xs text-muted-foreground">{{ svc.version || '—' }}</span>
+                  <Badge v-if="svc.update_available" variant="warning" class="text-xs px-1 py-0">
+                    update
+                  </Badge>
+                </div>
               </div>
-              <span class="font-mono text-xs text-muted-foreground shrink-0">{{ svc.version || '—' }}</span>
-            </div>
 
-            <!-- Action buttons (icon-only) + expand toggle -->
-            <div class="flex items-center gap-1 flex-wrap">
-              <Button
-                v-if="svc.status !== 'running'"
-                variant="outline" size="icon" class="h-8 w-8"
-                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                :title="`Start ${svc.label}`"
-                @click="start(svc.id, svc.label)"
-              >
-                <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
-                <Play v-else class="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                v-if="svc.status === 'running' && !svc.required"
-                variant="outline" size="icon" class="h-8 w-8"
-                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                :title="`Stop ${svc.label}`"
-                @click="stop(svc.id, svc.label)"
-              >
-                <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
-                <Square v-else class="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant="ghost" size="icon" class="h-8 w-8"
-                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                :title="`Restart ${svc.label}`"
-                @click="restart(svc.id, svc.label)"
-              >
-                <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
-                <RotateCcw v-else class="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant="ghost" size="icon" class="h-8 w-8"
-                :disabled="!!store.installing[svc.id]"
-                :title="`Logs for ${svc.label}`"
-                @click="openLog(svc.id, svc.label)"
-              >
-                <ScrollText class="w-3.5 h-3.5" />
-              </Button>
-              <!-- PHP FPM uninstall -->
-              <Button
-                v-if="svc.id.startsWith('php-fpm-')"
-                variant="ghost" size="icon" class="h-8 w-8 text-destructive hover:text-destructive"
-                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                :title="`Uninstall ${svc.label}`"
-                @click="confirmPHPUninstall(svc.id)"
-              >
-                <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-3.5 h-3.5 animate-spin" />
-                <Trash2 v-else class="w-3.5 h-3.5" />
-              </Button>
-              <!-- Non-PHP installable uninstall -->
-              <Button
-                v-else-if="svc.installable && !svc.required"
-                variant="ghost" size="icon" class="h-8 w-8 text-destructive hover:text-destructive"
-                :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                :title="`Uninstall ${svc.label}`"
-                @click="confirmPurge(svc.id, svc.label)"
-              >
-                <Trash2 class="w-3.5 h-3.5" />
-              </Button>
-              <!-- Settings gear -->
-              <Button
-                v-if="hasSettingsGear(svc.id)"
-                variant="ghost" size="icon" class="h-8 w-8"
-                :title="`${svc.label} settings`"
-                @click="openServiceSettings(svc.id, svc.label)"
-              >
-                <Settings2 class="w-3.5 h-3.5" />
-              </Button>
-              <!-- Expand credentials toggle -->
+            <!-- Action buttons (icon-only, single joined group) -->
+            <div class="flex items-center gap-2 flex-wrap">
+              <ButtonGroup>
+                <!-- Start / Stop -->
+                <Button
+                  v-if="svc.status !== 'running'"
+                  variant="outline" size="icon" class="h-8 w-8"
+                  :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                  :title="`Start ${svc.label}`"
+                  @click="start(svc.id, svc.label)"
+                >
+                  <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
+                  <Play v-else class="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  v-if="svc.status === 'running' && !svc.required"
+                  variant="outline" size="icon" class="h-8 w-8"
+                  :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                  :title="`Stop ${svc.label}`"
+                  @click="stop(svc.id, svc.label)"
+                >
+                  <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
+                  <Square v-else class="w-3.5 h-3.5" />
+                </Button>
+                <!-- Sep before Restart when Stop/Start is present -->
+                <ButtonGroupSeparator v-if="svc.status !== 'running' || !svc.required" />
+                <!-- Restart -->
+                <Button
+                  variant="outline" size="icon" class="h-8 w-8"
+                  :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                  :title="`Restart ${svc.label}`"
+                  @click="restart(svc.id, svc.label)"
+                >
+                  <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
+                  <RotateCcw v-else class="w-3.5 h-3.5" />
+                </Button>
+                <!-- Update (top-level, amber) -->
+                <template v-if="svc.update_available">
+                  <ButtonGroupSeparator />
+                  <Button
+                    variant="outline" size="icon" class="h-8 w-8 text-amber-600 hover:text-amber-600"
+                    :disabled="!!pending[svc.id] || !!store.updating[svc.id]"
+                    :title="`Update ${svc.label} to ${svc.latest_version}`"
+                    @click="update(svc.id, svc.label)"
+                  >
+                    <Loader2 v-if="pending[svc.id] === 'update' || store.updating[svc.id]" class="w-3.5 h-3.5 animate-spin" />
+                    <ArrowUpCircle v-else class="w-3.5 h-3.5" />
+                  </Button>
+                </template>
+                <!-- More dropdown -->
+                <ButtonGroupSeparator />
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="outline" size="icon" class="h-8 w-8">
+                      <MoreHorizontal class="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      v-if="hasSettingsGear(svc.id)"
+                      @click="openServiceSettings(svc.id, svc.label)"
+                    >
+                      <Settings2 class="w-4 h-4" />
+                      Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      v-if="hasConfigEditor(svc.id)"
+                      @click="router.push(configEditorPath(svc.id))"
+                    >
+                      <FileText class="w-4 h-4" />
+                      Edit config
+                    </DropdownMenuItem>
+                    <template v-if="svc.id.startsWith('php-fpm-') || (svc.installable && !svc.required)">
+                      <DropdownMenuSeparator v-if="hasSettingsGear(svc.id) || hasConfigEditor(svc.id)" />
+                      <DropdownMenuItem
+                        class="text-destructive focus:text-destructive"
+                        :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                        @click="svc.id.startsWith('php-fpm-') ? confirmPHPUninstall(svc.id) : confirmPurge(svc.id, svc.label)"
+                      >
+                        <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-4 h-4 animate-spin" />
+                        <Trash2 v-else class="w-4 h-4" />
+                        Uninstall
+                      </DropdownMenuItem>
+                    </template>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ButtonGroup>
+              <!-- Expand credentials toggle (outside the group, pushed right) -->
               <Button
                 v-if="hasExpandable(svc.id)"
                 variant="ghost" size="icon" class="h-8 w-8 ml-auto"
@@ -434,78 +518,113 @@ async function doPHPUninstall() {
                 </Badge>
               </TableCell>
               <TableCell class="font-mono text-xs text-muted-foreground">
-                {{ svc.version || '—' }}
+                <span class="flex items-center gap-1.5">
+                  {{ svc.version || '—' }}
+                  <Badge v-if="svc.update_available" variant="warning" class="text-xs px-1 py-0">
+                    update
+                  </Badge>
+                </span>
               </TableCell>
               <TableCell class="text-right">
-                <div class="flex items-center justify-end gap-1">
-                  <Button
-                    v-if="svc.status !== 'running'"
-                    variant="outline" size="sm"
-                    :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                    @click="start(svc.id, svc.label)"
-                  >
-                    <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
-                    <Play v-else class="w-3.5 h-3.5" />
-                    Start
-                  </Button>
-                  <Button
-                    v-if="svc.status === 'running' && !svc.required"
-                    variant="outline" size="sm"
-                    :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                    @click="stop(svc.id, svc.label)"
-                  >
-                    <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
-                    <Square v-else class="w-3.5 h-3.5" />
-                    Stop
-                  </Button>
-                  <Button
-                    variant="ghost" size="sm"
-                    :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                    @click="restart(svc.id, svc.label)"
-                  >
-                    <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
-                    <RotateCcw v-else class="w-3.5 h-3.5" />
-                    Restart
-                  </Button>
-                  <Button
-                    variant="ghost" size="sm"
-                    :disabled="!!store.installing[svc.id]"
-                    @click="openLog(svc.id, svc.label)"
-                  >
-                    <ScrollText class="w-3.5 h-3.5" />
-                    Logs
-                  </Button>
-                  <!-- PHP FPM: uninstall button -->
-                  <Button
-                    v-if="svc.id.startsWith('php-fpm-')"
-                    variant="ghost" size="sm"
-                    :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                    class="text-destructive hover:text-destructive"
-                    @click="confirmPHPUninstall(svc.id)"
-                  >
-                    <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-3.5 h-3.5 animate-spin" />
-                    <Trash2 v-else class="w-3.5 h-3.5" />
-                    Uninstall
-                  </Button>
-                  <!-- Non-PHP installable: uninstall button -->
-                  <Button
-                    v-else-if="svc.installable && !svc.required"
-                    variant="ghost" size="sm"
-                    :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                    class="text-destructive hover:text-destructive"
-                    @click="confirmPurge(svc.id, svc.label)"
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                    Uninstall
-                  </Button>
-                  <!-- Settings gear (only for services that have configurable settings) -->
-                  <Button
-                    v-if="hasSettingsGear(svc.id)"
-                    variant="ghost" size="sm"
-                    @click="openServiceSettings(svc.id, svc.label)"
-                  >
-                    <Settings2 class="w-3.5 h-3.5" />
-                  </Button>
+                <div class="flex items-center justify-end">
+                  <ButtonGroup>
+                    <!-- Start / Stop -->
+                    <Button
+                      v-if="svc.status !== 'running'"
+                      variant="outline" size="sm"
+                      :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                      :title="`Start ${svc.label}`"
+                      @click="start(svc.id, svc.label)"
+                    >
+                      <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
+                      <Play v-else class="w-3.5 h-3.5" />
+                      Start
+                    </Button>
+                    <Button
+                      v-if="svc.status === 'running' && !svc.required"
+                      variant="outline" size="sm"
+                      :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                      :title="`Stop ${svc.label}`"
+                      @click="stop(svc.id, svc.label)"
+                    >
+                      <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
+                      <Square v-else class="w-3.5 h-3.5" />
+                      Stop
+                    </Button>
+                    <!-- Sep before Restart when Stop/Start is present -->
+                    <ButtonGroupSeparator v-if="svc.status !== 'running' || !svc.required" />
+                    <!-- Restart -->
+                    <Button
+                      variant="outline" size="sm"
+                      :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                      :title="`Restart ${svc.label}`"
+                      @click="restart(svc.id, svc.label)"
+                    >
+                      <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
+                      <RotateCcw v-else class="w-3.5 h-3.5" />
+                      Restart
+                    </Button>
+                    <!-- Update (top-level, amber) -->
+                    <template v-if="svc.update_available">
+                      <ButtonGroupSeparator />
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger as-child>
+                            <Button
+                              variant="outline" size="sm"
+                              class="text-amber-600 hover:text-amber-600"
+                              :disabled="!!pending[svc.id] || !!store.updating[svc.id]"
+                              @click="update(svc.id, svc.label)"
+                            >
+                              <Loader2 v-if="pending[svc.id] === 'update' || store.updating[svc.id]" class="w-3.5 h-3.5 animate-spin" />
+                              <ArrowUpCircle v-else class="w-3.5 h-3.5" />
+                              Update
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Update from {{ svc.version || svc.install_version }} to {{ svc.latest_version }}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </template>
+                    <!-- More dropdown -->
+                    <ButtonGroupSeparator />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <Button variant="outline" size="sm">
+                          <MoreHorizontal class="w-3.5 h-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          v-if="hasSettingsGear(svc.id)"
+                          @click="openServiceSettings(svc.id, svc.label)"
+                        >
+                          <Settings2 class="w-4 h-4" />
+                          Settings
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="hasConfigEditor(svc.id)"
+                          @click="router.push(configEditorPath(svc.id))"
+                        >
+                          <FileText class="w-4 h-4" />
+                          Edit config
+                        </DropdownMenuItem>
+                        <template v-if="svc.id.startsWith('php-fpm-') || (svc.installable && !svc.required)">
+                          <DropdownMenuSeparator v-if="hasSettingsGear(svc.id) || hasConfigEditor(svc.id)" />
+                          <DropdownMenuItem
+                            class="text-destructive focus:text-destructive"
+                            :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
+                            @click="svc.id.startsWith('php-fpm-') ? confirmPHPUninstall(svc.id) : confirmPurge(svc.id, svc.label)"
+                          >
+                            <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-4 h-4 animate-spin" />
+                            <Trash2 v-else class="w-4 h-4" />
+                            Uninstall
+                          </DropdownMenuItem>
+                        </template>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </ButtonGroup>
                 </div>
               </TableCell>
             </TableRow>

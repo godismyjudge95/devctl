@@ -19,7 +19,7 @@ import (
 )
 
 func (s *Server) handleGetServices(w http.ResponseWriter, r *http.Request) {
-	states := s.poller.CurrentStates()
+	states := s.enrichStates(s.poller.CurrentStates())
 	writeJSON(w, states)
 }
 
@@ -102,7 +102,7 @@ func (s *Server) handleServiceEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send current state immediately.
-	sendSSE(w, flusher, "states", s.poller.CurrentStates())
+	sendSSE(w, flusher, "states", s.enrichStates(s.poller.CurrentStates()))
 
 	ch := s.poller.Subscribe()
 	defer s.poller.Unsubscribe(ch)
@@ -115,7 +115,7 @@ func (s *Server) handleServiceEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			sendSSE(w, flusher, "states", update.States)
+			sendSSE(w, flusher, "states", s.enrichStates(update.States))
 		}
 	}
 }
@@ -520,3 +520,102 @@ func stubHandler(w http.ResponseWriter, r *http.Request) {
 
 // Ensure services import is used (compiler will catch unused imports).
 var _ = services.StatusRunning
+
+// ---------------------------------------------------------------------------
+// Update helpers
+// ---------------------------------------------------------------------------
+
+// SetLatestVersion stores the fetched latest version for a service. Safe for
+// concurrent use. Called by the background update-check goroutine in main.go.
+func (s *Server) SetLatestVersion(id, version string) {
+	s.latestVersionsMu.Lock()
+	s.latestVersions[id] = version
+	s.latestVersionsMu.Unlock()
+}
+
+// enrichStates copies the latest version and update_available flag from the
+// in-memory cache into a slice of ServiceState values. Returns the enriched
+// slice (new values, original slice is not mutated).
+func (s *Server) enrichStates(states []services.ServiceState) []services.ServiceState {
+	s.latestVersionsMu.RLock()
+	lv := s.latestVersions
+	s.latestVersionsMu.RUnlock()
+
+	out := make([]services.ServiceState, len(states))
+	for i, st := range states {
+		if latest, ok := lv[st.ID]; ok && latest != "" {
+			st.LatestVersion = latest
+			// update_available when latest != current installed version (strip
+			// leading "v" for comparison so "v2.10.0" == "2.10.0" doesn't
+			// false-positive, but we do a simple string comparison on normalised
+			// values to keep it straightforward).
+			current := strings.TrimPrefix(st.InstallVersion, "v")
+			latestNorm := strings.TrimPrefix(latest, "v")
+			if current != "" && latestNorm != "" && current != latestNorm {
+				st.UpdateAvailable = true
+			}
+		}
+		out[i] = st
+	}
+	return out
+}
+
+// handleServiceUpdate performs an update for an installed service, streaming
+// command output as SSE. After UpdateW completes the service is restarted.
+//
+// Events:
+//
+//	output — a chunk of stdout/stderr text (JSON string)
+//	done   — {"status":"ok"} on success
+//	error  — {"error":"..."} on failure
+func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	inst, ok := s.installers[id]
+	if !ok {
+		writeError(w, fmt.Sprintf("no installer registered for service %q", id), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
+	if err := inst.UpdateW(r.Context(), pw); err != nil {
+		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Restart the service after the binary has been replaced.
+	// (Meilisearch's UpdateW already ran the binary directly with --import-dump
+	// and the service needs to be started fresh via the supervisor.)
+	if def, ok := s.registry.Get(id); ok && def.Managed {
+		if err := s.manager.Start(s.serviceDef(r.Context(), def)); err != nil {
+			log.Printf("update: restart %s: %v", id, err)
+		}
+		if id == "caddy" {
+			go func() {
+				if err := s.caddy.WaitForAdmin(10 * time.Second); err != nil {
+					log.Printf("update: caddy admin not ready: %v", err)
+					return
+				}
+				if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
+					log.Printf("update: caddy ensure http server: %v", err)
+				}
+				if err := s.siteManager.SyncAll(r.Context()); err != nil {
+					log.Printf("update: caddy sync sites: %v", err)
+				}
+			}()
+		}
+	}
+
+	go s.poller.Poll()
+	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
+}

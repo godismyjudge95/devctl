@@ -12,6 +12,8 @@ export interface ServiceState {
   installable: boolean
   required: boolean
   has_credentials: boolean
+  latest_version: string
+  update_available: boolean
 }
 
 export interface Site {
@@ -114,6 +116,14 @@ export function installServiceStream(id: string, callbacks: StreamCallbacks): Ab
 export function purgeServiceStream(id: string, callbacks: StreamCallbacks, preserveData = false): AbortController {
   const path = preserveData ? `/api/services/${id}?preserve_data=true` : `/api/services/${id}`
   return runServiceStream('DELETE', path, callbacks)
+}
+
+/**
+ * Streams update output via SSE-over-fetch.
+ * Calls onOutput for each chunk, onDone on success, onError on failure.
+ */
+export function updateServiceStream(id: string, callbacks: StreamCallbacks): AbortController {
+  return runServiceStream('POST', `/api/services/${id}/update`, callbacks)
 }
 
 function runServiceStream(method: string, path: string, callbacks: StreamCallbacks): AbortController {
@@ -385,12 +395,6 @@ export const restartPHPVersion = (ver: string) =>
 export const getPHPSettings = () => request<PHPSettings>('GET', '/api/php/settings')
 export const setPHPSettings = (data: PHPSettings) =>
   request<PHPSettings>('PUT', '/api/php/settings', data)
-
-// --- PHP Config ---
-export const getPHPConfig = (ver: string, file: string) =>
-  request<{ content: string }>('GET', `/api/php/versions/${ver}/config/${file}`)
-export const setPHPConfig = (ver: string, file: string, content: string) =>
-  request<void>('PUT', `/api/php/versions/${ver}/config/${file}`, { content })
 
 // --- TLS ---
 export const getTLSCertURL = () => '/api/tls/cert'

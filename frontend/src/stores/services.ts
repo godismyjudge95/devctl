@@ -9,6 +9,7 @@ import {
   getServiceDetails,
   installServiceStream,
   purgeServiceStream,
+  updateServiceStream,
 } from '@/lib/api'
 
 export const useServicesStore = defineStore('services', () => {
@@ -20,6 +21,11 @@ export const useServicesStore = defineStore('services', () => {
   const installing = ref<Record<string, boolean>>({})
   /** accumulated output lines per service id (reset on each new install/purge) */
   const installOutput = ref<Record<string, string[]>>({})
+
+  /** true while an update stream is active for a given service id */
+  const updating = ref<Record<string, boolean>>({})
+  /** accumulated output lines per service id during update */
+  const updateOutput = ref<Record<string, string[]>>({})
 
   let eventSource: EventSource | null = null
 
@@ -129,12 +135,39 @@ export const useServicesStore = defineStore('services', () => {
     })
   }
 
+  /**
+   * Stream the update of a service.
+   * Returns a Promise that resolves on success and rejects with an Error on failure.
+   * The raw output lines are accumulated in updateOutput[id].
+   */
+  function update(id: string): Promise<void> {
+    updating.value[id] = true
+    updateOutput.value[id] = []
+    return new Promise((resolve, reject) => {
+      updateServiceStream(id, {
+        onOutput(chunk) {
+          updateOutput.value[id] = [...(updateOutput.value[id] ?? []), chunk]
+        },
+        onDone() {
+          updating.value[id] = false
+          resolve()
+        },
+        onError(message) {
+          updating.value[id] = false
+          reject(new Error(message))
+        },
+      })
+    })
+  }
+
   return {
     states,
     credentials,
     details,
     installing,
     installOutput,
+    updating,
+    updateOutput,
     stoppedCount,
     mailpitInstalled,
     connectSSE,
@@ -145,5 +178,6 @@ export const useServicesStore = defineStore('services', () => {
     fetchDetails,
     install,
     purge,
+    update,
   }
 })

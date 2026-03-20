@@ -115,6 +115,37 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+// LatestVersion queries Packagist for the latest stable laravel/reverb release.
+func (r *ReverbInstaller) LatestVersion(ctx context.Context) (string, error) {
+	return fetchPackagistLatestVersion(ctx, "laravel/reverb")
+}
+
+// UpdateW runs `composer update laravel/reverb` inside the Reverb app directory
+// to pull the latest version. The supervisor is stopped before updating and the
+// caller (API handler) is responsible for restarting the service.
+func (r *ReverbInstaller) UpdateW(ctx context.Context, w io.Writer) error {
+	if !r.IsInstalled() {
+		return fmt.Errorf("reverb: not installed")
+	}
+
+	reverbDir := paths.ServiceDir(r.serverRoot, "reverb")
+
+	fmt.Fprintln(w, "reverb: stopping service...")
+	if err := r.supervisor.Stop("reverb"); err != nil {
+		fmt.Fprintf(w, "reverb: warning: stop: %v\n", err)
+	}
+
+	fmt.Fprintln(w, "reverb: running composer update laravel/reverb...")
+	_, err := runAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
+		"composer update laravel/reverb --no-interaction --prefer-dist")
+	if err != nil {
+		return fmt.Errorf("reverb: composer update: %w", err)
+	}
+
+	fmt.Fprintln(w, "reverb: update complete")
+	return nil
+}
+
 func (r *ReverbInstaller) Purge(ctx context.Context) error {
 	return r.PurgeW(ctx, io.Discard, false)
 }

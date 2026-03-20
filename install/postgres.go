@@ -171,6 +171,54 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+// LatestVersion returns ("", nil) — PostgreSQL (Percona distribution) does
+// not have a simple upstream API to check for the latest version. Update the
+// postgresVersion constant in this file manually when a new release is available.
+func (p *PostgresInstaller) LatestVersion(_ context.Context) (string, error) {
+	return "", nil
+}
+
+// UpdateW stops PostgreSQL, downloads the new Percona tarball, and extracts
+// the new binaries over the existing installation. The data directory is
+// preserved. The caller (API handler) is responsible for restarting the service.
+func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
+	if !p.IsInstalled() {
+		return fmt.Errorf("postgres: not installed")
+	}
+
+	pgDir := p.postgresDir()
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("percona-postgresql-%s-update.tar.gz", postgresVersion))
+	defer os.Remove(tmpTar)
+
+	fmt.Fprintln(w, "postgres: stopping service...")
+	if err := p.supervisor.Stop("postgres"); err != nil {
+		fmt.Fprintf(w, "postgres: warning: stop: %v\n", err)
+	}
+
+	url := perconaTarURL()
+	fmt.Fprintf(w, "postgres: downloading Percona PostgreSQL %s...\n", postgresVersion)
+	if err := curlDownloadW(ctx, w, url, tmpTar); err != nil {
+		return fmt.Errorf("postgres: update download: %w", err)
+	}
+
+	fmt.Fprintln(w, "postgres: extracting new binaries (preserving data/)...")
+	subtree := fmt.Sprintf("percona-postgresql%s", postgresMajor)
+	if err := extractPercona(tmpTar, subtree, pgDir); err != nil {
+		return fmt.Errorf("postgres: update extract: %w", err)
+	}
+
+	// Re-transfer ownership so the new files are also owned by the site user.
+	if p.siteUser != "" {
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("postgres: update chown: %w\n%s", err, out)
+		}
+	}
+
+	fmt.Fprintf(w, "postgres: binary replaced with %s\n", postgresVersion)
+	return nil
+}
+
 func (p *PostgresInstaller) Purge(ctx context.Context) error {
 	return p.PurgeW(ctx, io.Discard, false)
 }
