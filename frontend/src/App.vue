@@ -193,7 +193,7 @@ const navItems = computed(() =>
     </nav>
 
     <!-- Main content area -->
-    <main class="flex-1 min-h-0 overflow-auto flex flex-col">
+    <main class="flex-1 min-h-0 overflow-x-hidden overflow-y-auto flex flex-col">
 
       <!-- Mobile top header bar -->
       <header class="flex md:hidden items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">

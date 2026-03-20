@@ -129,6 +129,7 @@ func (s *Server) registerRoutes() {
 	// SPX profiler
 	s.mux.HandleFunc("GET /api/spx/profiles", s.handleGetSpxProfiles)
 	s.mux.HandleFunc("DELETE /api/spx/profiles", s.handleClearSpxProfiles)
+	s.mux.HandleFunc("GET /api/spx/profiles/{key}/speedscope", s.handleGetSpxSpeedscope)
 	s.mux.HandleFunc("GET /api/spx/profiles/{key}", s.handleGetSpxProfile)
 	s.mux.HandleFunc("DELETE /api/spx/profiles/{key}", s.handleDeleteSpxProfile)
 
@@ -154,6 +155,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /ws/mail", s.handleMailWS)
 
 	// Serve embedded Vue SPA — must be last.
+	// Speedscope static assets are served explicitly to prevent the SPA
+	// catch-all from intercepting /speedscope/* requests.
+	s.mux.HandleFunc("/speedscope/", s.handleSpeedscope)
 	s.mux.HandleFunc("/", s.handleSPA)
 }
 
@@ -184,7 +188,16 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 	return nil
 }
 
-// handleSPA serves the embedded Vue SPA for all non-API routes.
+// handleSpeedscope serves the embedded speedscope static assets under /speedscope/.
+// A dedicated handler is needed so the SPA catch-all does not intercept these paths.
+func (s *Server) handleSpeedscope(w http.ResponseWriter, r *http.Request) {
+	sub, err := fs.Sub(s.uiFS, "ui/dist/speedscope")
+	if err != nil {
+		http.Error(w, "speedscope assets not built", http.StatusInternalServerError)
+		return
+	}
+	http.StripPrefix("/speedscope/", http.FileServer(http.FS(sub))).ServeHTTP(w, r)
+}
 func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	sub, err := fs.Sub(s.uiFS, "ui/dist")
 	if err != nil {

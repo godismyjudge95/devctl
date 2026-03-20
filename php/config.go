@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -112,12 +113,19 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 	if err := os.MkdirAll(spxDataDir, 0755); err != nil {
 		return fmt.Errorf("create spx-data dir: %w", err)
 	}
+	// chown spx-data to siteUser so FPM workers (running as siteUser) can write profiles.
+	if u, err := user.Lookup(siteUser); err == nil {
+		var uid, gid int
+		fmt.Sscan(u.Uid, &uid)
+		fmt.Sscan(u.Gid, &gid)
+		_ = os.Chown(spxDataDir, uid, gid)
+	}
 
 	// Write php.ini with sensible defaults.
-	// auto_prepend_file is always included so the dump interceptor is active
-	// for CLI usage. The FPM pool config also sets it via php_value for workers.
-	// SPX is loaded globally with zero overhead until activated per-request via
-	// cookies (SPX_ENABLED=1; SPX_KEY=dev) or query params (?SPX_KEY=dev&SPX_UI_URI=/).
+	// auto_prepend_file is set here for CLI usage; FPM workers get it via the
+	// pool config php_value which takes precedence for FPM requests.
+	// SPX settings are loaded globally — zero overhead until activated per-request
+	// via cookies (SPX_ENABLED=1; SPX_KEY=dev) or query params.
 	ini := fmt.Sprintf(`; devctl-managed php.ini for PHP %s
 upload_max_filesize = 128M
 memory_limit = 256M
@@ -136,11 +144,9 @@ spx.data_dir = %s
 	}
 
 	// Write php-fpm.conf.
-	// Run workers as siteUser so they can write to site storage directories.
-	// php_value[auto_prepend_file] injects the dump interceptor into every
-	// FPM request; this is authoritative because it is set at the pool level.
-	// php_admin_value[spx.data_dir] ensures FPM workers write profiles to the
-	// correct per-version directory regardless of the global php.ini.
+	// FPM is launched with -c php.ini so all php.ini settings apply to workers.
+	// php_value[auto_prepend_file] is set at the pool level as an authoritative
+	// override so the dump interceptor is always active for FPM requests.
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
 [global]
 error_log = %s/php-fpm.log
@@ -160,8 +166,7 @@ pm.max_spare_servers = 4
 php_admin_value[error_log] = %s/php-fpm-www.log
 php_admin_flag[log_errors] = on
 php_value[auto_prepend_file] = %s
-php_admin_value[spx.data_dir] = %s
-`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir, prependPath, spxDataDir)
+`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}

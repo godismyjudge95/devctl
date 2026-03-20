@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "vue-tsc -b && vite build && npm run copy-speedscope",
+    "copy-speedscope": "cp -r node_modules/speedscope/dist/release ../ui/dist/speedscope",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "pinia": "^3.0.4",
     "radix-vue": "^1.9.17",
     "reka-ui": "^2.9.2",
+    "speedscope": "^1.25.0",
     "tailwind-merge": "^3.5.0",
     "vue": "^3.5.25",
     "vue-router": "^4.6.4",

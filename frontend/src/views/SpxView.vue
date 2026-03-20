@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
+import { useVirtualList } from '@vueuse/core'
 import { useSpxStore } from '@/stores/spx'
-import type { SpxFunction, SpxEvent } from '@/lib/api'
+import type { SpxFunction } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -10,10 +11,35 @@ import {
 } from '@/components/ui/table'
 import { Trash2, ArrowLeft, Activity } from 'lucide-vue-next'
 
+// Row height for the virtual flat-profile table (py-1.5 + text-xs ≈ 32px)
+const FLAT_ROW_HEIGHT = 32
+
 const store = useSpxStore()
 
 // Mobile: show detail panel instead of list
 const showDetail = ref(false)
+
+// Speedscope iframe state
+const iframeLoaded = ref(false)
+const activeTab = ref('flat')
+
+// Speedscope URL for the currently selected profile.
+// Uses the #profileURL hash so speedscope fetches the data itself.
+const speedscopeUrl = computed(() => {
+  if (!store.selectedProfile) return ''
+  const profileUrl = encodeURIComponent(`/api/spx/profiles/${store.selectedProfile.key}/speedscope`)
+  return `/speedscope/#profileURL=${profileUrl}`
+})
+
+// Reset iframe loaded state whenever the selected profile changes or tab switches to flamegraph.
+watch(() => store.selectedProfile?.key, () => {
+  iframeLoaded.value = false
+})
+watch(activeTab, (tab) => {
+  if (tab === 'flamegraph') {
+    iframeLoaded.value = false
+  }
+})
 
 onMounted(async () => {
   store.clearNewProfileCount()
@@ -37,6 +63,14 @@ async function handleClearAll() {
     showDetail.value = false
   }
 }
+
+// Virtual list for the flat profile table
+const flatFunctions = computed<SpxFunction[]>(() => store.selectedProfile?.functions ?? [])
+const {
+  list: virtualRows,
+  containerProps: flatContainerProps,
+  wrapperProps: flatWrapperProps,
+} = useVirtualList(flatFunctions, { itemHeight: FLAT_ROW_HEIGHT })
 
 // Format helpers
 function formatMs(ms: number): string {
@@ -62,72 +96,17 @@ function formatDate(ts: number): string {
   if (diffH < 24) return `${diffH}h ago`
   return d.toLocaleString()
 }
-
-// Flamegraph rendering
-// Build a canvas-free SVG flamegraph from SpxEvent data.
-// We show up to the top FLAME_ROWS deepest rows, coloured by depth.
-const FLAME_ROWS = 20
-const FLAME_HEIGHT = 20
-const FLAME_GAP = 1
-
-const flamegraphEvents = computed<SpxEvent[]>(() => {
-  if (!store.selectedProfile?.events?.length) return []
-  // Only show top FLAME_ROWS depth levels to keep it readable
-  return store.selectedProfile.events.filter(e => e.depth < FLAME_ROWS)
-})
-
-const totalMs = computed(() => store.selectedProfile?.wall_time_ms ?? 1)
-
-function flameX(startMs: number): string {
-  return `${(startMs / totalMs.value) * 100}%`
-}
-
-function flameW(durationMs: number): string {
-  const pct = (durationMs / totalMs.value) * 100
-  // Minimum 0.05% so tiny spans are still visible
-  return `${Math.max(pct, 0.05)}%`
-}
-
-function flameY(depth: number): number {
-  return depth * (FLAME_HEIGHT + FLAME_GAP)
-}
-
-const svgHeight = computed(() => {
-  if (!flamegraphEvents.value.length) return 0
-  const maxDepth = Math.max(...flamegraphEvents.value.map(e => e.depth))
-  return (maxDepth + 1) * (FLAME_HEIGHT + FLAME_GAP)
-})
-
-// Depth-based colour (HSL hue rotates across depths)
-function flameColor(depth: number): string {
-  const hue = (depth * 37) % 360
-  return `hsl(${hue}, 65%, 55%)`
-}
-
-// Truncate a function name to fit in the bar
-function truncateName(name: string, maxChars = 40): string {
-  return name.length > maxChars ? name.slice(0, maxChars - 1) + '…' : name
-}
-
-// Tooltip state for flamegraph
-const tooltipEvent = ref<SpxEvent | null>(null)
-
-// Timeline: group by depth, show as horizontal bars in time order
-// Reuse flamegraphEvents since they are already structured correctly.
-
-// Active tab
-const activeTab = ref('flat')
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden">
+  <div class="flex h-full overflow-hidden w-full">
 
     <!-- Left panel: profile list -->
     <div
-      class="flex flex-col border-r border-border"
+      class="flex flex-col border-r border-border overflow-hidden"
       :class="showDetail
         ? 'hidden md:flex md:w-80 md:shrink-0'
-        : 'flex-1 md:flex-initial md:w-80 md:shrink-0'"
+        : 'flex-1 min-w-0 md:flex-initial md:w-80 md:shrink-0'"
     >
       <!-- Toolbar -->
       <div class="flex items-center justify-between px-3 py-2 border-b border-border">
@@ -163,9 +142,9 @@ const activeTab = ref('flat')
           :class="{ 'bg-accent border-l-2 border-l-primary': store.selectedProfile?.key === p.key }"
           @click="handleSelectProfile(p.key)"
         >
-          <div class="flex-1 min-w-0">
-            <div class="flex items-baseline justify-between gap-1">
-              <span class="text-xs font-mono font-semibold text-muted-foreground">{{ p.method }}</span>
+          <div class="flex-1 min-w-0 overflow-hidden">
+            <div class="flex items-baseline justify-between gap-1 min-w-0">
+              <span class="text-xs font-mono font-semibold text-muted-foreground shrink-0">{{ p.method }}</span>
               <span class="text-xs text-muted-foreground shrink-0">{{ formatDate(p.timestamp) }}</span>
             </div>
             <div class="text-sm truncate font-medium">{{ p.uri }}</div>
@@ -234,8 +213,8 @@ const activeTab = ref('flat')
           <div class="flex items-start justify-between gap-3 mb-2">
             <div class="min-w-0">
               <div class="flex items-center gap-2 mb-0.5">
-                <span class="text-xs font-mono font-semibold text-muted-foreground">{{ store.selectedProfile.method }}</span>
-                <span class="text-base md:text-lg font-semibold truncate">{{ store.selectedProfile.uri }}</span>
+                <span class="text-xs font-mono font-semibold text-muted-foreground shrink-0">{{ store.selectedProfile.method }}</span>
+                <span class="text-base md:text-lg font-semibold truncate min-w-0">{{ store.selectedProfile.uri }}</span>
               </div>
               <div class="text-sm text-muted-foreground">{{ store.selectedProfile.domain }} · PHP {{ store.selectedProfile.php_version }}</div>
             </div>
@@ -261,146 +240,104 @@ const activeTab = ref('flat')
           <TabsList class="mx-4 md:mx-6 mt-3 mb-0 shrink-0 self-start">
             <TabsTrigger value="flat">Flat Profile</TabsTrigger>
             <TabsTrigger value="flamegraph">Flamegraph</TabsTrigger>
-            <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="metadata">Metadata</TabsTrigger>
           </TabsList>
 
           <!-- Flat Profile tab -->
-          <TabsContent value="flat" class="flex-1 overflow-hidden m-0 mt-2">
-            <ScrollArea class="h-full">
-              <div v-if="!store.selectedProfile.functions?.length" class="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                No call trace data available
+          <TabsContent value="flat" class="flex-1 overflow-hidden m-0 mt-2 flex flex-col">
+            <div v-if="!flatFunctions.length" class="flex items-center justify-center h-32 text-muted-foreground text-sm">
+              No call trace data available
+            </div>
+            <template v-else>
+              <!-- Sticky column headers -->
+              <div class="shrink-0 border-b border-border bg-background">
+                <table class="w-full text-left">
+                  <colgroup>
+                    <col class="w-8" />
+                    <col />
+                    <col class="w-16" />
+                    <col class="w-24" />
+                    <col class="w-28" />
+                    <col class="w-24" />
+                    <col class="w-16" />
+                  </colgroup>
+                  <thead>
+                    <tr class="border-b border-border">
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground">#</th>
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground">Function</th>
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Calls</th>
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Excl. time</th>
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Excl. %</th>
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Incl. time</th>
+                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Incl. %</th>
+                    </tr>
+                  </thead>
+                </table>
               </div>
-              <Table v-else>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead class="text-xs w-8">#</TableHead>
-                    <TableHead class="text-xs">Function</TableHead>
-                    <TableHead class="text-xs text-right">Calls</TableHead>
-                    <TableHead class="text-xs text-right">Excl. time</TableHead>
-                    <TableHead class="text-xs text-right">Excl. %</TableHead>
-                    <TableHead class="text-xs text-right">Incl. time</TableHead>
-                    <TableHead class="text-xs text-right">Incl. %</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow
-                    v-for="(fn, i) in store.selectedProfile.functions"
-                    :key="fn.name + i"
-                    class="hover:bg-accent/30"
-                  >
-                    <TableCell class="py-1.5 text-xs text-muted-foreground">{{ i + 1 }}</TableCell>
-                    <TableCell class="py-1.5 font-mono text-xs max-w-xs truncate">{{ fn.name }}</TableCell>
-                    <TableCell class="py-1.5 text-xs text-right">{{ fn.calls }}</TableCell>
-                    <TableCell class="py-1.5 text-xs text-right font-medium">{{ formatMs(fn.exclusive_ms) }}</TableCell>
-                    <TableCell class="py-1.5 text-xs text-right">
-                      <div class="flex items-center justify-end gap-1">
-                        <div class="w-12 bg-muted rounded-full h-1.5 overflow-hidden">
-                          <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(fn.exclusive_pct, 100)}%` }" />
-                        </div>
-                        {{ fn.exclusive_pct.toFixed(1) }}%
-                      </div>
-                    </TableCell>
-                    <TableCell class="py-1.5 text-xs text-right">{{ formatMs(fn.inclusive_ms) }}</TableCell>
-                    <TableCell class="py-1.5 text-xs text-right">{{ fn.inclusive_pct.toFixed(1) }}%</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </ScrollArea>
+              <!-- Virtual-scrolled rows: only renders visible rows -->
+              <div v-bind="flatContainerProps" class="flex-1 overflow-y-auto">
+                <div v-bind="flatWrapperProps">
+                  <table class="w-full text-left">
+                    <colgroup>
+                      <col class="w-8" />
+                      <col />
+                      <col class="w-16" />
+                      <col class="w-24" />
+                      <col class="w-28" />
+                      <col class="w-24" />
+                      <col class="w-16" />
+                    </colgroup>
+                    <tbody>
+                      <tr
+                        v-for="{ data: fn, index } in virtualRows"
+                        :key="fn.name + index"
+                        class="hover:bg-accent/30 border-b border-border/40"
+                        :style="{ height: `${FLAT_ROW_HEIGHT}px` }"
+                      >
+                        <td class="px-4 text-xs text-muted-foreground">{{ index + 1 }}</td>
+                        <td class="px-4 font-mono text-xs max-w-xs truncate">{{ fn.name }}</td>
+                        <td class="px-4 text-xs text-right">{{ fn.calls }}</td>
+                        <td class="px-4 text-xs text-right font-medium">{{ formatMs(fn.exclusive_ms) }}</td>
+                        <td class="px-4 text-xs text-right">
+                          <div class="flex items-center justify-end gap-1">
+                            <div class="w-12 bg-muted rounded-full h-1.5 overflow-hidden">
+                              <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(fn.exclusive_pct, 100)}%` }" />
+                            </div>
+                            {{ fn.exclusive_pct.toFixed(1) }}%
+                          </div>
+                        </td>
+                        <td class="px-4 text-xs text-right">{{ formatMs(fn.inclusive_ms) }}</td>
+                        <td class="px-4 text-xs text-right">{{ fn.inclusive_pct.toFixed(1) }}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- Row count footer -->
+              <div class="shrink-0 px-4 py-1.5 border-t border-border text-xs text-muted-foreground">
+                {{ flatFunctions.length.toLocaleString() }} functions
+              </div>
+            </template>
           </TabsContent>
 
-          <!-- Flamegraph tab -->
-          <TabsContent value="flamegraph" class="flex-1 overflow-hidden m-0 mt-2">
-            <ScrollArea class="h-full">
-              <div v-if="!flamegraphEvents.length" class="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                No call trace data available
-              </div>
-              <div v-else class="px-4 py-3">
-                <p class="text-xs text-muted-foreground mb-2">Showing up to {{ FLAME_ROWS }} depth levels. Hover for details.</p>
-                <div class="relative overflow-x-auto">
-                  <svg
-                    :height="svgHeight"
-                    width="100%"
-                    class="block min-w-full"
-                    style="font-family: monospace"
-                  >
-                    <g
-                      v-for="(ev, i) in flamegraphEvents"
-                      :key="i"
-                      @mouseenter="tooltipEvent = ev"
-                      @mouseleave="tooltipEvent = null"
-                    >
-                      <rect
-                        :x="flameX(ev.start_ms)"
-                        :y="flameY(ev.depth)"
-                        :width="flameW(ev.duration_ms)"
-                        :height="FLAME_HEIGHT"
-                        :fill="flameColor(ev.depth)"
-                        rx="1"
-                        style="cursor: default; stroke: rgba(0,0,0,0.1); stroke-width: 0.5"
-                      />
-                    </g>
-                  </svg>
-                </div>
-                <!-- Tooltip -->
-                <div
-                  v-if="tooltipEvent"
-                  class="mt-3 px-3 py-2 bg-popover border border-border rounded text-xs font-mono shadow-md max-w-xl"
-                >
-                  <div class="font-semibold text-sm mb-1 break-all">{{ tooltipEvent.name }}</div>
-                  <div class="text-muted-foreground">
-                    Start: {{ tooltipEvent.start_ms.toFixed(3) }} ms ·
-                    Duration: {{ formatMs(tooltipEvent.duration_ms) }} ·
-                    Depth: {{ tooltipEvent.depth }}
-                  </div>
-                </div>
-              </div>
-            </ScrollArea>
-          </TabsContent>
-
-          <!-- Timeline tab -->
-          <TabsContent value="timeline" class="flex-1 overflow-hidden m-0 mt-2">
-            <ScrollArea class="h-full">
-              <div v-if="!flamegraphEvents.length" class="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                No call trace data available
-              </div>
-              <div v-else class="px-4 py-3">
-                <p class="text-xs text-muted-foreground mb-2">
-                  Timeline — {{ formatMs(0) }} → {{ formatMs(store.selectedProfile.wall_time_ms) }}
-                </p>
-                <div class="overflow-x-auto">
-                  <svg
-                    :height="svgHeight"
-                    width="100%"
-                    class="block min-w-full"
-                    style="font-family: monospace"
-                  >
-                    <g
-                      v-for="(ev, i) in flamegraphEvents"
-                      :key="i"
-                    >
-                      <rect
-                        :x="flameX(ev.start_ms)"
-                        :y="flameY(ev.depth)"
-                        :width="flameW(ev.duration_ms)"
-                        :height="FLAME_HEIGHT"
-                        :fill="flameColor(ev.depth)"
-                        rx="1"
-                        style="stroke: rgba(0,0,0,0.1); stroke-width: 0.5"
-                      />
-                      <text
-                        :x="flameX(ev.start_ms)"
-                        :y="flameY(ev.depth) + 13"
-                        font-size="9"
-                        fill="rgba(255,255,255,0.9)"
-                        class="pointer-events-none select-none"
-                        dx="2"
-                      >{{ truncateName(ev.name, 20) }}</text>
-                    </g>
-                  </svg>
-                </div>
-              </div>
-            </ScrollArea>
+          <!-- Flamegraph tab — speedscope iframe -->
+          <TabsContent value="flamegraph" class="flex-1 overflow-hidden m-0 relative">
+            <!-- Loading overlay — shown until the iframe fires its load event -->
+            <div
+              v-if="!iframeLoaded"
+              class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background z-10"
+            >
+              <div class="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <span class="text-sm text-muted-foreground">Loading flamegraph…</span>
+            </div>
+            <iframe
+              v-if="speedscopeUrl"
+              :src="speedscopeUrl"
+              class="w-full h-full border-0"
+              :class="{ 'opacity-0': !iframeLoaded }"
+              sandbox="allow-scripts allow-same-origin"
+              @load="iframeLoaded = true"
+            />
           </TabsContent>
 
           <!-- Metadata tab -->

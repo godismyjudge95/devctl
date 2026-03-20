@@ -17,13 +17,13 @@ import (
 
 // spxMeta mirrors the subset of fields SPX writes to the per-profile .json file.
 type spxMeta struct {
-	HTTPHost    string  `json:"_http_host"`
-	HTTPMethod  string  `json:"_http_method"`
-	HTTPRequest string  `json:"_http_request_uri"`
+	HTTPHost    string  `json:"http_host"`
+	HTTPMethod  string  `json:"http_method"`
+	HTTPRequest string  `json:"http_request_uri"`
 	WallTimeMs  float64 `json:"wall_time_ms"`
 	PeakMemory  int64   `json:"peak_memory_usage"`
-	CalledFuncs int     `json:"called_func_count"`
-	Timestamp   int64   `json:"timestamp"`
+	CalledFuncs int     `json:"called_function_count"`
+	Timestamp   int64   `json:"exec_ts"`
 }
 
 // SpxProfile is the list-view representation of a single captured profile.
@@ -252,21 +252,18 @@ func loadProfileMeta(dir, key, phpVersion string) (SpxProfile, error) {
 	}, nil
 }
 
-// parseCallTrace decompresses and parses a SPX .txt.gz call trace file.
+// readSPXSections decompresses a SPX .txt.gz trace file and returns the
+// function-name table and the raw event lines. Both slices reference the same
+// underlying string allocation so callers should not hold both for long.
 //
 // SPX full reporter format:
 //
-//	Header lines (start with #):
-//	  # spx-version {n}
-//	  # php-version {v}
-//	  # enabled-metrics wt [zm ...]
-//	  # func {idx} {file}:{line} {func_name}
+//	[events]
+//	{func_idx} {is_enter} {wt_us} [{extra} ...]
 //
-//	Data lines (tab-separated):
-//	  {+|-} {depth} {func_idx} {wt_us} [{zm_bytes} ...]
-//
-// wt_us is the cumulative wall-time in microseconds from request start.
-func parseCallTrace(path string, totalMs float64) ([]SpxFunction, []SpxEvent, error) {
+//	[functions]
+//	one function name per line, 0-based
+func readSPXSections(path string) (funcNames []string, eventLines []string, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, err
@@ -284,29 +281,73 @@ func parseCallTrace(path string, totalMs float64) ([]SpxFunction, []SpxEvent, er
 		return nil, nil, err
 	}
 
-	lines := strings.Split(string(raw), "\n")
-
-	// Pass 1: build function index.
-	funcNames := map[int]string{}
-	for _, line := range lines {
-		if !strings.HasPrefix(line, "# func ") {
-			continue
+	// Find section start line numbers.
+	eventsStart, functionsStart := -1, -1
+	pos, lineNum := 0, 0
+	for pos < len(raw) {
+		end := pos
+		for end < len(raw) && raw[end] != '\n' {
+			end++
 		}
-		// "# func {idx} {file}:{line} {func_name}"
-		parts := strings.Fields(line)
-		if len(parts) < 5 {
-			continue
+		line := strings.TrimSpace(string(raw[pos:end]))
+		switch line {
+		case "[events]":
+			eventsStart = lineNum + 1
+		case "[functions]":
+			functionsStart = lineNum + 1
 		}
-		idx, err := strconv.Atoi(parts[2])
-		if err != nil {
-			continue
-		}
-		funcNames[idx] = parts[4]
+		lineNum++
+		pos = end + 1
 	}
 
-	// Pass 2: process enter/exit events.
+	if eventsStart < 0 || functionsStart < 0 {
+		return nil, nil, fmt.Errorf("unrecognised SPX trace format")
+	}
+
+	lines := strings.Split(string(raw), "\n")
+	raw = nil // allow GC
+
+	// [functions] section: one name per line.
+	funcNames = make([]string, 0, 8192)
+	for _, l := range lines[functionsStart:] {
+		name := strings.TrimSpace(l)
+		if name != "" {
+			funcNames = append(funcNames, name)
+		}
+	}
+
+	// [events] section ends just before the "[functions]" header line.
+	eventsEnd := functionsStart - 1
+	if eventsEnd > len(lines) {
+		eventsEnd = len(lines)
+	}
+	eventLines = lines[eventsStart:eventsEnd]
+
+	return funcNames, eventLines, nil
+}
+
+// parseCallTrace decompresses and parses a SPX .txt.gz call trace file.
+// To avoid OOM on very large traces we cap the flamegraph/timeline events
+// slice at maxFlameEvents; the flat profile has no cap.
+const maxFlameEvents = 5000
+
+func parseCallTrace(path string, totalMs float64) ([]SpxFunction, []SpxEvent, error) {
+	funcNames, eventLines, err := readSPXSections(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	nameFor := func(idx int) string {
+		if idx >= 0 && idx < len(funcNames) {
+			return funcNames[idx]
+		}
+		return fmt.Sprintf("func#%d", idx)
+	}
+
+	// Process enter/exit events.
 	type stackFrame struct {
-		funcIdx int
+		name    string
+		depth   int
 		enterUs int64
 	}
 	type funcAgg struct {
@@ -315,45 +356,43 @@ func parseCallTrace(path string, totalMs float64) ([]SpxFunction, []SpxEvent, er
 		exclusiveUs int64
 	}
 
-	stack := []stackFrame{}
-	agg := map[string]*funcAgg{}
-	var events []SpxEvent
+	stack := make([]stackFrame, 0, 128)
+	agg := make(map[string]*funcAgg, 512)
+	events := make([]SpxEvent, 0, maxFlameEvents)
 
-	// Track exclusive time: subtract child durations from parent.
-	childDurations := map[int]int64{} // depth → total child us at that depth
+	// childDurations[depth] accumulates total child durations for the frame at depth.
+	childDurations := make(map[int]int64, 128)
 
-	for _, line := range lines {
-		if line == "" || strings.HasPrefix(line, "#") {
+	for _, line := range eventLines {
+		if line == "" {
 			continue
 		}
 		parts := strings.Fields(line)
-		if len(parts) < 4 {
+		if len(parts) < 3 {
 			continue
 		}
-		eventType := parts[0]
-		depth, err1 := strconv.Atoi(parts[1])
-		funcIdx, err2 := strconv.Atoi(parts[2])
-		wtUs, err3 := strconv.ParseInt(parts[3], 10, 64)
+		funcIdx, err1 := strconv.Atoi(parts[0])
+		isEnter, err2 := strconv.Atoi(parts[1])
+		wtUs, err3 := strconv.ParseInt(parts[2], 10, 64)
 		if err1 != nil || err2 != nil || err3 != nil {
 			continue
 		}
 
-		name := funcNames[funcIdx]
-		if name == "" {
-			name = fmt.Sprintf("func#%d", funcIdx)
-		}
+		name := nameFor(funcIdx)
+		depth := len(stack) // depth = current stack depth before push/pop
 
-		switch eventType {
-		case "+":
-			stack = append(stack, stackFrame{funcIdx: funcIdx, enterUs: wtUs})
+		switch isEnter {
+		case 1: // entry
 			childDurations[depth] = 0
+			stack = append(stack, stackFrame{name: name, depth: depth, enterUs: wtUs})
 
-		case "-":
+		case 0: // exit
 			if len(stack) == 0 {
 				continue
 			}
 			frame := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
+			frameDepth := frame.depth
 
 			durationUs := wtUs - frame.enterUs
 			if durationUs < 0 {
@@ -361,34 +400,38 @@ func parseCallTrace(path string, totalMs float64) ([]SpxFunction, []SpxEvent, er
 			}
 
 			// Exclusive = duration minus direct children's total time.
-			exclusiveUs := durationUs - childDurations[depth]
+			exclusiveUs := durationUs - childDurations[frameDepth]
 			if exclusiveUs < 0 {
 				exclusiveUs = 0
 			}
 
-			// Add this duration to parent's child accumulator.
-			if depth > 0 {
-				childDurations[depth-1] += durationUs
+			// Add this call's duration to the parent's child accumulator.
+			if frameDepth > 0 {
+				childDurations[frameDepth-1] += durationUs
 			}
-			childDurations[depth] = 0
+			childDurations[frameDepth] = 0
 
-			// Aggregate flat profile.
-			if _, ok := agg[name]; !ok {
-				agg[name] = &funcAgg{}
+			// Aggregate flat profile (always — no cap).
+			fa, ok := agg[frame.name]
+			if !ok {
+				fa = &funcAgg{}
+				agg[frame.name] = fa
 			}
-			agg[name].calls++
-			agg[name].inclusiveUs += durationUs
-			agg[name].exclusiveUs += exclusiveUs
+			fa.calls++
+			fa.inclusiveUs += durationUs
+			fa.exclusiveUs += exclusiveUs
 
-			// Flamegraph / timeline event.
-			startMs := float64(frame.enterUs) / 1000.0
-			durationMs := float64(durationUs) / 1000.0
-			events = append(events, SpxEvent{
-				Depth:      depth,
-				Name:       name,
-				StartMs:    startMs,
-				DurationMs: durationMs,
-			})
+			// Flamegraph / timeline events — capped to avoid OOM.
+			if len(events) < maxFlameEvents {
+				startMs := float64(frame.enterUs) / 1000.0
+				durationMs := float64(durationUs) / 1000.0
+				events = append(events, SpxEvent{
+					Depth:      frameDepth,
+					Name:       frame.name,
+					StartMs:    startMs,
+					DurationMs: durationMs,
+				})
+			}
 		}
 	}
 

@@ -335,17 +335,19 @@ func parseDuration(s string) time.Duration {
 }
 
 // phpFPMDefinition builds a supervised services.Definition for a PHP-FPM version.
-// The process is run as: php-fpm --nodaemonize --fpm-config {dir}/php-fpm.conf
+// The process is run as: php-fpm -c {dir}/php.ini --nodaemonize --fpm-config {dir}/php-fpm.conf
+// -c loads the per-version php.ini so SPX and other ini settings take effect in workers.
 // --nodaemonize keeps it in the foreground so the supervisor can own the lifecycle.
 func phpFPMDefinition(ver, serverRoot string) services.Definition {
+	phpDir := php.PHPDir(ver, serverRoot)
 	return services.Definition{
 		ID:           php.FPMServiceID(ver),
 		Label:        "PHP " + ver + " FPM",
 		Description:  "PHP " + ver + " FastCGI Process Manager",
 		Managed:      true,
 		ManagedCmd:   php.FPMBinary(ver, serverRoot),
-		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, serverRoot)),
-		ManagedDir:   php.PHPDir(ver, serverRoot),
+		ManagedArgs:  fmt.Sprintf("-c %s/php.ini --nodaemonize --fpm-config %s", phpDir, php.FPMConfigPath(ver, serverRoot)),
+		ManagedDir:   phpDir,
 		Log:          php.FPMLogPath(ver, serverRoot),
 		Version:      php.FPMBinary(ver, serverRoot) + " -v",
 		VersionRegex: `PHP (?P<version>[\d.]+)`,
