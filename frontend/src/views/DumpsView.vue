@@ -25,7 +25,7 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-y-2">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Dumps</h1>
         <p class="text-sm text-muted-foreground mt-1">Live variable dumps from your PHP apps.</p>

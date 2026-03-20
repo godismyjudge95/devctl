@@ -19,13 +19,98 @@ import (
 	"github.com/danielgormly/devctl/paths"
 )
 
+// logMaxBytes is the maximum size (in bytes) a log file may reach before it
+// is rotated. Default: 10 MiB.
+const logMaxBytes = 10 * 1024 * 1024
+
+// logMaxBackups is the number of rotated backup files to keep alongside the
+// active log file (e.g. service.log.1, service.log.2, service.log.3).
+const logMaxBackups = 3
+
+// rotatingLogFile is an io.WriteCloser that wraps an *os.File and rotates it
+// when it exceeds logMaxBytes. Rotation renames:
+//
+//	service.log.2 → service.log.3
+//	service.log.1 → service.log.2
+//	service.log   → service.log.1
+//
+// and opens a fresh service.log.
+type rotatingLogFile struct {
+	mu      sync.Mutex
+	path    string   // absolute path to the active log file
+	file    *os.File // current open file handle
+	written int64    // bytes written to the current file
+}
+
+// openRotatingLog opens (or creates) the log file at path and returns a
+// rotatingLogFile. The parent directory must already exist.
+func openRotatingLog(path string) (*rotatingLogFile, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, fmt.Errorf("logs dir: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	var written int64
+	if err == nil {
+		written = info.Size()
+	}
+	return &rotatingLogFile{path: path, file: f, written: written}, nil
+}
+
+func (r *rotatingLogFile) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.written+int64(len(p)) > logMaxBytes {
+		r.rotate()
+	}
+
+	n, err := r.file.Write(p)
+	r.written += int64(n)
+	return n, err
+}
+
+// rotate closes the current file, shifts backups, and opens a new active file.
+// Must be called with r.mu held.
+func (r *rotatingLogFile) rotate() {
+	r.file.Close()
+
+	// Shift existing backups: .3 is overwritten, .2→.3, .1→.2, active→.1
+	for i := logMaxBackups - 1; i >= 1; i-- {
+		src := fmt.Sprintf("%s.%d", r.path, i)
+		dst := fmt.Sprintf("%s.%d", r.path, i+1)
+		os.Rename(src, dst) //nolint:errcheck
+	}
+	os.Rename(r.path, r.path+".1") //nolint:errcheck
+
+	f, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		log.Printf("log rotation: open %s: %v", r.path, err)
+		return
+	}
+	r.file = f
+	r.written = 0
+}
+
+func (r *rotatingLogFile) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.file != nil {
+		return r.file.Close()
+	}
+	return nil
+}
+
 // managedProc holds state for a single supervised child process or goroutine.
 type managedProc struct {
-	def     Definition
-	cmd     *exec.Cmd // non-nil for exec-based services
-	cancel  context.CancelFunc
-	logFile *os.File      // non-nil when def.Log != ""; closed after the process exits
-	done    chan struct{} // non-nil for goroutine-based services; closed when RunFunc returns
+	def    Definition
+	cmd    *exec.Cmd // non-nil for exec-based services
+	cancel context.CancelFunc
+	rotLog *rotatingLogFile // non-nil when def.Log != ""; closed after the process exits
+	done   chan struct{}    // non-nil for goroutine-based services; closed when RunFunc returns
 }
 
 // Supervisor manages devctl-supervised services (child processes or embedded goroutines).
@@ -97,8 +182,8 @@ func (s *Supervisor) startEmbedded(def Definition) error {
 		if err := def.RunFunc(ctx, logW); err != nil && ctx.Err() == nil {
 			log.Printf("[%s] exited with error: %v", def.ID, err)
 		}
-		if f, ok := logW.(*serviceLogWriter); ok && f.file != nil {
-			f.file.Close()
+		if f, ok := logW.(*serviceLogWriter); ok && f.rotLog != nil {
+			f.rotLog.Close()
 		}
 	}()
 
@@ -163,14 +248,15 @@ func (s *Supervisor) startProcess(def Definition) error {
 
 	s.procs[def.ID] = &managedProc{def: def, cmd: cmd, cancel: cancel}
 
-	// Open log file for tee if def.Log is set.
-	var logFile *os.File
+	// Open rotating log file for tee if def.Log is set.
+	var rotLog *rotatingLogFile
 	if def.Log != "" {
-		if err := os.MkdirAll(filepath.Dir(def.Log), 0755); err == nil {
-			logFile, _ = os.OpenFile(def.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		}
-		if logFile != nil {
-			s.procs[def.ID].logFile = logFile
+		var err error
+		rotLog, err = openRotatingLog(def.Log)
+		if err != nil {
+			log.Printf("supervisor: open log for %s: %v", def.ID, err)
+		} else {
+			s.procs[def.ID].rotLog = rotLog
 		}
 	}
 
@@ -182,8 +268,8 @@ func (s *Supervisor) startProcess(def Definition) error {
 			if n > 0 {
 				chunk := buf[:n]
 				log.Printf("[%s] %s", def.ID, strings.TrimRight(string(chunk), "\n"))
-				if logFile != nil {
-					_, _ = logFile.Write(chunk)
+				if rotLog != nil {
+					_, _ = rotLog.Write(chunk)
 				}
 			}
 			if errRead != nil {
@@ -191,8 +277,8 @@ func (s *Supervisor) startProcess(def Definition) error {
 			}
 		}
 		pr.Close()
-		if logFile != nil {
-			logFile.Close()
+		if rotLog != nil {
+			rotLog.Close()
 		}
 	}()
 
@@ -201,13 +287,15 @@ func (s *Supervisor) startProcess(def Definition) error {
 }
 
 // newServiceLogWriter builds an io.Writer that writes to both journald (via
-// log.Printf) and optionally to the service's log file.
+// log.Printf) and optionally to the service's rotating log file.
 func (s *Supervisor) newServiceLogWriter(def Definition) io.Writer {
 	w := &serviceLogWriter{id: def.ID}
 	if def.Log != "" {
-		if err := os.MkdirAll(filepath.Dir(def.Log), 0755); err == nil {
-			f, _ := os.OpenFile(def.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-			w.file = f
+		rl, err := openRotatingLog(def.Log)
+		if err != nil {
+			log.Printf("supervisor: open log for %s: %v", def.ID, err)
+		} else {
+			w.rotLog = rl
 		}
 	}
 	return w
@@ -215,15 +303,15 @@ func (s *Supervisor) newServiceLogWriter(def Definition) io.Writer {
 
 // serviceLogWriter implements io.Writer. Each Write call is split on newlines
 // and each line is sent to log.Printf prefixed with the service ID.
-// Raw bytes are also tee'd to file when non-nil.
+// Raw bytes are also tee'd to the rotating log file when non-nil.
 type serviceLogWriter struct {
-	id   string
-	file *os.File
+	id     string
+	rotLog *rotatingLogFile
 }
 
 func (w *serviceLogWriter) Write(p []byte) (int, error) {
-	if w.file != nil {
-		_, _ = w.file.Write(p)
+	if w.rotLog != nil {
+		_, _ = w.rotLog.Write(p)
 	}
 	msg := strings.TrimRight(string(p), "\n")
 	if msg != "" {

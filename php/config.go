@@ -102,7 +102,6 @@ func SPXDataDir(ver, serverRoot string) string {
 }
 
 func WriteConfigs(ver, serverRoot, siteUser string) error {
-	phpDir := PHPDir(ver, serverRoot)
 	socketPath := FPMSocket(ver, serverRoot)
 	iniPath := fpmIniPath(ver, serverRoot)
 	fpmConfPath := FPMConfigPath(ver, serverRoot)
@@ -147,9 +146,11 @@ spx.data_dir = %s
 	// FPM is launched with -c php.ini so all php.ini settings apply to workers.
 	// php_value[auto_prepend_file] is set at the pool level as an authoritative
 	// override so the dump interceptor is always active for FPM requests.
+	fpmGlobalLog := paths.LogPath(serverRoot, "php-fpm-"+ver+"-global")
+	fpmPoolLog := paths.LogPath(serverRoot, "php-fpm-"+ver)
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
 [global]
-error_log = %s/php-fpm.log
+error_log = %s
 
 [www]
 user = %s
@@ -163,10 +164,10 @@ pm.max_children = 10
 pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 4
-php_admin_value[error_log] = %s/php-fpm-www.log
+php_admin_value[error_log] = %s
 php_admin_flag[log_errors] = on
 php_value[auto_prepend_file] = %s
-`, ver, phpDir, siteUser, siteUser, socketPath, siteUser, siteUser, phpDir, prependPath)
+`, ver, fpmGlobalLog, siteUser, siteUser, socketPath, siteUser, siteUser, fpmPoolLog, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}

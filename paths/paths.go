@@ -66,3 +66,18 @@ func ServiceDir(serverRoot, id string) string {
 func BinDir(serverRoot string) string {
 	return filepath.Join(serverRoot, "bin")
 }
+
+// LogsDir returns the directory where all service log files are written.
+// Every service writes its log to {logsDir}/{serviceID}.log.
+//
+//	{serverRoot}/logs
+func LogsDir(serverRoot string) string {
+	return filepath.Join(serverRoot, "logs")
+}
+
+// LogPath returns the absolute path to the log file for the given service.
+//
+//	{serverRoot}/logs/{id}.log
+func LogPath(serverRoot, id string) string {
+	return filepath.Join(LogsDir(serverRoot), id+".log")
+}

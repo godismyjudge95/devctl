@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Centralised log directory + Logs page
+
+- All managed services now write their logs to a single `~/sites/server/logs/` directory as `<service>.log` files (e.g. `caddy.log`, `dns.log`, `mysql.log`). Previously logs were scattered or missing entirely.
+- Logs rotate automatically at 10 MB with 3 backup files kept (`.log.1`, `.log.2`, `.log.3`) — no dependency on system `logrotate`.
+- The DNS server now has a dedicated log file (`dns.log`); previously it had none, causing a startup error.
+- New **Logs** page in the dashboard (`/logs`): sidebar lists all log files with sizes; clicking a file streams it live via SSE. A **Clear** button truncates the selected file.
+
 ## 2026-03-19
 
 ### SPX Profiler — speedscope flamegraph

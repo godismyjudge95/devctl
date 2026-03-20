@@ -39,7 +39,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ManagedEnvFile: caddyDir + "/caddy.env",
 			Version:        caddyDir + "/caddy version",
 			VersionRegex:   `v(?P<version>[\d.]+)`,
-			Log:            caddyDir + "/caddy.log",
+			Log:            paths.LogPath(serverRoot, "caddy"),
 			HealthCheck:    "curl -sf http://localhost:2019/config/",
 		},
 		{
@@ -56,7 +56,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Version:         valkeyDir + "/valkey-server --version",
 			VersionRegex:    `v=(?P<version>[\d.]+)`,
 			CredentialsFile: valkeyDir + "/config.env",
-			Log:             valkeyDir + "/valkey.log",
+			Log:             paths.LogPath(serverRoot, "redis"),
 		},
 		{
 			ID:              "postgres",
@@ -73,7 +73,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Version:         postgresDir + "/bin/postgres --version",
 			VersionRegex:    `(?P<version>[\d.]+)`,
 			CredentialsFile: postgresDir + "/config.env",
-			Log:             postgresDir + "/postgres.log",
+			Log:             paths.LogPath(serverRoot, "postgres"),
 			HealthCheck:     postgresDir + "/bin/pg_isready -h 127.0.0.1 -p 5432 -U " + siteUser + " -d postgres",
 		},
 		{
@@ -91,7 +91,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Version:         mysqlDir + "/bin/mysql --version",
 			VersionRegex:    `(?P<version>[\d.]+)`,
 			CredentialsFile: mysqlDir + "/config.env",
-			Log:             mysqlDir + "/mysql-error.log",
+			Log:             paths.LogPath(serverRoot, "mysql"),
 			HealthCheck:     mysqlDir + "/bin/mysqladmin --socket=" + mysqlDir + "/mysql.sock ping",
 		},
 		{
@@ -108,7 +108,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ManagedEnvFile: meiliDir + "/config.env",
 			Version:        meiliDir + "/meilisearch --version",
 			VersionRegex:   `meilisearch (?P<version>[\d.]+)`,
-			Log:            meiliDir + "/meilisearch.log",
+			Log:            paths.LogPath(serverRoot, "meilisearch"),
 		},
 		{
 			ID:             "typesense",
@@ -124,7 +124,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ManagedEnvFile: tsDir + "/config.env",
 			Version:        tsDir + "/typesense-server --version",
 			VersionRegex:   `Typesense (?P<version>[\d.]+)`,
-			Log:            tsDir + "/typesense.log",
+			Log:            paths.LogPath(serverRoot, "typesense"),
 		},
 		{
 			ID:              "mailpit",
@@ -140,7 +140,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Version:         mailpitDir + "/mailpit version",
 			VersionRegex:    `v(?P<version>[\d.]+)`,
 			CredentialsFile: mailpitDir + "/config.env",
-			Log:             mailpitDir + "/mailpit.log",
+			Log:             paths.LogPath(serverRoot, "mailpit"),
 		},
 		{
 			ID:             "reverb",
@@ -154,7 +154,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ManagedDir:     reverbDir,
 			Version:        `grep -m1 '"version"' ` + reverbDir + `/vendor/laravel/reverb/composer.json`,
 			VersionRegex:   `"version": "(?P<version>[^"]+)"`,
-			Log:            reverbDir + "/storage/logs/laravel.log",
+			Log:            paths.LogPath(serverRoot, "reverb"),
 			// Start/Stop/Restart/Status are handled by the Supervisor, not shell commands.
 		},
 		{
@@ -164,6 +164,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Required:    true,
 			Managed:     true,
 			Installable: true,
+			Log:         paths.LogPath(serverRoot, "dns"),
 			// Default RunFunc uses hardcoded defaults; dnsDef() in the API layer
 			// overwrites this with DB-configured values at runtime.
 			RunFunc: func(ctx context.Context, logW io.Writer) error {

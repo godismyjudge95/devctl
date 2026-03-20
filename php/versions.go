@@ -52,8 +52,9 @@ func PHPIniPath(ver, serverRoot string) string {
 }
 
 // FPMLogPath returns the path to the php-fpm log file for the given version.
+// Logs are written to the central logs directory as php-fpm-<ver>.log.
 func FPMLogPath(ver, serverRoot string) string {
-	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm-www.log")
+	return paths.LogPath(serverRoot, "php-fpm-"+ver)
 }
 
 var versionRe = regexp.MustCompile(`^(\d+\.\d+)$`)

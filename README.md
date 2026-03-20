@@ -24,6 +24,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - **Browser notifications** — native desktop notifications when new dumps or mail arrive while you are on another tab; uses the Service Worker Notification API with a direct-API fallback
 - **TLS** — download or auto-trust Caddy's root CA certificate so `*.test` sites work without browser warnings
 - **SPX Profiler** — per-site PHP profiling via [SPX](https://github.com/NoiseByNorthwest/php-spx); enable per site, then trigger profiles via cookies or query params. View results in the **Profiler** tab with a flat profile table, flamegraph, timeline, and metadata panel
+- **Logs** — central log viewer for all managed services. All service logs are written to `~/sites/server/logs/` as `<service>.log` files. Logs rotate automatically at 10 MB (3 backups kept). The **Logs** tab in the dashboard streams live log output via SSE and lets you clear any log file with one click
 
 ---
 
@@ -305,6 +306,7 @@ No browser extension or Xdebug configuration required.
 | `/etc/devctl/prepend.php` | PHP auto-prepend for `php_dd()` |
 | `/etc/systemd/system/devctl.service` | Systemd unit file |
 | `~/sites/server/` | Service binaries and data (Caddy, Valkey, MySQL, etc.) |
+| `~/sites/server/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, etc.) |
 
 ---
 

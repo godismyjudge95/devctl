@@ -445,3 +445,14 @@ export const clearSpxProfiles = (domain?: string) => {
   const q = domain ? `?domain=${encodeURIComponent(domain)}` : ''
   return request<void>('DELETE', `/api/spx/profiles${q}`)
 }
+
+// --- Logs ---
+export interface LogFileInfo {
+  id: string
+  name: string
+  path: string
+  size: number
+}
+
+export const getLogs = () => request<LogFileInfo[]>('GET', '/api/logs')
+export const clearLog = (id: string) => request<void>('DELETE', `/api/logs/${encodeURIComponent(id)}`)

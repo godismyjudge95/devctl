@@ -91,6 +91,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/services/{id}/config/{file}", s.handlePutServiceConfig)
 	s.mux.HandleFunc("GET /api/services/events", s.handleServiceEvents)
 
+	// Logs
+	s.mux.HandleFunc("GET /api/logs", s.handleGetLogs)
+	s.mux.HandleFunc("GET /api/logs/{id}", s.handleGetLogStream)
+	s.mux.HandleFunc("DELETE /api/logs/{id}", s.handleClearLog)
+
 	// Sites
 	s.mux.HandleFunc("GET /api/sites/detect", s.handleDetectSite)
 	s.mux.HandleFunc("POST /api/sites/refresh-metadata", s.handleRefreshSiteMetadata)

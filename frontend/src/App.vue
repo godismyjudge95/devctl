@@ -9,7 +9,7 @@ import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -117,8 +117,9 @@ const allNavItems = [
   { path: '/services',  label: 'Services',  icon: Server },
   { path: '/sites',     label: 'Sites',     icon: Globe },
   { path: '/dumps',     label: 'Dumps',     icon: Bug },
-  { path: '/mail',      label: 'Mail',      icon: Mail,     requiresMailpit: true },
-  { path: '/spx',       label: 'Profiler',  icon: Activity, requiresSPX: true },
+  { path: '/mail',      label: 'Mail',      icon: Mail,        requiresMailpit: true },
+  { path: '/spx',       label: 'Profiler',  icon: Activity,    requiresSPX: true },
+  { path: '/logs',      label: 'Logs',      icon: ScrollText },
   { path: '/settings',  label: 'Settings',  icon: Settings },
 ]
 
@@ -131,7 +132,7 @@ const navItems = computed(() =>
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-background text-foreground">
+  <div class="flex h-dvh overflow-hidden bg-background text-foreground">
 
     <!-- Sidebar: hidden on mobile, always visible md+ -->
     <nav class="hidden md:flex w-56 shrink-0 border-r border-border flex-col bg-card">

@@ -5,8 +5,6 @@ Once an item is completed move it to the "Completed:" section and tag a date/tim
 
 # Backlog
 
-- add a logs directory and make each service write their logs there - ensure we have a log rotation system built in (do not use the system logroate)
-- dns server says could not open log file - make sure the exist on each service start up
 - make sure that each service has a config file if it's supported and write config changes there - instead of using command arguments if supported
 - if a service has a default config file make sure we initialize the config file with the defaults and modify the values we need to change - ie. php atm we initialize a bare bone config that doesn't help if I need to go in and make changes later
 - enable dev safe opcache for php cli and fpm by default (make sure we turn on timestamps checking or something so we don't have to clear the cache constantly to apply updates)
@@ -21,3 +19,4 @@ Once an item is completed move it to the "Completed:" section and tag a date/tim
 - update readme with browser notification functionality *(completed 2026-03-19)*
 - add spx profile functionality similar to dumps or mail - fully integrated *(completed 2026-03-19)*
 - embed speedscope flamegraph viewer into SPX Profiler — replaces hand-rolled SVG with fully-featured WebGL flamegraph; SampledProfile JSON format; dedicated `/speedscope/` route; mobile overflow fix *(completed 2026-03-19)*
+- add a logs directory and make each service write their logs there — log rotation at 10 MB with 3 backups, DNS log file created, central Logs page with live SSE streaming *(completed 2026-03-19)*

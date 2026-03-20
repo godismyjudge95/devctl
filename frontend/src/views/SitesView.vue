@@ -274,26 +274,22 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
 <template>
   <div class="space-y-4">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-y-2">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Sites</h1>
         <p class="text-sm text-muted-foreground mt-1">Manage local PHP virtual hosts.</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 shrink-0">
         <ButtonGroup>
-          <ButtonGroup>
-            <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata">
-              <Loader2 v-if="refreshingMetadata" class="w-4 h-4 animate-spin" />
-              <RefreshCw v-else class="w-4 h-4" />
-              <span class="hidden sm:inline">Refresh Metadata</span>
-            </Button>
-          </ButtonGroup>
-          <ButtonGroup>
-            <Button @click="dialogOpen = true">
-              <Plus class="w-4 h-4" />
-              Add Site
-            </Button>
-          </ButtonGroup>
+          <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata">
+            <Loader2 v-if="refreshingMetadata" class="w-4 h-4 animate-spin" />
+            <RefreshCw v-else class="w-4 h-4" />
+            <span class="hidden sm:inline">Refresh Metadata</span>
+          </Button>
+          <Button @click="dialogOpen = true">
+            <Plus class="w-4 h-4" />
+            Add Site
+          </Button>
         </ButtonGroup>
       </div>
     </div>
@@ -471,14 +467,14 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
           </div>
 
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <a
                 :href="(site.https ? 'https' : 'http') + '://' + site.domain"
                 target="_blank"
-                class="font-medium hover:underline inline-flex items-center gap-1"
+                class="font-medium hover:underline inline-flex items-center gap-1 max-w-full truncate"
               >
-                {{ site.domain }}
-                <ExternalLink class="w-3 h-3 text-muted-foreground" />
+                <span class="truncate">{{ site.domain }}</span>
+                <ExternalLink class="w-3 h-3 text-muted-foreground shrink-0" />
               </a>
               <p class="font-mono text-xs text-muted-foreground truncate">
                 {{ site.root_path }}<span v-if="site.public_dir">/{{ site.public_dir }}</span>
