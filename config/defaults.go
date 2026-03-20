@@ -24,6 +24,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
 	postgresDir := paths.ServiceDir(serverRoot, "postgres")
 	reverbDir := paths.ServiceDir(serverRoot, "reverb")
+	whodbDir := paths.ServiceDir(serverRoot, "whodb")
 	return []services.Definition{
 		{
 			ID:             "caddy",
@@ -176,6 +177,20 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 					Upstream: dnsserver.SystemUpstream(),
 				}).Run(ctx, logW)
 			},
+		},
+		{
+			ID:             "whodb",
+			Label:          "WhoDB",
+			Description:    "Lightweight database explorer with web UI",
+			InstallVersion: "0.100.0",
+			Installable:    true,
+			Managed:        true,
+			ManagedCmd:     whodbDir + "/whodb",
+			ManagedArgs:    "",
+			ManagedDir:     whodbDir,
+			ManagedEnvFile: whodbDir + "/config.env",
+			Log:            paths.LogPath(serverRoot, "whodb"),
+			HealthCheck:    "curl -sf http://localhost:8161/",
 		},
 	}
 }

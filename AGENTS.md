@@ -76,6 +76,10 @@ Do not rely on a clean compile as a substitute for a live browser test.
 - The `.test` TLD is routed to this machine via the **router's DNS config** — there are no `/etc/hosts` entries for `*.test` domains. Do not add them.
 - Caddy listens on `:80` and `:443` and serves `*.test` sites using its **internal CA** (local self-signed certs). The TLS automation policy in `EnsureHTTPServer` sets `issuers: [{module: "internal"}]` for `*.test` — Caddy handles cert generation automatically; do not manually generate or load certificates.
 
+## Server root path
+
+The server root is `~/ddev/sites/server`. The sites path is `~/ddev/sites/`. Any path seen outside of these locations is a red flag indicating misconfiguration. The systemd unit sets `DEVCTL_SERVER_ROOT=/home/daniel/ddev/sites/server`; all runtime paths are derived from this env var via the `paths` package. Never hardcode machine-specific paths — always use `DEVCTL_SERVER_ROOT` or the `paths` package.
+
 ## Key conventions
 
 - The binary **requires root** — enforced at startup, logged to systemd journal.

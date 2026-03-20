@@ -460,3 +460,36 @@ export interface LogFileInfo {
 
 export const getLogs = () => request<LogFileInfo[]>('GET', '/api/logs')
 export const clearLog = (id: string) => request<void>('DELETE', `/api/logs/${encodeURIComponent(id)}`)
+
+// --- WhoDB ---
+export interface WhoDBConnection {
+  alias: string
+  host?: string
+  port?: string
+  username?: string
+  password?: string
+  database?: string
+}
+
+export interface WhoDBManualConnection {
+  type: string  // 'postgres' | 'mysql' | 'redis'
+  conn: WhoDBConnection
+}
+
+export interface WhoDBAutoConnection {
+  source: string
+  type: string
+  conn: WhoDBConnection
+}
+
+export interface WhoDBSettings {
+  disable_credential_form: boolean
+  manual_connections: WhoDBManualConnection[]
+  auto_connections: WhoDBAutoConnection[]
+}
+
+export const getWhoDBSettings = () =>
+  request<WhoDBSettings>('GET', '/api/services/whodb/settings')
+
+export const putWhoDBSettings = (data: Pick<WhoDBSettings, 'disable_credential_form' | 'manual_connections'>) =>
+  request<{ status: string }>('PUT', '/api/services/whodb/settings', data)

@@ -9,7 +9,7 @@ import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -106,6 +106,14 @@ watch(() => servicesStore.mailpitInstalled, (installed) => {
   }
 })
 
+
+// Redirect away from /whodb if WhoDB becomes uninstalled.
+watch(() => servicesStore.whodbInstalled, (installed) => {
+  if (!installed && route.path.startsWith('/whodb')) {
+    router.replace('/services')
+  }
+})
+
 // Clear new SPX badge when Profiler route is active.
 watch(() => route.path, (path) => {
   if (path.startsWith('/spx')) spxStore.clearNewProfileCount()
@@ -119,6 +127,7 @@ const allNavItems = [
   { path: '/dumps',     label: 'Dumps',     icon: Bug },
   { path: '/mail',      label: 'Mail',      icon: Mail,        requiresMailpit: true },
   { path: '/spx',       label: 'Profiler',  icon: Activity,    requiresSPX: true },
+  { path: '/whodb',     label: 'WhoDB',     icon: Database,    requiresWhoDB: true },
   { path: '/logs',      label: 'Logs',      icon: ScrollText },
   { path: '/settings',  label: 'Settings',  icon: Settings },
 ]
@@ -126,7 +135,8 @@ const allNavItems = [
 const navItems = computed(() =>
   allNavItems.filter(item =>
     (!item.requiresMailpit || servicesStore.mailpitInstalled) &&
-    (!item.requiresSPX || spxAvailable.value)
+    (!item.requiresSPX || spxAvailable.value) &&
+    (!item.requiresWhoDB || servicesStore.whodbInstalled)
   )
 )
 </script>

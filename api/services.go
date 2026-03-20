@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
@@ -258,6 +259,11 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fire lifecycle hooks so dependent services (e.g. WhoDB) can react.
+	if s.hooks != nil {
+		s.hooks.Fire(id, install.EventInstalled)
+	}
+
 	// Auto-start the service if it is managed (supervised child process).
 	if def, ok := s.registry.Get(id); ok && def.Managed {
 		if err := s.manager.Start(s.serviceDef(r.Context(), def)); err != nil {
@@ -322,6 +328,11 @@ func (s *Server) handleServicePurge(w http.ResponseWriter, r *http.Request) {
 	if err := inst.PurgeW(r.Context(), pw, preserveData); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
+	}
+
+	// Fire lifecycle hooks so dependent services (e.g. WhoDB) can react.
+	if s.hooks != nil {
+		s.hooks.Fire(id, install.EventPurged)
 	}
 
 	go s.poller.Poll()

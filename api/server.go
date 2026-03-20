@@ -30,6 +30,7 @@ type Server struct {
 	caddy       *sites.CaddyClient
 	siteManager *sites.Manager
 	installers  map[string]install.Installer
+	hooks       *install.HookRegistry
 	serverRoot  string // absolute path to the devctl server directory
 	siteUser    string // OS username of the non-root site user (e.g. "daniel")
 	devctlAddr  string // listen address passed to EnsureHTTPServer (e.g. "127.0.0.1:4000")
@@ -53,6 +54,7 @@ func NewServer(
 	caddyClient *sites.CaddyClient,
 	siteManager *sites.Manager,
 	installers map[string]install.Installer,
+	hooks *install.HookRegistry,
 	uiFS embed.FS,
 	serverRoot string,
 	siteUser string,
@@ -69,6 +71,7 @@ func NewServer(
 		caddy:          caddyClient,
 		siteManager:    siteManager,
 		installers:     installers,
+		hooks:          hooks,
 		serverRoot:     serverRoot,
 		siteUser:       siteUser,
 		devctlAddr:     devctlAddr,

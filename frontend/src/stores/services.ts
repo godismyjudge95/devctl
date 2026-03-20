@@ -33,6 +33,10 @@ export const useServicesStore = defineStore('services', () => {
     states.value.filter(s => s.status === 'stopped').length
   )
 
+  const whodbInstalled = computed(() =>
+    states.value.some(s => s.id === 'whodb' && s.installed)
+  )
+
   const mailpitInstalled = computed(() =>
     states.value.some(s => s.id === 'mailpit' && s.installed)
   )
@@ -169,6 +173,7 @@ export const useServicesStore = defineStore('services', () => {
     updating,
     updateOutput,
     stoppedCount,
+    whodbInstalled,
     mailpitInstalled,
     connectSSE,
     start,

@@ -46,14 +46,16 @@ func Load() (*Config, error) {
 }
 
 // resolveServerRoot returns the server root directory. It reads
-// DEVCTL_SERVER_ROOT; if unset it falls back to {siteHome}/sites/server for
-// backwards compatibility with installs that predate this setting.
+// DEVCTL_SERVER_ROOT; if unset it falls back to {siteHome}/ddev/sites/server
+// for backwards compatibility with installs that predate this setting.
 func resolveServerRoot(siteHome string) string {
 	if v := os.Getenv("DEVCTL_SERVER_ROOT"); v != "" {
 		return filepath.Clean(v)
 	}
-	// Legacy fallback: derive from siteHome the same way the old paths package did.
-	return filepath.Join(siteHome, "sites", "server")
+	// Legacy fallback: derive from siteHome.
+	// NOTE: DEVCTL_SERVER_ROOT must be set in the systemd unit. This fallback
+	// is only a best-effort for edge cases and should not be relied upon.
+	return filepath.Join(siteHome, "ddev", "sites", "server")
 }
 
 // resolveSiteUser returns the non-root user and their home directory.

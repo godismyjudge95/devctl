@@ -10,6 +10,7 @@ import (
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 )
@@ -105,6 +106,33 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 			"target_ip":             targetIP,
 			"tld":                   tld,
 			"system_dns_configured": configured,
+		})
+		return
+	}
+
+	if id == "whodb" {
+		disableForm, _ := s.queries.GetSetting(r.Context(), "whodb_disable_credential_form")
+		manualJSON, _ := s.queries.GetSetting(r.Context(), "whodb_manual_connections")
+
+		// Parse stored manual connections (default empty array).
+		var manual []install.WhoDBManualConnection
+		if manualJSON != "" {
+			_ = json.Unmarshal([]byte(manualJSON), &manual)
+		}
+		if manual == nil {
+			manual = []install.WhoDBManualConnection{}
+		}
+
+		// Derive auto-detected connections from installed service config.envs.
+		autoConns := s.whodbAutoConnections()
+
+		// Default disable_credential_form to true (empty = never explicitly set).
+		disableFormBool := disableForm != "false"
+
+		writeJSON(w, map[string]interface{}{
+			"disable_credential_form": disableFormBool,
+			"manual_connections":      manual,
+			"auto_connections":        autoConns,
 		})
 		return
 	}
@@ -224,6 +252,45 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 		if ok {
 			def = s.dnsDef(ctx, def)
 			_ = s.manager.Restart(def)
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
+		return
+	}
+
+	if id == "whodb" {
+		var input struct {
+			DisableCredentialForm bool                            `json:"disable_credential_form"`
+			ManualConnections     []install.WhoDBManualConnection `json:"manual_connections"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		disableVal := "false"
+		if input.DisableCredentialForm {
+			disableVal = "true"
+		}
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "whodb_disable_credential_form", Value: disableVal}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		manualBytes, _ := json.Marshal(input.ManualConnections)
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: "whodb_manual_connections", Value: string(manualBytes)}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Regenerate config.env and restart WhoDB.
+		if inst, ok := s.installers["whodb"]; ok {
+			if whodbInst, ok := inst.(*install.WhoDBInstaller); ok {
+				if err := whodbInst.RegenerateConfig(ctx); err != nil {
+					writeError(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+		if def, ok := s.registry.Get("whodb"); ok {
+			_ = s.supervisor.Restart(def)
 		}
 		writeJSON(w, map[string]string{"status": "ok"})
 		return
@@ -366,4 +433,18 @@ func mysqlConfigFilePath(serverRoot, file string) (string, bool) {
 		return "", false
 	}
 	return filepath.Join(paths.ServiceDir(serverRoot, "mysql"), "my.cnf"), true
+}
+
+// whodbAutoConnections returns auto-detected connections for WhoDB by delegating
+// to the WhoDBInstaller. Returns an empty slice if WhoDB is not registered.
+func (s *Server) whodbAutoConnections() []install.WhoDBAutoConnection {
+	inst, ok := s.installers["whodb"]
+	if !ok {
+		return []install.WhoDBAutoConnection{}
+	}
+	whodbInst, ok := inst.(*install.WhoDBInstaller)
+	if !ok {
+		return []install.WhoDBAutoConnection{}
+	}
+	return whodbInst.AutoConnections()
 }

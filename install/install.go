@@ -58,9 +58,51 @@ type Installer interface {
 	UpdateW(ctx context.Context, w io.Writer) error
 }
 
+// ServiceEvent represents a lifecycle event for an installed service.
+type ServiceEvent int
+
+const (
+	// EventInstalled fires after a service is successfully installed.
+	EventInstalled ServiceEvent = iota
+	// EventPurged fires after a service is successfully purged.
+	EventPurged
+)
+
+// HookFunc is called when a service lifecycle event occurs.
+type HookFunc func(id string, event ServiceEvent)
+
+// HookRegistry is a simple registry of lifecycle hooks that are fired when
+// services are installed or purged. It is safe for concurrent registration
+// and dispatch.
+type HookRegistry struct {
+	hooks []HookFunc
+}
+
+// Register adds a hook function to the registry. It will be called for every
+// install/purge event.
+func (r *HookRegistry) Register(fn HookFunc) {
+	r.hooks = append(r.hooks, fn)
+}
+
+// Fire calls all registered hooks with the given service ID and event.
+func (r *HookRegistry) Fire(id string, event ServiceEvent) {
+	for _, fn := range r.hooks {
+		fn(id, event)
+	}
+}
+
+// NewHookRegistry creates an empty HookRegistry.
+func NewHookRegistry() *HookRegistry {
+	return &HookRegistry{}
+}
+
 // NewRegistry builds the full installer map, injecting dependencies into
-// installers that need them.
-func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, serverRoot, siteHome string) map[string]Installer {
+// installers that need them. It also wires up the WhoDB hook so that
+// WhoDB's config.env is regenerated whenever postgres, mysql, or redis
+// is installed or purged.
+func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, serverRoot, siteHome string) (map[string]Installer, *HookRegistry) {
+	hooks := NewHookRegistry()
+
 	m := make(map[string]Installer)
 	m["postgres"] = &PostgresInstaller{
 		supervisor: supervisor,
@@ -103,8 +145,30 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		serverRoot: serverRoot,
 		siteUser:   siteUser,
 	}
+	whodb := &WhoDBInstaller{
+		siteManager: siteManager,
+		supervisor:  supervisor,
+		serverRoot:  serverRoot,
+		siteUser:    siteUser,
+		queries:     queries,
+		hooks:       hooks,
+	}
+	m["whodb"] = whodb
 	m["dns"] = &DNSInstaller{}
-	return m
+
+	// Register a hook: when postgres, mysql, or redis is installed/purged,
+	// regenerate WhoDB's config.env so pre-configured connections stay in sync.
+	hooks.Register(func(id string, _ ServiceEvent) {
+		switch id {
+		case "postgres", "mysql", "redis":
+			if err := whodb.RegenerateConfig(context.Background()); err != nil {
+				// Non-fatal: WhoDB may not be installed yet.
+				_ = err
+			}
+		}
+	})
+
+	return m, hooks
 }
 
 // ---------------------------------------------------------------------------

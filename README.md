@@ -14,7 +14,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 
 ## Features
 
-- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) and PHP-FPM versions — all from one tab
+- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB) and PHP-FPM versions — all from one tab
 - **DNS** — built-in DNS server intercepts configurable TLDs (default `.test`) and returns a configurable target IP; all other queries are forwarded upstream. One-click integration with `systemd-resolved` to route `.test` queries system-wide without any router config
 - **Sites** — auto-discovers PHP projects in your sites directory and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA
 - **Git Worktrees** — create and remove git worktrees for any site directly from the UI; each worktree gets its own `*.test` domain, Caddy vhost, and inherits the parent's PHP version
@@ -26,6 +26,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - **SPX Profiler** — per-site PHP profiling via [SPX](https://github.com/NoiseByNorthwest/php-spx); enable per site, then trigger profiles via cookies or query params. View results in the **Profiler** tab with a flat profile table, flamegraph, timeline, and metadata panel
 - **Logs** — central log viewer for all managed services. All service logs are written to `~/sites/server/logs/` as `<service>.log` files. Logs rotate automatically at 10 MB (3 backups kept). The **Logs** tab in the dashboard streams live log output via SSE and lets you clear any log file with one click
 - **Config editor** — full-screen CodeMirror 6 editor for service config files. Click the file icon next to any config-enabled service (Valkey, MySQL, Meilisearch, Typesense, Mailpit, PHP-FPM) to open its config file in a syntax-highlighted editor with line numbers and Ctrl+F search. PHP has two tabs (`php.ini` / `php-fpm.conf`). Ctrl+S or the **Save & Restart** button writes the file and restarts the service automatically
+- **WhoDB** — optional [WhoDB](https://github.com/clidey/whodb) database explorer embedded in the sidebar. Install it from the Services tab; devctl automatically configures pre-populated connection profiles for any installed database (MySQL, PostgreSQL, Valkey/Redis). Manage additional connections and toggle the credential form from the WhoDB section in Settings.
 
 ---
 
@@ -168,6 +169,7 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
 | Typesense | Supervised | `127.0.0.1:8108` (also `typesense.test`) |
 | Mailpit | Supervised | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) |
 | Laravel Reverb | Supervised | `127.0.0.1:7383` (also `reverb.test`) |
+| WhoDB | Supervised | `127.0.0.1:8161` (also `whodb.test`) |
 | PHP-FPM (per version) | Supervised | Unix socket `/run/php/phpX.Y-fpm.sock` |
 
 Supervised services run as direct child processes of devctl. Valkey's service ID is `redis` for Laravel `.env` compatibility.
@@ -311,6 +313,7 @@ No browser extension or Xdebug configuration required.
 | `127.0.0.1:8025` | Mailpit (web) | Yes |
 | `127.0.0.1:1025` | Mailpit (SMTP) | Yes |
 | `127.0.0.1:7383` | Laravel Reverb | No |
+| `127.0.0.1:8161` | WhoDB | No |
 
 ---
 

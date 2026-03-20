@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### WhoDB integration
+
+- Added **WhoDB** (v0.100.0) as an installable managed service. Install it from the Services tab; devctl downloads the binary, writes a `config.env`, and registers a `whodb.test` Caddy reverse-proxy vhost.
+- WhoDB runs on `127.0.0.1:8161` and is embedded in the dashboard as a full-page iframe via the **WhoDB** sidebar link.
+- devctl automatically writes pre-populated connection profiles to WhoDB's `config.env` for any installed database service: MySQL, PostgreSQL, and Valkey/Redis.
+- A **hook system** (`HookRegistry`) regenerates WhoDB's `config.env` whenever another service is installed or purged, keeping connections up to date automatically.
+- Added a **WhoDB section** to the Settings page: toggle `WHODB_DISABLE_CREDENTIAL_FORM`, view auto-detected connections (read-only), and manage manual connections (add / edit / delete) — changes are persisted in the SQLite database and applied immediately.
+
 ### Service updater system
 
 - Each managed service now has a **`LatestVersion()`** check that queries the appropriate upstream (GitHub releases API for Caddy, Valkey, Meilisearch, Typesense, Mailpit; Packagist for Laravel Reverb; static no-op for MySQL, PostgreSQL, and DNS).

@@ -679,7 +679,7 @@ func purgeInstalledServices(ctx context.Context, serverRoot, siteHome string, w 
 	// siteManager and queries are not available here; pass nil — the installers
 	// that use them (Reverb, Meilisearch, Typesense) will emit warnings for the
 	// site-cleanup step but will still remove their directories.
-	registry := install.NewRegistry(nil, nil, supervisor, "", serverRoot, siteHome)
+	registry, _ := install.NewRegistry(nil, nil, supervisor, "", serverRoot, siteHome)
 
 	// Ordered list — stop Caddy first so it releases ports before we remove it.
 	serviceOrder := []string{"caddy", "redis", "mailpit", "meilisearch", "typesense", "reverb", "postgres", "mysql"}
