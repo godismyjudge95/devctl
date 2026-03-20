@@ -80,6 +80,24 @@ Do not rely on a clean compile as a substitute for a live browser test.
 
 The server root is `~/ddev/sites/server`. The sites path is `~/ddev/sites/`. Any path seen outside of these locations is a red flag indicating misconfiguration. The systemd unit sets `DEVCTL_SERVER_ROOT=/home/daniel/ddev/sites/server`; all runtime paths are derived from this env var via the `paths` package. Never hardcode machine-specific paths — always use `DEVCTL_SERVER_ROOT` or the `paths` package.
 
+## Finding runtime files outside the project
+
+Never hardcode runtime paths. Always resolve `DEVCTL_SERVER_ROOT` from the running service first:
+
+```sh
+SERVER_ROOT=$(sudo systemctl show devctl --property=Environment \
+  | tr ' ' '\n' | grep DEVCTL_SERVER_ROOT | cut -d= -f2)
+SITES_ROOT=$(dirname "$SERVER_ROOT")
+```
+
+Then look for files in this order:
+
+1. Sites root: `$SITES_ROOT` (e.g. `$SITES_ROOT/server/php/8.4/php.ini`)
+2. Server root: `$SERVER_ROOT`
+3. Only if not found in the above: `/etc/devctl/`, system paths, etc.
+
+The vast majority of runtime files (PHP ini, FPM configs, Caddy config, etc.) live under the sites/server root, not under `/etc/php` or other system directories.
+
 ## Key conventions
 
 - The binary **requires root** — enforced at startup, logged to systemd journal.
