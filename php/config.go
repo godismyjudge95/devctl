@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"log"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -135,6 +136,12 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 		fmt.Sscan(u.Uid, &uid)
 		fmt.Sscan(u.Gid, &gid)
 		_ = os.Chown(spxDataDir, uid, gid)
+	}
+
+	// Migrate existing php.ini files: restore spx.http_key = dev if it was
+	// previously cleared to empty (SPX requires a non-empty key).
+	if err := migrateSpxKey(iniPath); err != nil {
+		log.Printf("php: migrate spx.http_key in %s: %v", iniPath, err)
 	}
 
 	// Write php.ini only if it does not already exist.
@@ -288,5 +295,39 @@ func writeIni(path string, s GlobalSettings) error {
 		}
 	}
 
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// migrateSpxKey ensures spx.http_key = dev in an existing php.ini.
+// SPX requires a non-empty key; a previous devctl version incorrectly set it
+// to empty. This restores the correct value on startup.
+// The function is a no-op when the file does not exist or the key is already set.
+func migrateSpxKey(path string) error {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	changed := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.TrimSpace(parts[0]) == "spx.http_key" && strings.TrimSpace(parts[1]) == "" {
+			lines[i] = "spx.http_key = dev"
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }

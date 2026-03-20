@@ -132,7 +132,7 @@ function formatDate(ts: number): string {
         >
           <Activity class="w-8 h-8 opacity-40" />
           <span class="text-sm">No profiles yet</span>
-          <span class="text-xs text-center px-4">Enable SPX on a site, then make HTTP requests with<br><code class="font-mono bg-muted px-1 rounded">SPX_ENABLED=1</code> cookie or query param.</span>
+          <span class="text-xs text-center px-4">Enable SPX on a site, then make HTTP requests with<br><code class="font-mono bg-muted px-1 rounded">?SPX_KEY=dev&amp;SPX_ENABLED=1</code> as query params or cookies.</span>
         </div>
 
         <div
