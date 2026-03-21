@@ -3,7 +3,6 @@ import { ref, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
-import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -197,14 +196,12 @@ watch(() => props.open, (val) => {
             </div>
             <p class="text-xs text-muted-foreground">Mailpit will be restarted automatically when you save.</p>
           </div>
-          <DialogFooter>
-            <ButtonGroup>
-              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-              <Button @click="saveSettings" :disabled="saving">
-                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                Save &amp; Restart
-              </Button>
-            </ButtonGroup>
+          <DialogFooter class="gap-2">
+            <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
+            <Button size="sm" @click="saveSettings" :disabled="saving">
+              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+              Save &amp; Restart
+            </Button>
           </DialogFooter>
         </template>
 
@@ -231,14 +228,12 @@ watch(() => props.open, (val) => {
             </div>
             <p class="text-xs text-muted-foreground">PHP-FPM will be restarted automatically when you save.</p>
           </div>
-          <DialogFooter>
-            <ButtonGroup>
-              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-              <Button @click="saveSettings" :disabled="saving">
-                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                Save &amp; Restart
-              </Button>
-            </ButtonGroup>
+          <DialogFooter class="gap-2">
+            <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
+            <Button size="sm" @click="saveSettings" :disabled="saving">
+              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+              Save &amp; Restart
+            </Button>
           </DialogFooter>
         </template>
 
@@ -257,14 +252,12 @@ watch(() => props.open, (val) => {
             </div>
             <p class="text-xs text-muted-foreground">MySQL will be restarted automatically when you save.</p>
           </div>
-          <DialogFooter>
-            <ButtonGroup>
-              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-              <Button @click="saveSettings" :disabled="saving">
-                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                Save &amp; Restart
-              </Button>
-            </ButtonGroup>
+          <DialogFooter class="gap-2">
+            <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
+            <Button size="sm" @click="saveSettings" :disabled="saving">
+              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+              Save &amp; Restart
+            </Button>
           </DialogFooter>
         </template>
 
@@ -308,9 +301,8 @@ watch(() => props.open, (val) => {
                 </Button>
                 <Button
                   v-else
-                  variant="outline" size="sm"
+                  variant="destructive" size="sm"
                   :disabled="dnsSetupLoading"
-                  class="text-destructive hover:text-destructive"
                   @click="removeSystemDNS"
                 >
                   <Loader2 v-if="dnsSetupLoading" class="w-3.5 h-3.5 animate-spin" />
@@ -320,14 +312,12 @@ watch(() => props.open, (val) => {
             </div>
             <p class="text-xs text-muted-foreground">DNS server will be restarted automatically when you save.</p>
           </div>
-          <DialogFooter>
-            <ButtonGroup>
-              <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
-              <Button @click="saveSettings" :disabled="saving">
-                <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
-                Save &amp; Restart
-              </Button>
-            </ButtonGroup>
+          <DialogFooter class="gap-2">
+            <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
+            <Button size="sm" @click="saveSettings" :disabled="saving">
+              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+              Save &amp; Restart
+            </Button>
           </DialogFooter>
         </template>
       </template>

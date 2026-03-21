@@ -190,7 +190,7 @@ const connTypeBadgeVariant = (type: string): 'default' | 'secondary' | 'outline'
   const map: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
     postgres: 'default',
     mysql: 'secondary',
-    redis: 'destructive',
+    redis: 'secondary',
   }
   return map[type] ?? 'outline'
 }
@@ -297,7 +297,7 @@ function onConnTypeChange(type: string) {
               </Button>
             </ButtonGroup>
           </div>
-          <p v-if="trustStatus === 'done'" class="text-sm text-green-600 whitespace-pre-wrap">{{ trustMessage }}</p>
+          <p v-if="trustStatus === 'done'" class="text-sm text-success whitespace-pre-wrap">{{ trustMessage }}</p>
           <p v-else-if="trustStatus === 'error'" class="text-sm text-destructive whitespace-pre-wrap">{{ trustMessage }}</p>
           <p v-else-if="trustStatus === 'working'" class="text-sm text-muted-foreground">Installing certificate into system and browser trust stores…</p>
         </CardContent>
@@ -343,7 +343,7 @@ function onConnTypeChange(type: string) {
 
             <template v-else>
               <!-- Disable credential form toggle -->
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
                 <Checkbox
                   id="whodb_disable_cred"
                   :checked="whodbDisableCredForm"
@@ -405,10 +405,10 @@ function onConnTypeChange(type: string) {
                       <template v-if="mc.conn.host"> · {{ mc.conn.host }}:{{ mc.conn.port }}</template>
                     </span>
                     <div class="flex gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" class="h-7 w-7" @click="openEditConn(idx)">
+                      <Button variant="ghost" size="icon-xs" @click="openEditConn(idx)">
                         <Pencil class="w-3.5 h-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" class="h-7 w-7 text-destructive hover:text-destructive" @click="deleteConn(idx)">
+                      <Button variant="ghost" size="icon-xs" class="text-destructive hover:text-destructive" @click="deleteConn(idx)">
                         <Trash2 class="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -432,7 +432,7 @@ function onConnTypeChange(type: string) {
         </Button>
         <span v-if="restartStatus === 'restarting'" class="text-sm text-muted-foreground">Restarting…</span>
         <span v-else-if="restartStatus === 'reconnecting'" class="text-sm text-muted-foreground">Waiting for server…</span>
-        <span v-else-if="restartStatus === 'done'" class="text-sm text-green-600">Restarted successfully.</span>
+        <span v-else-if="restartStatus === 'done'" class="text-sm text-success">Restarted successfully.</span>
         <span v-else-if="restartStatus === 'error'" class="text-sm text-destructive">Server did not come back in time. Check journalctl.</span>
       </div>
 
@@ -515,9 +515,9 @@ function onConnTypeChange(type: string) {
         </template>
       </div>
 
-      <DialogFooter>
-        <Button variant="outline" @click="connDialogOpen = false">Cancel</Button>
-        <Button :disabled="!connForm.conn.alias" @click="saveConn">
+      <DialogFooter class="gap-2">
+        <Button variant="outline" size="sm" @click="connDialogOpen = false">Cancel</Button>
+        <Button size="sm" :disabled="!connForm.conn.alias" @click="saveConn">
           {{ connDialogMode === 'add' ? 'Add' : 'Save' }}
         </Button>
       </DialogFooter>

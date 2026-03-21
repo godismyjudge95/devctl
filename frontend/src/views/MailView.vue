@@ -213,8 +213,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
         <ButtonGroup>
           <Button
             variant="ghost"
-            size="icon"
-            class="h-7 w-7"
+            size="icon-xs"
             :disabled="!store.hasSelection"
             title="Delete selected"
             @click="handleDeleteSelected"
@@ -223,8 +222,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
           </Button>
           <Button
             variant="ghost"
-            size="icon"
-            class="h-7 w-7"
+            size="icon-xs"
             :disabled="!store.hasSelection"
             title="Mark selected as read"
             @click="store.markMessages([...store.selectedIds], true)"
@@ -233,8 +231,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
           </Button>
           <Button
             variant="ghost"
-            size="icon"
-            class="h-7 w-7"
+            size="icon-xs"
             :disabled="!store.hasSelection"
             title="Mark selected as unread"
             @click="store.markMessages([...store.selectedIds], false)"
@@ -248,8 +245,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
         </span>
         <Button
           variant="ghost"
-          size="icon"
-          class="h-7 w-7"
+          size="icon-xs"
           title="Delete all messages"
           :disabled="store.total === 0"
           @click="handleDeleteAll"
@@ -317,10 +313,10 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
         <span>{{ store.total }} message{{ store.total !== 1 ? 's' : '' }}</span>
         <div class="flex items-center gap-1.5">
           <ButtonGroup>
-            <Button variant="ghost" size="icon" class="h-6 w-6" :disabled="store.page <= 1" @click="prevPage">
+            <Button variant="ghost" size="icon-sm" :disabled="store.page <= 1" @click="prevPage">
               <ChevronLeft class="w-3.5 h-3.5" />
             </Button>
-            <Button variant="ghost" size="icon" class="h-6 w-6" :disabled="store.page >= store.totalPages" @click="nextPage">
+            <Button variant="ghost" size="icon-sm" :disabled="store.page >= store.totalPages" @click="nextPage">
               <ChevronRight class="w-3.5 h-3.5" />
             </Button>
           </ButtonGroup>
@@ -363,19 +359,15 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
               {{ store.selectedMessage.Subject || '(no subject)' }}
             </h2>
             <div class="flex items-center gap-1.5 shrink-0">
-              <ButtonGroup>
-                <ButtonGroup>
+            <div class="flex items-center gap-1.5">
                   <Button variant="outline" size="sm" class="h-7 text-xs" @click="handleMarkUnread">
                     Mark unread
                   </Button>
-                </ButtonGroup>
-                <ButtonGroup>
                   <Button variant="destructive" size="sm" class="h-7 text-xs" @click="handleDeleteCurrent">
                     <Trash2 class="w-3.5 h-3.5 mr-1" />
                     Delete
                   </Button>
-                </ButtonGroup>
-              </ButtonGroup>
+            </div>
             </div>
           </div>
 
@@ -450,7 +442,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
                   <TableRow
                     v-for="(h, i) in headersArray"
                     :key="i"
-                    class="hover:bg-accent/30"
+                    class="hover:bg-accent/50"
                   >
                     <TableCell class="py-1.5 text-muted-foreground font-semibold font-mono text-xs align-top w-32 md:w-44 shrink-0">{{ h.key }}</TableCell>
                     <TableCell class="py-1.5 font-mono text-xs break-all">{{ h.value }}</TableCell>

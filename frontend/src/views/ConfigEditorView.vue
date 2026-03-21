@@ -121,7 +121,7 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <div class="flex flex-col h-full" @keydown="onKeydown" tabindex="-1">
     <!-- Top bar -->
-    <div class="flex items-center gap-3 px-4 py-2 border-b shrink-0">
+    <div class="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
       <Button variant="ghost" size="icon" class="shrink-0" @click="router.push('/services')">
         <ArrowLeft class="w-4 h-4" />
       </Button>
@@ -153,7 +153,7 @@ function onKeydown(e: KeyboardEvent) {
       <div class="ml-auto flex items-center gap-2 shrink-0">
         <span class="text-xs text-muted-foreground hidden sm:block">Ctrl+S to save</span>
         <Button size="sm" :disabled="saving || loading" @click="save">
-          <Save class="w-3.5 h-3.5 mr-1.5" />
+          <Save class="w-3.5 h-3.5 mr-2" />
           {{ saving ? 'Saving…' : 'Save & Restart' }}
         </Button>
       </div>

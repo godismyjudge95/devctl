@@ -181,7 +181,7 @@ const navItems = computed(() =>
           >{{ sitesStore.count }}</Badge>
           <Badge
             v-if="item.path === '/dumps' && dumpsStore.unreadCount > 0"
-            variant="destructive"
+            variant="secondary"
             class="ml-auto text-xs px-1.5 py-0"
           >{{ dumpsStore.unreadCount }}</Badge>
           <Badge
@@ -191,12 +191,12 @@ const navItems = computed(() =>
           >{{ servicesStore.stoppedCount }}</Badge>
           <Badge
             v-if="item.path === '/mail' && mailStore.newMailCount > 0"
-            variant="destructive"
+            variant="secondary"
             class="ml-auto text-xs px-1.5 py-0"
           >{{ mailStore.newMailCount }}</Badge>
           <Badge
             v-if="item.path === '/spx' && spxStore.newProfileCount > 0"
-            variant="destructive"
+            variant="secondary"
             class="ml-auto text-xs px-1.5 py-0"
           >{{ spxStore.newProfileCount }}</Badge>
         </RouterLink>
@@ -205,7 +205,7 @@ const navItems = computed(() =>
       <Separator />
       <div class="px-3 py-3 flex items-center justify-between">
         <span class="text-xs text-muted-foreground px-2">localhost:4000</span>
-        <Button variant="ghost" size="icon" class="h-7 w-7" @click="toggleDark()">
+        <Button variant="ghost" size="icon-xs" @click="toggleDark()">
           <Sun v-if="isDark" class="w-4 h-4" />
           <Moon v-else class="w-4 h-4" />
         </Button>
@@ -251,7 +251,7 @@ const navItems = computed(() =>
                 >{{ sitesStore.count }}</Badge>
                 <Badge
                   v-if="item.path === '/dumps' && dumpsStore.unreadCount > 0"
-                  variant="destructive"
+                  variant="secondary"
                   class="ml-auto text-xs px-1.5 py-0"
                 >{{ dumpsStore.unreadCount }}</Badge>
                 <Badge
@@ -261,12 +261,12 @@ const navItems = computed(() =>
                 >{{ servicesStore.stoppedCount }}</Badge>
                 <Badge
                   v-if="item.path === '/mail' && mailStore.newMailCount > 0"
-                  variant="destructive"
+                  variant="secondary"
                   class="ml-auto text-xs px-1.5 py-0"
                 >{{ mailStore.newMailCount }}</Badge>
                 <Badge
                   v-if="item.path === '/spx' && spxStore.newProfileCount > 0"
-                  variant="destructive"
+                  variant="secondary"
                   class="ml-auto text-xs px-1.5 py-0"
                 >{{ spxStore.newProfileCount }}</Badge>
               </RouterLink>
@@ -275,7 +275,7 @@ const navItems = computed(() =>
             <Separator />
             <div class="px-3 py-3 flex items-center justify-between">
               <span class="text-xs text-muted-foreground px-2">localhost:4000</span>
-              <Button variant="ghost" size="icon" class="h-7 w-7" @click="toggleDark()">
+            <Button variant="ghost" size="icon-xs" @click="toggleDark()">
                 <Sun v-if="isDark" class="w-4 h-4" />
                 <Moon v-else class="w-4 h-4" />
               </Button>

@@ -141,7 +141,7 @@ onUnmounted(() => {
     >
       <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <span class="text-sm font-medium">Log Files</span>
-        <Button variant="ghost" size="icon" class="h-6 w-6" @click="loadLogList" title="Refresh list">
+        <Button variant="ghost" size="icon-sm" @click="loadLogList" title="Refresh list">
           <RefreshCw class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" />
         </Button>
       </div>
@@ -157,7 +157,7 @@ onUnmounted(() => {
           :key="f.id"
           class="w-full text-left flex items-center justify-between gap-2 px-4 py-3 text-sm transition-colors"
           :class="selectedId === f.id
-            ? 'bg-accent text-accent-foreground font-medium'
+            ? 'bg-accent text-accent-foreground font-medium border-l-2 border-l-primary'
             : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
           @click="selectFile(f.id)"
         >
@@ -180,14 +180,9 @@ onUnmounted(() => {
       <!-- Viewer header -->
       <div class="flex items-center gap-2 px-3 py-3 border-b border-border shrink-0 min-w-0">
         <!-- Back button — mobile only -->
-        <Button
-          variant="ghost"
-          size="icon"
-          class="h-7 w-7 shrink-0 md:hidden"
-          @click="goBack"
-          title="Back to file list"
-        >
+        <Button variant="ghost" size="sm" class="gap-1.5 -ml-1 md:hidden" @click="goBack">
           <ArrowLeft class="w-4 h-4" />
+          Back
         </Button>
         <span class="font-mono text-sm text-muted-foreground truncate flex-1 min-w-0">
           {{ selectedId ? selectedId + '.log' : 'Select a log file' }}

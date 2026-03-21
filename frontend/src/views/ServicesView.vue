@@ -329,7 +329,7 @@ async function doPHPUninstall() {
                 <!-- Start / Stop -->
                 <Button
                   v-if="svc.status !== 'running'"
-                  variant="outline" size="icon" class="h-8 w-8"
+                  variant="outline" size="icon-sm"
                   :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
                   :title="`Start ${svc.label}`"
                   @click="start(svc.id, svc.label)"
@@ -339,7 +339,7 @@ async function doPHPUninstall() {
                 </Button>
                 <Button
                   v-if="svc.status === 'running' && !svc.required"
-                  variant="outline" size="icon" class="h-8 w-8"
+                  variant="outline" size="icon-sm"
                   :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
                   :title="`Stop ${svc.label}`"
                   @click="stop(svc.id, svc.label)"
@@ -351,7 +351,7 @@ async function doPHPUninstall() {
                 <ButtonGroupSeparator v-if="svc.status !== 'running' || !svc.required" />
                 <!-- Restart -->
                 <Button
-                  variant="outline" size="icon" class="h-8 w-8"
+                  variant="outline" size="icon-sm"
                   :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
                   :title="`Restart ${svc.label}`"
                   @click="restart(svc.id, svc.label)"
@@ -363,7 +363,7 @@ async function doPHPUninstall() {
                 <template v-if="svc.update_available">
                   <ButtonGroupSeparator />
                   <Button
-                    variant="outline" size="icon" class="h-8 w-8 text-amber-600 hover:text-amber-600"
+                    variant="outline" size="icon-sm" class="text-amber-600 hover:text-amber-600"
                     :disabled="!!pending[svc.id] || !!store.updating[svc.id]"
                     :title="`Update ${svc.label} to ${svc.latest_version}`"
                     @click="update(svc.id, svc.label)"
@@ -376,7 +376,7 @@ async function doPHPUninstall() {
                 <ButtonGroupSeparator />
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button variant="outline" size="icon" class="h-8 w-8">
+                    <Button variant="outline" size="icon-sm">
                       <MoreHorizontal class="w-3.5 h-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -413,7 +413,7 @@ async function doPHPUninstall() {
               <!-- Expand credentials toggle (outside the group, pushed right) -->
               <Button
                 v-if="hasExpandable(svc.id)"
-                variant="ghost" size="icon" class="h-8 w-8 ml-auto"
+                variant="ghost" size="icon-sm" class="ml-auto"
                 :title="expandedCredentials.has(svc.id) ? 'Hide connection info' : 'Show connection info'"
                 @click="toggleCredentials(svc.id)"
               >
@@ -439,7 +439,7 @@ async function doPHPUninstall() {
                     <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-1 truncate"
                       :class="value === '' ? 'text-muted-foreground italic' : ''"
                     >{{ value !== '' ? value : '(empty)' }}</code>
-                    <Button variant="ghost" size="icon" class="w-7 h-7 shrink-0" @click="copyToClipboard(value ?? '')">
+                     <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
                       <Copy class="w-3 h-3" />
                     </Button>
                   </div>
@@ -454,7 +454,7 @@ async function doPHPUninstall() {
                   <p class="text-xs text-muted-foreground">{{ key }}</p>
                   <div class="flex items-center gap-2">
                     <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-1 truncate">{{ value }}</code>
-                    <Button variant="ghost" size="icon" class="w-7 h-7 shrink-0" @click="copyToClipboard(value ?? '')">
+                     <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
                       <Copy class="w-3 h-3" />
                     </Button>
                   </div>
@@ -646,7 +646,7 @@ async function doPHPUninstall() {
                     >
                       <span class="text-xs text-muted-foreground w-40 shrink-0">{{ key }}</span>
                       <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-0.5 truncate" :class="value === '' ? 'text-muted-foreground italic' : ''">{{ value !== '' ? value : '(empty)' }}</code>
-                      <Button variant="ghost" size="icon" class="w-6 h-6 shrink-0" @click="copyToClipboard(value ?? '')">
+                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
                         <Copy class="w-3 h-3" />
                       </Button>
                     </div>
@@ -659,7 +659,7 @@ async function doPHPUninstall() {
                     >
                       <span class="text-xs text-muted-foreground w-40 shrink-0">{{ key }}</span>
                       <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-0.5 truncate">{{ value }}</code>
-                      <Button variant="ghost" size="icon" class="w-6 h-6 shrink-0" @click="copyToClipboard(value ?? '')">
+                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
                         <Copy class="w-3 h-3" />
                       </Button>
                     </div>

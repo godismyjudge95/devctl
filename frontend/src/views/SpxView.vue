@@ -113,8 +113,7 @@ function formatDate(ts: number): string {
         <span class="text-sm font-medium">SPX Profiles</span>
         <Button
           variant="ghost"
-          size="icon"
-          class="h-7 w-7"
+          size="icon-xs"
           title="Delete all profiles"
           :disabled="store.profiles.length === 0"
           @click="handleClearAll"
@@ -159,8 +158,8 @@ function formatDate(ts: number): string {
           </div>
           <Button
             variant="ghost"
-            size="icon"
-            class="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
+            size="icon-sm"
+            class="opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
             title="Delete profile"
             @click="handleDeleteProfile(p.key, $event)"
           >
@@ -291,7 +290,7 @@ function formatDate(ts: number): string {
                       <tr
                         v-for="{ data: fn, index } in virtualRows"
                         :key="fn.name + index"
-                        class="hover:bg-accent/30 border-b border-border/40"
+                        class="hover:bg-accent/50 border-b border-border/40"
                         :style="{ height: `${FLAT_ROW_HEIGHT}px` }"
                       >
                         <td class="px-4 text-xs text-muted-foreground">{{ index + 1 }}</td>
@@ -345,39 +344,39 @@ function formatDate(ts: number): string {
             <ScrollArea class="h-full">
               <Table>
                 <TableBody>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold w-40">Key</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono break-all">{{ store.selectedProfile.key }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">PHP Version</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.php_version }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Domain</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.domain }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Method</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.method }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">URI</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono break-all">{{ store.selectedProfile.uri }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Wall Time</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ formatMs(store.selectedProfile.wall_time_ms) }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Peak Memory</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ formatBytes(store.selectedProfile.peak_memory_bytes) }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Functions Called</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.called_func_count }}</TableCell>
                   </TableRow>
-                  <TableRow class="hover:bg-accent/30">
+                  <TableRow class="hover:bg-accent/50">
                     <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Timestamp</TableCell>
                     <TableCell class="py-1.5 text-xs font-mono">{{ new Date(store.selectedProfile.timestamp * 1000).toLocaleString() }}</TableCell>
                   </TableRow>

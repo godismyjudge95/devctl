@@ -8,6 +8,7 @@ import {
   Plus, ExternalLink, Trash2, Zap, Bot, Loader2,
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
 } from 'lucide-vue-next'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Badge } from '@/components/ui/badge'
@@ -308,7 +309,7 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
 
     <template v-else>
       <!-- ── Desktop table (md+) ── -->
-      <div class="hidden md:block rounded-md border">
+      <div class="hidden md:block rounded-lg border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -451,16 +452,16 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
 
       <!-- ── Mobile cards (< md) ── -->
       <div class="md:hidden grid grid-cols-1 gap-3">
-        <div v-if="filteredSites.length === 0" class="rounded-lg border border-dashed py-16 text-center text-muted-foreground text-sm">
+        <div v-if="filteredSites.length === 0" class="rounded-lg border border-dashed border-border py-16 text-center text-muted-foreground text-sm">
           {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site or drop a folder in your watch directory.' }}
         </div>
 
-        <div
+        <Card
           v-for="site in filteredSites"
           :key="site.id"
-          class="rounded-lg border p-3 space-y-2"
           :class="site.parent_site_id ? 'border-dashed' : ''"
         >
+          <CardContent class="p-4 space-y-2">
           <div v-if="site.parent_site_id" class="flex items-center gap-1 text-xs text-muted-foreground">
             <CornerDownRight class="w-3 h-3 shrink-0" />
             <span>worktree of {{ parentDomain(site.parent_site_id) }}</span>
@@ -540,7 +541,8 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
             </Badge>
             <span class="text-xs text-muted-foreground font-mono ml-auto">PHP {{ site.php_version }}</span>
           </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </template>
 

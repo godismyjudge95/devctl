@@ -209,7 +209,7 @@ function handleInstall(row: InstallRow) {
               >
                 <TableCell class="py-2 px-3">
                   <div
-                    class="w-7 h-7 shrink-0 rounded overflow-hidden flex items-center justify-center bg-white [&>svg]:w-full [&>svg]:h-full"
+                    class="w-7 h-7 shrink-0 rounded overflow-hidden flex items-center justify-center bg-background [&>svg]:w-full [&>svg]:h-full"
                     v-html="row.icon"
                   />
                 </TableCell>
@@ -223,7 +223,7 @@ function handleInstall(row: InstallRow) {
                 <TableCell class="py-2 text-right">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="default"
                     :disabled="isInstalling(row)"
                     @click="handleInstall(row)"
                   >

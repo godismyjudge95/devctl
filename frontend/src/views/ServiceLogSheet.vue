@@ -95,12 +95,12 @@ watch(() => props.open, (val) => {
       </SheetHeader>
       <div
         ref="logScroll"
-        class="flex-1 overflow-auto bg-neutral-950 text-green-400 font-mono text-xs p-4 leading-5"
+        class="flex-1 overflow-auto bg-muted text-foreground font-mono text-sm p-4 leading-5"
       >
-        <div v-if="logLines.length === 0" class="text-neutral-500">Waiting for log output…</div>
+        <div v-if="logLines.length === 0" class="text-muted-foreground">Waiting for log output…</div>
         <div v-for="(line, i) in logLines" :key="i"
           class="whitespace-pre-wrap break-all"
-          :class="line.startsWith('[error]') ? 'text-red-400' : ''"
+          :class="line.startsWith('[error]') ? 'text-destructive' : ''"
         >{{ line }}</div>
       </div>
     </SheetContent>

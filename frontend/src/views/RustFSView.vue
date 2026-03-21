@@ -76,7 +76,7 @@ const TreeNodeRow: ReturnType<typeof defineComponent> = defineComponent({
           ? h(node.expanded ? ChevronDown : ChevronRight, { class: 'w-3 h-3' })
           : h('span', { class: 'w-3 h-3' })
         ),
-        h(Folder, { class: 'w-3 h-3 shrink-0 text-yellow-500' }),
+        h(Folder, { class: 'w-3 h-3 shrink-0 text-primary' }),
         h('span', { class: 'truncate flex-1 ml-1' }, node.label),
       ])
 
@@ -539,7 +539,7 @@ onMounted(() => {
               <span class="text-sm flex-1 truncate">{{ bucket.name }}</span>
               <DropdownMenu>
                 <DropdownMenuTrigger as-child @click.stop>
-                  <Button variant="ghost" size="icon" class="h-6 w-6 opacity-0 group-hover:opacity-100 hover:opacity-100">
+                  <Button variant="ghost" size="icon-sm" class="opacity-0 group-hover:opacity-100 hover:opacity-100">
                     <MoreHorizontal class="w-3.5 h-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -657,8 +657,9 @@ onMounted(() => {
         <div class="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-border shrink-0">
 
           <!-- Mobile back -->
-          <Button variant="ghost" size="icon" class="h-7 w-7 md:hidden shrink-0" @click="goBackToList">
-            <ArrowLeft class="w-3.5 h-3.5" />
+          <Button variant="ghost" size="sm" class="gap-1.5 -ml-1 md:hidden shrink-0" @click="goBackToList">
+            <ArrowLeft class="w-4 h-4" />
+            Back
           </Button>
 
           <!-- Breadcrumb -->
@@ -686,7 +687,7 @@ onMounted(() => {
           <!-- Toolbar -->
           <div class="flex items-center gap-1 shrink-0">
             <!-- Desktop: up button -->
-            <Button v-if="store.currentPrefix" variant="ghost" size="icon" class="h-7 w-7 hidden md:inline-flex" title="Go up" @click="store.navigateUp()">
+            <Button v-if="store.currentPrefix" variant="ghost" size="icon-xs" class="hidden md:inline-flex" title="Go up" @click="store.navigateUp()">
               <ArrowLeft class="w-3.5 h-3.5" />
             </Button>
 
@@ -705,7 +706,7 @@ onMounted(() => {
             <!-- More (upload folder) -->
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
-                <Button variant="ghost" size="icon" class="h-7 w-7">
+                <Button variant="ghost" size="icon-xs">
                   <MoreHorizontal class="w-3.5 h-3.5" />
                 </Button>
               </DropdownMenuTrigger>
@@ -744,13 +745,15 @@ onMounted(() => {
               class="h-7 pl-8 pr-8 text-xs"
               @update:model-value="onSearchInput(String($event))"
             />
-            <button
+            <Button
               v-if="store.searchQuery"
-              class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              variant="ghost"
+              size="icon-sm"
+              class="absolute right-1 top-1/2 -translate-y-1/2"
               @click="clearSearch"
             >
               <X class="w-3.5 h-3.5" />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -833,7 +836,7 @@ onMounted(() => {
               <ContextMenu v-for="prefix in store.sortedPrefixes" :key="prefix">
                 <ContextMenuTrigger as-child>
                   <TableRow
-                    class="cursor-pointer hover:bg-accent/30 transition-colors"
+                    class="cursor-pointer hover:bg-accent/50 transition-colors"
                     :class="dropTargetPrefix === prefix ? 'bg-primary/10 ring-1 ring-inset ring-primary' : ''"
                     @click="store.navigateToPrefix(prefix)"
                     @dragover="onFolderDragOver($event, prefix)"
@@ -847,7 +850,7 @@ onMounted(() => {
                       />
                     </TableCell>
                     <TableCell class="pr-0">
-                      <Folder class="w-4 h-4 text-yellow-500" />
+                      <Folder class="w-4 h-4 text-primary" />
                     </TableCell>
                     <TableCell class="text-primary font-medium text-sm">
                       {{ folderName(prefix) }}
@@ -884,7 +887,7 @@ onMounted(() => {
               <ContextMenu v-for="obj in store.sortedObjects" :key="obj.key">
                 <ContextMenuTrigger as-child>
                   <TableRow
-                    class="hover:bg-accent/30 transition-colors"
+                    class="hover:bg-accent/50 transition-colors"
                     :class="draggingRowKey === obj.key ? 'opacity-50' : ''"
                     draggable="true"
                     @dragstart="onRowDragStart($event, obj.key)"
@@ -912,7 +915,7 @@ onMounted(() => {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger as-child>
-                          <Button variant="ghost" size="icon" class="h-6 w-6">
+                          <Button variant="ghost" size="icon-sm">
                             <MoreHorizontal class="w-3.5 h-3.5" />
                           </Button>
                         </DropdownMenuTrigger>

@@ -101,7 +101,7 @@ async function save() {
 </script>
 
 <template>
-  <Button variant="ghost" size="sm" class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" @click="openDialog" title="Site settings">
+  <Button variant="ghost" size="icon-xs" class="text-muted-foreground hover:text-foreground" @click="openDialog" title="Site settings">
     <Settings class="w-3.5 h-3.5" />
   </Button>
 
