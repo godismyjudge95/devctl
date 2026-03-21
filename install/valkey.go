@@ -108,7 +108,7 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	// 7. Write config.env with static connection info.
 	envPath := filepath.Join(valkeyDir, "config.env")
-	envContent := "REDIS_HOST=127.0.0.1\nREDIS_PORT=6379\n"
+	envContent := "REDIS_HOST=127.0.0.1\nREDIS_PORT=6379\nREDIS_PASSWORD=\n"
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("valkey: write config.env: %w", err)
 	}

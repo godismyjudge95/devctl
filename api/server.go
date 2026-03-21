@@ -170,6 +170,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/mail/", s.handleMailProxy)
 	s.mux.HandleFunc("GET /ws/mail", s.handleMailWS)
 
+	// RustFS — presign must be registered before the catch-all proxies.
+	s.mux.HandleFunc("GET /api/rustfs/presign", s.handleRustFSPresign)
+	s.mux.HandleFunc("/api/rustfs/s3/", s.handleRustFSS3Proxy)
+	s.mux.HandleFunc("/api/rustfs/admin/", s.handleRustFSAdminProxy)
+
 	// Serve embedded Vue SPA — must be last.
 	// Speedscope static assets are served explicitly to prevent the SPA
 	// catch-all from intercepting /speedscope/* requests.

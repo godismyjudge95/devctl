@@ -155,6 +155,12 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 	}
 	m["whodb"] = whodb
 	m["dns"] = &DNSInstaller{}
+	m["rustfs"] = &RustFSInstaller{
+		siteManager: siteManager,
+		supervisor:  supervisor,
+		serverRoot:  serverRoot,
+		siteUser:    siteUser,
+	}
 
 	// Register a hook: when postgres, mysql, or redis is installed/purged,
 	// regenerate WhoDB's config.env so pre-configured connections stay in sync.

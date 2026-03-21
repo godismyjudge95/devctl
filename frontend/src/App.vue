@@ -9,7 +9,7 @@ import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -114,6 +114,13 @@ watch(() => servicesStore.whodbInstalled, (installed) => {
   }
 })
 
+// Redirect away from /rustfs if RustFS becomes uninstalled.
+watch(() => servicesStore.rustfsInstalled, (installed) => {
+  if (!installed && route.path.startsWith('/rustfs')) {
+    router.replace('/services')
+  }
+})
+
 // Clear new SPX badge when Profiler route is active.
 watch(() => route.path, (path) => {
   if (path.startsWith('/spx')) spxStore.clearNewProfileCount()
@@ -128,6 +135,7 @@ const allNavItems = [
   { path: '/mail',      label: 'Mail',      icon: Mail,        requiresMailpit: true },
   { path: '/spx',       label: 'Profiler',  icon: Activity,    requiresSPX: true },
   { path: '/whodb',     label: 'WhoDB',     icon: Database,    requiresWhoDB: true },
+  { path: '/rustfs',    label: 'Storage',   icon: HardDrive,   requiresRustFS: true },
   { path: '/logs',      label: 'Logs',      icon: ScrollText },
   { path: '/settings',  label: 'Settings',  icon: Settings },
 ]
@@ -136,7 +144,8 @@ const navItems = computed(() =>
   allNavItems.filter(item =>
     (!item.requiresMailpit || servicesStore.mailpitInstalled) &&
     (!item.requiresSPX || spxAvailable.value) &&
-    (!item.requiresWhoDB || servicesStore.whodbInstalled)
+    (!item.requiresWhoDB || servicesStore.whodbInstalled) &&
+    (!(item as { requiresRustFS?: boolean }).requiresRustFS || servicesStore.rustfsInstalled)
   )
 )
 </script>

@@ -6,7 +6,7 @@
 
 A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.
 
-devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb) — all from a single dashboard without touching config files.
+devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, RustFS) — all from a single dashboard without touching config files.
 
 ![Services page showing Caddy running and available services](docs/screenshot-services.png)
 
@@ -14,7 +14,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 
 ## Features
 
-- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB) and PHP-FPM versions — all from one tab
+- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, RustFS) and PHP-FPM versions — all from one tab
 - **DNS** — built-in DNS server intercepts configurable TLDs (default `.test`) and returns a configurable target IP; all other queries are forwarded upstream. One-click integration with `systemd-resolved` to route `.test` queries system-wide without any router config
 - **Sites** — auto-discovers PHP projects in your sites directory and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA
 - **Git Worktrees** — create and remove git worktrees for any site directly from the UI; each worktree gets its own `*.test` domain, Caddy vhost, and inherits the parent's PHP version
@@ -170,6 +170,7 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
 | Mailpit | Supervised | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) |
 | Laravel Reverb | Supervised | `127.0.0.1:7383` (also `reverb.test`) |
 | WhoDB | Supervised | `127.0.0.1:8161` (also `whodb.test`) |
+| RustFS | Supervised | `127.0.0.1:9000` (S3 API), `127.0.0.1:9001` (console, also `rustfs.test`) |
 | PHP-FPM (per version) | Supervised | Unix socket `/run/php/phpX.Y-fpm.sock` |
 
 Supervised services run as direct child processes of devctl. Valkey's service ID is `redis` for Laravel `.env` compatibility.
@@ -314,6 +315,8 @@ No browser extension or Xdebug configuration required.
 | `127.0.0.1:1025` | Mailpit (SMTP) | Yes |
 | `127.0.0.1:7383` | Laravel Reverb | No |
 | `127.0.0.1:8161` | WhoDB | No |
+| `127.0.0.1:9000` | RustFS (S3 API) | No |
+| `127.0.0.1:9001` | RustFS (console) | No |
 
 ---
 

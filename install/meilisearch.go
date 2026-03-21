@@ -84,9 +84,9 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		return fmt.Errorf("meilisearch: generate master key: %w", err)
 	}
 
-	// 5. Write config.env with Laravel/app connection info.
+	// 5. Write config.env with Laravel Scout connection info.
 	fmt.Fprintln(w, "meilisearch: writing config.env...")
-	envContent := fmt.Sprintf("MEILI_MASTER_KEY=%s\nMEILI_HOST=https://meilisearch.test\n", key)
+	envContent := fmt.Sprintf("MEILISEARCH_KEY=%s\nMEILISEARCH_HOST=https://meilisearch.test\n", key)
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("meilisearch: write config.env: %w", err)
 	}
@@ -175,7 +175,7 @@ func (m *MeilisearchInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	binPath := filepath.Join(meiliDir, "meilisearch")
 
 	// Read the master key from config.env so we can authenticate API calls.
-	masterKey := readEnvKey(filepath.Join(meiliDir, "config.env"), "MEILI_MASTER_KEY")
+	masterKey := readEnvKey(filepath.Join(meiliDir, "config.env"), "MEILISEARCH_KEY")
 
 	// ---------- Step 1: create a dump ----------
 	fmt.Fprintln(w, "meilisearch: creating dump...")
@@ -357,7 +357,7 @@ func meilisearchWaitReady(ctx context.Context, w io.Writer, masterKey string, ti
 func EnsureMeilisearchConf(serverRoot string) error {
 	meiliDir := paths.ServiceDir(serverRoot, "meilisearch")
 	// Read master key from config.env (written at install time).
-	key := readEnvKey(filepath.Join(meiliDir, "config.env"), "MEILI_MASTER_KEY")
+	key := readEnvKey(filepath.Join(meiliDir, "config.env"), "MEILISEARCH_KEY")
 	return writeMeilisearchConf(meiliDir, key)
 }
 

@@ -41,6 +41,10 @@ export const useServicesStore = defineStore('services', () => {
     states.value.some(s => s.id === 'mailpit' && s.installed)
   )
 
+  const rustfsInstalled = computed(() =>
+    states.value.some(s => s.id === 'rustfs' && s.installed)
+  )
+
   function connectSSE() {
     if (eventSource) {
       eventSource.close()
@@ -175,6 +179,7 @@ export const useServicesStore = defineStore('services', () => {
     stoppedCount,
     whodbInstalled,
     mailpitInstalled,
+    rustfsInstalled,
     connectSSE,
     start,
     stop,

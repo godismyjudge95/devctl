@@ -85,9 +85,9 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("typesense: generate api key: %w", err)
 	}
 
-	// 6. Write config.env with Laravel/app connection info.
+	// 6. Write config.env with Laravel Scout connection info.
 	fmt.Fprintln(w, "typesense: writing config.env...")
-	envContent := fmt.Sprintf("TYPESENSE_API_KEY=%s\nTYPESENSE_HOST=https://typesense.test\n", key)
+	envContent := fmt.Sprintf("TYPESENSE_API_KEY=%s\nTYPESENSE_HOST=typesense.test\nTYPESENSE_PORT=443\nTYPESENSE_PROTOCOL=https\n", key)
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("typesense: write config.env: %w", err)
 	}

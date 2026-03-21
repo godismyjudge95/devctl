@@ -25,6 +25,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 	postgresDir := paths.ServiceDir(serverRoot, "postgres")
 	reverbDir := paths.ServiceDir(serverRoot, "reverb")
 	whodbDir := paths.ServiceDir(serverRoot, "whodb")
+	rustfsDir := paths.ServiceDir(serverRoot, "rustfs")
 	return []services.Definition{
 		{
 			ID:             "caddy",
@@ -141,7 +142,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ManagedEnvFile:  mailpitDir + "/config.env",
 			Version:         mailpitDir + "/mailpit version",
 			VersionRegex:    `v(?P<version>[\d.]+)`,
-			CredentialsFile: mailpitDir + "/config.env",
+			CredentialsFile: mailpitDir + "/connection.env",
 			Log:             paths.LogPath(serverRoot, "mailpit"),
 		},
 		{
@@ -191,6 +192,24 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ManagedEnvFile: whodbDir + "/config.env",
 			Log:            paths.LogPath(serverRoot, "whodb"),
 			HealthCheck:    "curl -sf http://localhost:8161/",
+		},
+		{
+			ID:              "rustfs",
+			Label:           "RustFS",
+			Description:     "High-performance S3-compatible object storage",
+			InstallVersion:  "latest",
+			Installable:     true,
+			Managed:         true,
+			ManagedCmd:      rustfsDir + "/rustfs",
+			ManagedArgs:     rustfsDir + "/data",
+			ManagedDir:      rustfsDir,
+			ManagedEnvFile:  rustfsDir + "/config.env",
+			Version:         rustfsDir + "/rustfs --version",
+			VersionRegex:    `rustfs (?P<version>[\S]+)`,
+			Log:             paths.LogPath(serverRoot, "rustfs"),
+			HealthCheck:     "curl -s --connect-timeout 2 -o /dev/null http://localhost:9000/minio/health/live",
+			HasCredentials:  true,
+			CredentialsFile: rustfsDir + "/connection.env",
 		},
 	}
 }

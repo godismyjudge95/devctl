@@ -73,15 +73,21 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "mailpit: warning: %v\n", err)
 	}
 
-	// 5. Write config.env with MP_* env vars and Laravel connection info.
+	// 5. Write config.env with MP_* env vars (internal service config).
 	fmt.Fprintln(w, "mailpit: writing config.env...")
-	envContent := "MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\n" +
-		"MP_SMTP_BIND_ADDR=127.0.0.1:1025\n" +
+	envContent := "MP_SMTP_BIND_ADDR=127.0.0.1:1025\n" +
 		"MP_UI_BIND_ADDR=127.0.0.1:8025\n" +
 		"MP_DATABASE=./data/mailpit.db\n" +
 		"MP_MAX_MESSAGES=500\n"
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		return fmt.Errorf("mailpit: write config.env: %w", err)
+	}
+
+	// 5b. Write connection.env with Laravel .env keys only (shown in the credentials panel).
+	connPath := filepath.Join(mailpitDir, "connection.env")
+	connContent := "MAIL_MAILER=smtp\nMAIL_HOST=127.0.0.1\nMAIL_PORT=1025\nMAIL_ENCRYPTION=null\n"
+	if err := os.WriteFile(connPath, []byte(connContent), 0600); err != nil {
+		return fmt.Errorf("mailpit: write connection.env: %w", err)
 	}
 
 	// 6. Transfer ownership to the site user.

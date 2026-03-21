@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### RustFS service
+
+- Added **RustFS** as an installable managed service. Install it from the Services tab; devctl downloads the latest binary from `dl.rustfs.com`, extracts it from the zip archive, writes a `config.env` with default credentials (`devctl`/`devctlsecret`), and registers a `rustfs.test` Caddy reverse-proxy vhost.
+- RustFS runs as a supervised child process on `127.0.0.1:9000` (S3-compatible API) and `127.0.0.1:9001` (web console). The `rustfs.test` vhost proxies to the console UI.
+- Data is stored at `{serverRoot}/rustfs/data`. Default credentials are `RUSTFS_ACCESS_KEY=devctl` / `RUSTFS_SECRET_KEY=devctlsecret` — edit `config.env` to customise.
+- RustFS is never installed as a systemd service or via apt; it runs as a supervised child process of devctl.
+
 ### WhoDB integration
 
 - Added **WhoDB** (v0.100.0) as an installable managed service. Install it from the Services tab; devctl downloads the binary, writes a `config.env`, and registers a `whodb.test` Caddy reverse-proxy vhost.
