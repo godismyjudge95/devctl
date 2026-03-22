@@ -90,9 +90,15 @@ func (r *RustFSInstaller) InstallW(ctx context.Context, w io.Writer) error {
 			"RUSTFS_VOLUMES=%s\n"+
 			"RUSTFS_ADDRESS=:9000\n"+
 			"RUSTFS_CONSOLE_ADDRESS=:9001\n"+
-			"RUSTFS_CONSOLE_ENABLE=true\n"+
+			"RUSTFS_CONSOLE_ENABLE=false\n"+
 			"RUST_LOG=error\n"+
+			// RustFS internal observability log settings.
+			// Rotate daily, keep 7 days, compress old files with zstd.
 			"RUSTFS_OBS_LOG_DIRECTORY=%s\n"+
+			"RUSTFS_OBS_LOG_ROTATION_TIME=daily\n"+
+			"RUSTFS_OBS_LOG_KEEP_FILES=7\n"+
+			"RUSTFS_OBS_LOG_COMPRESS_OLD_FILES=true\n"+
+			"RUSTFS_OBS_LOG_COMPRESSION_ALGORITHM=zstd\n"+
 			"RUSTFS_HOST=https://rustfs.test\n"+
 			"RUSTFS_S3_HOST=https://s3.rustfs.test\n",
 		dataDir,

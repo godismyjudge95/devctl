@@ -684,55 +684,10 @@ onMounted(() => {
             </BreadcrumbList>
           </Breadcrumb>
 
-          <!-- Toolbar -->
-          <div class="flex items-center gap-1 shrink-0">
-            <!-- Desktop: up button -->
-            <Button v-if="store.currentPrefix" variant="ghost" size="icon-xs" class="hidden md:inline-flex" title="Go up" @click="store.navigateUp()">
-              <ArrowLeft class="w-3.5 h-3.5" />
-            </Button>
-
-            <!-- New Folder -->
-            <Button variant="ghost" size="sm" class="h-7 text-xs gap-1.5" title="New folder" @click="showCreateFolder = true">
-              <FolderPlus class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">New Folder</span>
-            </Button>
-
-            <!-- Upload -->
-            <Button variant="ghost" size="sm" class="h-7 text-xs gap-1.5" title="Upload files" @click="triggerUpload">
-              <Upload class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Upload</span>
-            </Button>
-
-            <!-- More (upload folder) -->
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button variant="ghost" size="icon-xs">
-                  <MoreHorizontal class="w-3.5 h-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem @click="triggerUpload">
-                  <Upload class="w-3.5 h-3.5 mr-2" />Upload files
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="triggerFolderUpload">
-                  <Folder class="w-3.5 h-3.5 mr-2" />Upload folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <!-- Delete selected -->
-            <Button
-              v-if="store.hasSelection"
-              variant="destructive"
-              size="sm"
-              class="h-7 text-xs gap-1.5"
-              @click="showDeleteSelected = true"
-            >
-              <Trash2 class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Delete ({{ store.selectedKeys.length }})</span>
-              <span class="sm:hidden">{{ store.selectedKeys.length }}</span>
-            </Button>
-          </div>
+          <!-- Desktop: navigate up button (nav-only, stays in header) -->
+          <Button v-if="store.currentPrefix" variant="ghost" size="icon-xs" class="hidden md:inline-flex shrink-0" title="Go up" @click="store.navigateUp()">
+            <ArrowLeft class="w-3.5 h-3.5" />
+          </Button>
         </div>
 
         <!-- ── Search bar ─────────────────────────────────────────────────── -->
@@ -767,7 +722,7 @@ onMounted(() => {
         </div>
 
         <!-- ── Object table ───────────────────────────────────────────────── -->
-        <ScrollArea class="flex-1">
+        <ScrollArea class="flex-1 pb-16">
 
           <!-- Loading skeletons -->
           <div v-if="store.loadingObjects" class="p-4 space-y-2">
@@ -1009,6 +964,76 @@ onMounted(() => {
             <span>{{ formatSize(store.totalSize) }} total</span>
           </div>
         </ScrollArea>
+
+        <!-- ── Floating Action Bar ───────────────────────────────────────── -->
+        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-2 py-1.5 rounded-full shadow-lg border border-border bg-background/95 backdrop-blur-sm">
+
+          <!-- New Folder -->
+          <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="New folder" @click="showCreateFolder = true">
+            <FolderPlus class="w-3.5 h-3.5" />
+            <span class="hidden sm:inline">New Folder</span>
+          </Button>
+
+          <!-- Upload files -->
+          <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="Upload files" @click="triggerUpload">
+            <Upload class="w-3.5 h-3.5" />
+            <span class="hidden sm:inline">Upload</span>
+          </Button>
+
+          <!-- Upload folder -->
+          <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="Upload folder" @click="triggerFolderUpload">
+            <Folder class="w-3.5 h-3.5" />
+            <span class="hidden sm:inline">Upload Folder</span>
+          </Button>
+
+          <!-- Separator — only visible when items are selected -->
+          <div v-if="store.hasSelection" class="w-px h-5 bg-border mx-1 shrink-0" />
+
+          <!-- Download selected (selection-aware) -->
+          <Transition
+            enter-active-class="transition-all duration-150 ease-out"
+            enter-from-class="opacity-0 scale-75"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition-all duration-100 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-75"
+          >
+            <Button
+              v-if="store.hasSelection"
+              variant="ghost"
+              size="sm"
+              class="h-8 text-xs gap-1.5 rounded-full px-3"
+              title="Download selected"
+              @click="store.downloadObjectsAsZip(store.selectedKeys.filter(k => !k.startsWith('__prefix__')), store.selectedBucket!)"
+            >
+              <Download class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Download ({{ store.selectedKeys.filter(k => !k.startsWith('__prefix__')).length }})</span>
+            </Button>
+          </Transition>
+
+          <!-- Delete selected (selection-aware) -->
+          <Transition
+            enter-active-class="transition-all duration-150 ease-out"
+            enter-from-class="opacity-0 scale-75"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition-all duration-100 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-75"
+          >
+            <Button
+              v-if="store.hasSelection"
+              variant="destructive"
+              size="sm"
+              class="h-8 text-xs gap-1.5 rounded-full px-3"
+              @click="showDeleteSelected = true"
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Delete ({{ store.selectedKeys.length }})</span>
+              <span class="sm:hidden">{{ store.selectedKeys.length }}</span>
+            </Button>
+          </Transition>
+
+        </div>
       </template>
     </div>
 

@@ -207,7 +207,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Version:         rustfsDir + "/rustfs --version",
 			VersionRegex:    `rustfs (?P<version>[\S]+)`,
 			Log:             paths.LogPath(serverRoot, "rustfs"),
-			HealthCheck:     "curl -s --connect-timeout 2 -o /dev/null http://localhost:9000/minio/health/live",
+			HealthCheck:     "curl -s --connect-timeout 2 -o /dev/null http://localhost:9000/health",
 			HasCredentials:  true,
 			CredentialsFile: rustfsDir + "/connection.env",
 		},
