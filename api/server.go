@@ -14,8 +14,10 @@ import (
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/mcpserver"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
+	mcpgoserver "github.com/mark3labs/mcp-go/server"
 )
 
 // Server is the HTTP server that serves the API and embedded frontend.
@@ -36,6 +38,7 @@ type Server struct {
 	devctlAddr  string // listen address passed to EnsureHTTPServer (e.g. "127.0.0.1:4000")
 	mux         *http.ServeMux
 	uiFS        embed.FS
+	mcpHandler  *mcpgoserver.StreamableHTTPServer
 
 	// latestVersions caches the most recently fetched latest version string for
 	// each installer, keyed by service ID. Protected by latestVersionsMu.
@@ -77,6 +80,7 @@ func NewServer(
 		devctlAddr:     devctlAddr,
 		mux:            http.NewServeMux(),
 		uiFS:           uiFS,
+		mcpHandler:     mcpserver.New(devctlAddr),
 		latestVersions: make(map[string]string),
 	}
 	s.registerRoutes()
@@ -104,6 +108,7 @@ func (s *Server) registerRoutes() {
 
 	// Logs
 	s.mux.HandleFunc("GET /api/logs", s.handleGetLogs)
+	s.mux.HandleFunc("GET /api/logs/{id}/tail", s.handleGetLogTail)
 	s.mux.HandleFunc("GET /api/logs/{id}", s.handleGetLogStream)
 	s.mux.HandleFunc("DELETE /api/logs/{id}", s.handleClearLog)
 
@@ -175,6 +180,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/rustfs/s3/", s.handleRustFSS3Proxy)
 	s.mux.HandleFunc("/api/rustfs/admin/", s.handleRustFSAdminProxy)
 
+	// MCP (Model Context Protocol) — StreamableHTTP transport at /mcp
+	s.mux.Handle("/mcp", s.mcpHandler)
+	s.mux.Handle("/mcp/", s.mcpHandler)
+
 	// Serve embedded Vue SPA — must be last.
 	// Speedscope static assets are served explicitly to prevent the SPA
 	// catch-all from intercepting /speedscope/* requests.
@@ -200,6 +209,9 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 		defer cancel()
 		if err := srv.Shutdown(shutCtx); err != nil {
 			log.Printf("devctl: shutdown: %v", err)
+		}
+		if err := s.mcpHandler.Shutdown(shutCtx); err != nil {
+			log.Printf("devctl: mcp shutdown: %v", err)
 		}
 	}()
 

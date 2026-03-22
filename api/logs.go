@@ -129,6 +129,72 @@ func (s *Server) handleGetLogStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleGetLogTail returns the last N bytes of a log file as plain text.
+// The {id} path value is the log file stem (e.g. "caddy" for caddy.log).
+// Query param: bytes=N (default 16384, max 131072).
+func (s *Server) handleGetLogTail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+
+	const defaultBytes = 16384
+	const maxBytes = 131072
+
+	tailBytes := int64(defaultBytes)
+	if v := r.URL.Query().Get("bytes"); v != "" {
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			if n > maxBytes {
+				n = maxBytes
+			}
+			tailBytes = n
+		}
+	}
+
+	logPath := paths.LogPath(s.serverRoot, id)
+	f, err := os.Open(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "log file not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	offset := info.Size() - tailBytes
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If we seeked into the middle of a line, skip to the next newline.
+	if offset > 0 {
+		buf := make([]byte, 1)
+		for {
+			_, readErr := f.Read(buf)
+			if readErr != nil || buf[0] == '\n' {
+				break
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	io.Copy(w, f) //nolint:errcheck
+}
+
 // handleClearLog truncates a log file in the central logs directory.
 func (s *Server) handleClearLog(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

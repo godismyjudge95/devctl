@@ -332,6 +332,97 @@ No browser extension or Xdebug configuration required.
 
 ---
 
+## MCP Server
+
+devctl includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server, allowing AI assistants (Claude, OpenCode, Cursor, etc.) to interact with your local dev environment directly — checking service health, reading logs, switching PHP versions, managing DNS, and more.
+
+The MCP server is embedded in the devctl binary and served at:
+
+```
+http://127.0.0.1:4000/mcp
+```
+
+It uses the **StreamableHTTP** transport, which is supported by all modern MCP clients.
+
+### Connecting an AI assistant
+
+**OpenCode** (`~/.config/opencode/opencode.json`):
+
+```json
+{
+  "mcp": {
+    "devctl": {
+      "type": "remote",
+      "url": "http://127.0.0.1:4000/mcp"
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "devctl": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:4000/mcp"]
+    }
+  }
+}
+```
+
+**Cursor / other clients** — add `http://127.0.0.1:4000/mcp` as an MCP server URL in your client's settings.
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `listSites` | List all sites with domain, PHP version, framework, HTTPS and SPX state |
+| `getSiteDetail` | Full details for a single site by domain |
+| `switchPHPVersion` | Switch the PHP version for a site |
+| `toggleSPXProfiler` | Enable or disable the SPX profiler for a site |
+| `listServices` | List all managed services and their current status |
+| `startService` | Start a stopped service |
+| `stopService` | Stop a running service (required services are protected) |
+| `restartService` | Restart a service |
+| `getServiceCredentials` | Get connection credentials for a service (host, port, user, password) |
+| `listPHPVersions` | List installed PHP versions, FPM socket paths, and status |
+| `getPHPSettings` | Read current PHP ini settings (memory_limit, upload limits, etc.) |
+| `setPHPSettings` | Update PHP ini settings across all installed versions |
+| `getSettings` | Read devctl settings (ports, DNS config, TLD) |
+| `setSettings` | Update devctl settings |
+| `getSPXProfiles` | List recent SPX profiler captures, optionally filtered by domain |
+| `getSPXProfileDetail` | Get top CPU hotspot functions for a specific profile |
+| `getDumps` | List recent `php_dd()` variable dumps |
+| `clearDumps` | Delete all captured dumps |
+| `listLogs` | List available log files |
+| `getLogTail` | Read the tail of a log file |
+| `clearLog` | Truncate a log file |
+| `checkDNSSetup` | Check whether `systemd-resolved` is configured for `*.test` routing |
+| `configureDNS` | Write the `systemd-resolved` drop-in for `*.test` routing |
+| `teardownDNS` | Remove the `systemd-resolved` drop-in |
+| `trustCA` | Trust Caddy's internal CA in the system and browser certificate stores |
+
+### Available prompts
+
+| Prompt | Description |
+|---|---|
+| `DiagnoseSiteIssue` | Walk the AI through diagnosing a broken or misbehaving site |
+| `EnableProfiling` | Guide the AI through enabling SPX and capturing a profile |
+| `ServiceHealthCheck` | Check all services, identify unhealthy ones, and offer to fix them |
+
+### Available resources
+
+| Resource | Description |
+|---|---|
+| `devctl://services` | Live snapshot of all service statuses |
+| `devctl://sites` | All configured sites |
+| `devctl://php-versions` | Installed PHP versions |
+| `devctl://settings` | Current devctl settings |
+
+---
+
 ## Build commands
 
 ```sh
