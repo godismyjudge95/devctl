@@ -6,27 +6,49 @@
 
 A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.
 
-devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, RustFS) — all from a single dashboard without touching config files.
+devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, RustFS) — all from a single dashboard without touching config files.
 
 ![Services page showing Caddy running and available services](docs/screenshot-services.png)
 
 ---
 
-## Features
+## Table of Contents
 
-- **Services** — start, stop, restart, and one-click install dev services (Valkey, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, RustFS) and PHP-FPM versions — all from one tab
-- **DNS** — built-in DNS server intercepts configurable TLDs (default `.test`) and returns a configurable target IP; all other queries are forwarded upstream. One-click integration with `systemd-resolved` to route `.test` queries system-wide without any router config
-- **Sites** — auto-discovers PHP projects in your sites directory and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA
-- **Git Worktrees** — create and remove git worktrees for any site directly from the UI; each worktree gets its own `*.test` domain, Caddy vhost, and inherits the parent's PHP version
-- **PHP CLI** — a global `/usr/local/bin/php` symlink always points at the highest installed PHP version; per-version symlinks (`php8.3`, `php8.4`, …) are also created
-- **Global php.ini** — set `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time` across all installed PHP versions at once
-- **Dumps** — receive and display `php_dd()` / `dd()` variable dumps from any site over TCP (no browser extension needed)
-- **Browser notifications** — native desktop notifications when new dumps or mail arrive while you are on another tab; uses the Service Worker Notification API with a direct-API fallback
-- **TLS** — download or auto-trust Caddy's root CA certificate so `*.test` sites work without browser warnings
-- **SPX Profiler** — per-site PHP profiling via [SPX](https://github.com/NoiseByNorthwest/php-spx); enable per site, then trigger profiles via cookies or query params. View results in the **Profiler** tab with a flat profile table, flamegraph, timeline, and metadata panel
-- **Logs** — central log viewer for all managed services. All service logs are written to `~/sites/server/logs/` as `<service>.log` files. Logs rotate automatically at 10 MB (3 backups kept). The **Logs** tab in the dashboard streams live log output via SSE and lets you clear any log file with one click
-- **Config editor** — full-screen CodeMirror 6 editor for service config files. Click the file icon next to any config-enabled service (Valkey, MySQL, Meilisearch, Typesense, Mailpit, PHP-FPM) to open its config file in a syntax-highlighted editor with line numbers and Ctrl+F search. PHP has two tabs (`php.ini` / `php-fpm.conf`). Ctrl+S or the **Save & Restart** button writes the file and restarts the service automatically
-- **WhoDB** — optional [WhoDB](https://github.com/clidey/whodb) database explorer embedded in the sidebar. Install it from the Services tab; devctl automatically configures pre-populated connection profiles for any installed database (MySQL, PostgreSQL, Valkey/Redis). Manage additional connections and toggle the credential form from the WhoDB section in Settings.
+- [Overview](#overview)
+- [Requirements](#requirements)
+- [Installation](#installation)
+  - [From a release binary](#from-a-release-binary)
+  - [From source](#from-source)
+- [Uninstall](#uninstall)
+- [Services](#services)
+- [PHP](#php)
+- [DNS](#dns)
+- [Sites](#sites)
+- [Git Worktrees](#git-worktrees)
+- [PHP Dumps (php\_dd)](#php-dumps-php_dd)
+- [SPX Profiler](#spx-profiler)
+- [Mail](#mail)
+- [Config Editor](#config-editor)
+- [Browser Notifications](#browser-notifications)
+- [MCP Server](#mcp-server)
+- [Ports](#ports)
+- [Data Paths](#data-paths)
+- [Contributing & Development](#contributing--development)
+- [License](#license)
+
+---
+
+## Overview
+
+devctl is a self-contained development environment manager for PHP projects on Linux. Everything runs from a single statically-linked binary that you install once and forget about:
+
+- **No Docker**, no VMs, no `sudo` on every command.
+- **One dashboard** at `http://127.0.0.1:4000` to start/stop/install services, manage PHP versions, view logs, and inspect variable dumps.
+- **Automatic HTTPS** for all `*.test` sites via Caddy's internal CA — no browser warnings once you trust the certificate once.
+- **Zero config files to edit** — devctl writes sensible defaults on first install. Every config file is user-editable and never overwritten on restart.
+- **AI-native** — a built-in MCP server lets Claude, Cursor, OpenCode, and other AI assistants interact with your dev environment directly.
+
+All service binaries are downloaded directly from their upstream releases and stored under your sites directory (default `~/sites/server/`). Nothing is installed system-wide except the devctl binary and systemd unit.
 
 ---
 
@@ -35,13 +57,13 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - **OS**: Ubuntu 22.04+ or Debian 12+ (amd64)
 - **Root access**: devctl runs as a systemd system service (root)
 - A non-root user whose `~/sites` directory devctl will manage
-- DNS: the `.test` TLD must resolve to your machine. The easiest approach is to use devctl's built-in DNS server with its `systemd-resolved` integration (see [DNS](#dns) below). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
+- **DNS**: the `.test` TLD must resolve to your machine. The easiest approach is to use devctl's built-in DNS server with its `systemd-resolved` integration (see [DNS](#dns)). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
 
 ---
 
 ## Installation
 
-### From a release binary (recommended)
+### From a release binary
 
 Download the latest binary from the [Releases](https://github.com/godismyjudge95/devctl/releases) page, then run the interactive installer:
 
@@ -50,11 +72,26 @@ chmod +x devctl
 sudo ./devctl install
 ```
 
-The installer will prompt for your username and sites directory, write a systemd unit file, enable the service, and confirm it is running. Use `--yes` with `--user` and `--sites-dir` for non-interactive installs:
+The installer prompts you to confirm:
+
+1. Which user's sites directory devctl should manage (auto-detected from `SUDO_USER`)
+2. Where your sites are stored (default: `~/sites`)
+3. Where to install the devctl binary (default: `~/sites/server/devctl/devctl`)
+
+It then writes the systemd unit file, enables the service, and confirms it is running.
+
+For non-interactive (scripted) installs, pass all flags explicitly:
 
 ```sh
 sudo ./devctl install --user alice --sites-dir /home/alice/sites --yes
 ```
+
+| Flag | Description |
+|---|---|
+| `--user` | Non-root user whose sites dir devctl will manage. Auto-detected from `SUDO_USER` if omitted. |
+| `--sites-dir` | Directory where sites are stored. Default: `~/sites`. |
+| `--path` | Directory to install the devctl binary into. Default: `{sites-dir}/server/devctl`. |
+| `--yes` | Skip all confirmation prompts. Requires `--user` in non-interactive mode. |
 
 The dashboard will be available at **http://127.0.0.1:4000** once the service starts.
 
@@ -70,7 +107,7 @@ sudo make install
 sudo systemctl enable --now devctl
 ```
 
-`make install` copies the binary to `/usr/local/bin/devctl` and writes `devctl.service` to `/etc/systemd/system/` (only on first install — it will not overwrite an existing service file). Edit the service file to set `HOME` and `DEVCTL_SITE_USER` to your actual username before enabling.
+`make install` copies the binary to `~/sites/server/devctl/devctl` and writes `devctl.service` to `/etc/systemd/system/`. Edit the service file to set `HOME`, `DEVCTL_SITE_USER`, and `DEVCTL_SERVER_ROOT` to your actual values before enabling.
 
 ---
 
@@ -80,15 +117,15 @@ sudo systemctl enable --now devctl
 sudo devctl uninstall
 ```
 
-Stops and disables the service, removes the unit file, and optionally removes the binary and `/etc/devctl/` data directory. Your sites directory is never touched.
+Stops and disables the service, removes the systemd unit file, and optionally removes the binary and devctl data directory (`{serverRoot}/devctl/`). Your sites directory is never touched.
 
-To also remove all installed services (Caddy, Valkey, Mailpit, PHP versions, etc.) in one step, use `--purge-services`:
+To also remove all installed service binaries in one step, use `--purge-services`:
 
 ```sh
 sudo devctl uninstall --purge-services
 ```
 
-Or combine with `--yes` to skip all confirmation prompts entirely:
+Or combine with `--yes` to skip all confirmation prompts:
 
 ```sh
 sudo devctl uninstall --yes --purge-services
@@ -96,114 +133,125 @@ sudo devctl uninstall --yes --purge-services
 
 ---
 
-## Screenshots
+## Services
 
-### Services
+Manage all services from the **Services** tab of the dashboard. Caddy and the DNS server are always-on. All other services are optional and can be installed on demand with one click.
 
-Manage dev services and PHP-FPM versions. Caddy is always running. Other services can be installed and started on demand. Expand any row to see connection info (socket path, credentials).
+Each installed service can be started, stopped, and restarted from the dashboard. Expand any service row to view connection credentials and the config file path.
 
-When a newer version of an installed service is available, an amber **"update"** badge appears next to the version string and an **"Update"** button is shown in the actions column. Hovering the button shows a tooltip with the exact from/to versions. Updates run the appropriate migration steps automatically (e.g. Meilisearch dumps and re-imports its data; other services simply replace the binary). devctl checks for updates on startup and again daily at 3 am.
+### Update checker
 
-![Services page](docs/screenshot-services.png)
+devctl checks for newer versions on startup and again daily at 3 am. When an update is available, an amber **"update"** badge appears next to the version string and an **Update** button is shown. Hovering shows the exact from/to version. Updates stream their output live via SSE.
 
-### Sites
+| Service | Port(s) | `.test` vhost | Download source | Config file |
+|---|---|---|---|---|
+| Caddy | `:80`, `:443`, `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
+| DNS Server | `127.0.0.1:5354` (UDP+TCP) | — | Embedded goroutine (no download) | — |
+| Valkey (Redis-compatible) | `127.0.0.1:6379` | — | [download.valkey.io](https://download.valkey.io/releases/) | `{serverRoot}/valkey/valkey.conf` |
+| PostgreSQL | `127.0.0.1:5432` | — | [downloads.percona.com](https://downloads.percona.com/downloads/postgresql-distribution-18/) (Percona Distribution) | `{serverRoot}/postgres/data/postgresql.conf` |
+| MySQL | `127.0.0.1:3306` | — | [repo.mysql.com/apt](https://repo.mysql.com/apt/) (Ubuntu `.deb` packages, extracted in-place) | `{serverRoot}/mysql/my.cnf` |
+| Meilisearch | `127.0.0.1:7700` | `meilisearch.test` | [github.com/meilisearch/meilisearch](https://github.com/meilisearch/meilisearch/releases) | `{serverRoot}/meilisearch/config.toml` |
+| Typesense | `127.0.0.1:8108` | `typesense.test` | [dl.typesense.org](https://dl.typesense.org/releases/) | `{serverRoot}/typesense/typesense.ini` |
+| Mailpit | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) | — | [github.com/axllent/mailpit](https://github.com/axllent/mailpit/releases) | `{serverRoot}/mailpit/config.env` (env vars) |
+| Laravel Reverb | `127.0.0.1:7383` | `reverb.test` | [packagist.org/laravel/reverb](https://packagist.org/packages/laravel/reverb) (via Composer) | `{serverRoot}/reverb/.env` |
+| WhoDB | `127.0.0.1:8161` | `whodb.test` | [github.com/clidey/whodb](https://github.com/clidey/whodb/releases) | `{serverRoot}/whodb/config.env` |
+| RustFS | `127.0.0.1:9000` (S3 API), `127.0.0.1:9001` (console) | `rustfs.test` | [dl.rustfs.com](https://dl.rustfs.com/artifacts/rustfs/release/) (always latest) | `{serverRoot}/rustfs/config.env` |
+| PHP-FPM (per version) | Unix socket | — | [static-php-cli](https://github.com/crazywhalecc/static-php-cli) | `{serverRoot}/php/{version}/php.ini` |
 
-Auto-discovered sites from your watch directory. Each site gets a `*.test` vhost with HTTPS. Assign a PHP version per site.
+**Notes:**
 
-![Sites page](docs/screenshot-sites.png)
+- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, RustFS, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
+- PostgreSQL runs as a supervised child process but drops privileges to `DEVCTL_SITE_USER` (PostgreSQL refuses to start as root).
+- Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
+- Config files are written once on install and never overwritten on restart. User edits are preserved.
+- Mailpit is configured via `MP_*` environment variables in `config.env` rather than a native config file.
+- Meilisearch updates are handled autonomously: devctl dumps the index data, replaces the binary, then re-imports the dump automatically.
 
-### Git Worktrees
+### WhoDB
 
-Any git-backed site can have worktrees added to it. Click the fork icon on a site card, pick a branch (or create a new one), configure which paths to symlink or copy from the parent, and click **Create Worktree**. The worktree is created as a sibling directory (`~/sites/myapp-feature-x/`) and immediately gets its own Caddy vhost (`myapp-feature-x.test`).
+[WhoDB](https://github.com/clidey/whodb) is a lightweight database explorer with a web UI, embedded in the devctl sidebar. Install it from the Services tab. devctl automatically configures pre-populated connection profiles for any installed database service (MySQL, PostgreSQL, Valkey/Redis).
 
-**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase, `/` and `_` become `-`, and the `origin-` prefix is stripped from remote-tracking refs (so `origin/my-branch` → `myapp-my-branch.test`).
+A **WhoDB** section in Settings lets you:
+- Toggle the credential entry form (`WHODB_DISABLE_CREDENTIAL_FORM`)
+- View auto-detected connections (read-only)
+- Add, edit, and delete manual connections
 
-**Shared resources:** devctl detects the project type (Laravel, Statamic, WordPress, or generic) and pre-fills sensible defaults:
+Connections are stored in the devctl SQLite database and applied immediately.
 
-| Project type | Symlinked from parent | Copied from parent |
-|---|---|---|
-| Laravel / Statamic | `vendor`, `node_modules` | `.env` |
-| WordPress | — | `.env`, `wp-config.php` |
-| Generic | `vendor`, `node_modules` | — |
+### RustFS
 
-Check **Save as default for this site** to persist your symlink/copy config in the site's settings for next time.
-
-Worktree cards on the Sites page show a dashed border, a parent-site link, and the branch name. The parent card shows an active-worktree count badge. Remove a worktree via its **Remove worktree** button — this deletes the directory, prunes the git worktree entry, and removes the Caddy vhost.
-
-**Auto-detection:** If a linked worktree directory appears in your watch folder through other means (e.g. `git worktree add` from the terminal), devctl will auto-discover it, recognise the `.git` file pointer, and automatically link it to its parent site in the dashboard.
-
-### Dumps
-
-Receive and display `php_dd()` variable dumps from any PHP site in real time.
-
-![Dumps page](docs/screenshot-dumps.png)
-
-### Settings
-
-Configure the dashboard host/port, sites watch directory, TLS certificate trust, and the PHP dump server TCP port.
-
-![Settings page](docs/screenshot-settings.png)
-
-### Mobile
-
-The dashboard is fully responsive. On narrow viewports the sidebar collapses into a slide-in drawer (hamburger button top-left) and the services list switches to a card layout.
-
-<p align="center">
-  <img src="docs/screenshot-mobile-services.png" width="260" alt="Services page on mobile">
-  <img src="docs/screenshot-mobile-sites.png" width="260" alt="Sites page on mobile">
-  <img src="docs/screenshot-mobile-mail.png" width="260" alt="Mail page on mobile">
-</p>
+[RustFS](https://rustfs.com) is an S3-compatible object storage server. Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/rustfs/config.env` to change them. Data is stored at `{serverRoot}/rustfs/data`. The `rustfs.test` vhost proxies to the console UI at port `9001`.
 
 ---
 
-## Services
+## PHP
 
-| Service | Type | Default port |
-|---|---|---|
-| Caddy | Supervised (always on) | `:80`, `:443` |
-| DNS Server | Embedded goroutine (always on) | `127.0.0.1:5354` (UDP+TCP) |
-| Valkey (Redis-compatible) | Supervised | `127.0.0.1:6379` |
-| PostgreSQL | systemd | — |
-| MySQL | Supervised | `127.0.0.1:3306` |
-| Meilisearch | Supervised | `127.0.0.1:7700` (also `meilisearch.test`) |
-| Typesense | Supervised | `127.0.0.1:8108` (also `typesense.test`) |
-| Mailpit | Supervised | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) |
-| Laravel Reverb | Supervised | `127.0.0.1:7383` (also `reverb.test`) |
-| WhoDB | Supervised | `127.0.0.1:8161` (also `whodb.test`) |
-| RustFS | Supervised | `127.0.0.1:9000` (S3 API), `127.0.0.1:9001` (console, also `rustfs.test`) |
-| PHP-FPM (per version) | Supervised | Unix socket `/run/php/phpX.Y-fpm.sock` |
+PHP versions are installed from the [static-php-cli](https://github.com/crazywhalecc/static-php-cli) project as self-contained static binaries. No PPA, no system PHP packages required.
 
-Supervised services run as direct child processes of devctl. Valkey's service ID is `redis` for Laravel `.env` compatibility.
+Install any available version from the Services tab. Each version runs as:
 
-Each service that supports a config file is started with a native config file (e.g. `valkey.conf`, `config.toml`, `typesense.ini`). These files are written once on install and are user-editable — devctl never overwrites them on restart. Mailpit is configured via `MP_*` environment variables in `config.env`. Click the file (FileText) icon on any config-enabled service row in the dashboard to open the file in the full-screen config editor.
+```
+{serverRoot}/php/{version}/php-fpm -c {serverRoot}/php/{version}/php.ini \
+  --nodaemonize --fpm-config {serverRoot}/php/{version}/php-fpm.conf
+```
+
+### php.ini defaults
+
+On first install, devctl creates a `php.ini` based on the full upstream `php.ini-development` template with the following overrides appended:
+
+| Setting | Default |
+|---|---|
+| `memory_limit` | `256M` |
+| `upload_max_filesize` | `128M` |
+| `post_max_size` | `128M` |
+| `max_execution_time` | `120` |
+| OPcache | Enabled with `validate_timestamps=1`, `revalidate_freq=0` (dev-safe) |
+| SPX profiler | Pre-configured (zero overhead when not active) |
+| `auto_prepend_file` | Points to `{serverRoot}/devctl/prepend.php` (for `php_dd()`) |
+
+The `php.ini` is user-editable and never overwritten on restart. To regenerate it with updated defaults, delete the file and restart devctl.
+
+The **Global PHP Settings** panel in the dashboard patches `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time` across **all installed PHP versions** at once.
+
+### Config editor
+
+Click the file icon on any PHP-FPM row in the Services tab to open the full-screen config editor. PHP-FPM shows two tabs — `php.ini` and `php-fpm.conf` — switchable without leaving the editor.
+
+### CLI symlinks
+
+On each PHP version install, devctl creates:
+
+- `/usr/local/bin/php{version}` — version-specific CLI symlink (e.g. `php8.4`)
+- `/usr/local/bin/php` — always points to the highest installed version
 
 ---
 
 ## DNS
 
-devctl includes a built-in DNS server that runs as an in-process goroutine (no separate binary). It intercepts queries for configurable TLDs and returns a fixed A record, forwarding everything else to the system upstream resolver.
+devctl includes a built-in DNS server that runs as an in-process goroutine (no separate binary, no daemon). It intercepts queries for configurable TLDs and returns a fixed A record, forwarding all other queries upstream.
 
 **Default behaviour:**
+
 - Listens on `127.0.0.1:5354` (UDP and TCP)
 - Intercepts `*.test` queries and returns your primary LAN IP
-- Forwards all other queries to the upstream nameserver (read from `/run/systemd/resolve/resolv.conf`, falling back to `/etc/resolv.conf`, then `8.8.8.8`)
+- Forwards all other queries to the system upstream resolver (read from `/run/systemd/resolve/resolv.conf`, falling back to `/etc/resolv.conf`, then `8.8.8.8`)
 
-**Configuring via the dashboard:**
+### Configuring via the dashboard
 
-Open the gear icon on the DNS Server row in the Services tab to configure:
+Open the gear icon on the DNS Server row in the Services tab:
 
 | Setting | Description |
 |---|---|
 | Port | UDP/TCP port the server listens on (default `5354`) |
 | TLD(s) | Comma-separated list of TLDs to intercept (default `.test`) |
 | Target IP | IP address returned for intercepted queries. Click **Auto-detect** to use your primary LAN IP. |
-| System DNS | Writes a `systemd-resolved` drop-in so `.test` queries are routed to devctl system-wide |
+| System DNS | One-click integration with `systemd-resolved` to route `.test` queries system-wide |
 
-**System DNS integration:**
+### systemd-resolved integration
 
-Click **Configure** in the DNS settings dialog to write `/etc/systemd/resolved.conf.d/99-devctl-dns.conf` and restart `systemd-resolved`. This routes all `.test` queries on the machine to devctl's DNS server — no router configuration or `/etc/hosts` entries needed.
+Click **Configure** to write `/etc/systemd/resolved.conf.d/99-devctl-dns.conf` and restart `systemd-resolved`. This routes all `.test` queries on the machine to devctl's DNS server — no router config or `/etc/hosts` entries needed.
 
-The generated drop-in looks like:
+The generated drop-in:
 
 ```ini
 [Resolve]
@@ -215,65 +263,91 @@ Click **Remove** to delete the drop-in and restore the previous resolver behavio
 
 ---
 
-## PHP
+## Sites
 
-PHP versions are installed from the [static-php-cli](https://github.com/crazywhalecc/static-php-cli) project as self-contained static binaries — no PPA or system packages required. Any version available on that index can be installed from the Services tab.
+devctl auto-discovers PHP projects in your configured sites watch directory (default: `~/sites`) and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA.
 
-Each version runs as:
-```
-{siteHome}/sites/server/php/{version}/php-fpm --nodaemonize --fpm-config {siteHome}/sites/server/php/{version}/php-fpm.conf
-```
+![Sites page](docs/screenshot-sites.png)
 
-**PHP configuration:**
+**Per-site controls:**
 
-On first install, devctl creates a `php.ini` based on the full upstream `php.ini-development` template with the following devctl-specific overrides appended:
+- Assign a PHP version (each site can run a different version)
+- Enable or disable the SPX profiler
+- Toggle HTTPS
+- Set a custom public directory
 
-- `upload_max_filesize = 128M`, `memory_limit = 256M`, `post_max_size = 128M`, `max_execution_time = 120`
-- OPcache enabled with `validate_timestamps=1` and `revalidate_freq=0` (dev-safe: file changes are always picked up)
-- SPX profiler settings and `auto_prepend_file` for `php_dd()` support
+**TLS:** Caddy's internal CA generates certificates automatically. To eliminate browser warnings, click **Trust Certificate** in Settings to install the CA into your system and browser trust stores (requires `libnss3-tools`).
 
-The `php.ini` is user-editable and never overwritten on restart. The **Global PHP Settings** UI patches the resource-limit keys directly in the file. Click the file icon on the PHP-FPM row in the Services tab to open `php.ini` or `php-fpm.conf` in the full-screen config editor. To regenerate the file with updated defaults, delete it and restart devctl.
-
-**CLI symlinks created on install:**
-- `/usr/local/bin/php{version}` — points at the version-specific CLI binary (e.g. `php8.4`)
-- `/usr/local/bin/php` — always points at the highest installed version
+**Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress, and generic PHP projects.
 
 ---
 
-## Browser Notifications
+## Git Worktrees
 
-devctl can fire native desktop notifications when new dumps or mail arrive while you are viewing a different tab.
+Any git-backed site can have worktrees added directly from the dashboard. Click the fork icon on a site card, pick or create a branch, configure which paths to symlink or copy from the parent, and click **Create Worktree**.
 
-- **Dumps** — a notification fires whenever a new `php_dd()` dump arrives and you are not currently on the `/dumps` page. A single dump shows a short plain-text value preview; multiple dumps arriving within 1.5 seconds are collapsed into one notification showing the total count. Clicking the notification navigates directly to that dump.
-- **Mail** — a notification fires whenever a new message arrives in Mailpit and you are not on the `/mail` page. A single message shows the sender and subject; bursts are collapsed. Clicking navigates to the Mail page.
-- **Service updates** — a notification fires when the update checker (runs on startup and daily at 3 am) finds a newer version for any installed service.
+The worktree is created as a sibling directory (`~/sites/myapp-feature-x/`) and immediately gets its own Caddy vhost (`myapp-feature-x.test`).
 
-Notifications are requested automatically on first load. devctl uses the **Service Worker Notification API** when supported (enabling reliable window-focusing on all platforms), with a direct `Notification` API fallback for browsers without service worker support.
+**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase, `/` and `_` become `-`, and the `origin-` prefix is stripped (so `origin/my-branch` → `myapp-my-branch.test`).
+
+**Shared resources:** devctl pre-fills sensible defaults based on the detected project type:
+
+| Project type | Symlinked from parent | Copied from parent |
+|---|---|---|
+| Laravel / Statamic | `vendor`, `node_modules` | `.env` |
+| WordPress | — | `.env`, `wp-config.php` |
+| Generic | `vendor`, `node_modules` | — |
+
+Check **Save as default for this site** to persist your symlink/copy config in the site's settings for next time.
+
+**Worktree cards** on the Sites page show a dashed border, a parent-site link, and the branch name. The parent card shows an active-worktree count badge.
+
+**Remove a worktree** via its **Remove worktree** button — this deletes the directory, prunes the git worktree entry, and removes the Caddy vhost.
+
+**Auto-detection:** Worktree directories that appear in your watch folder via `git worktree add` in the terminal are auto-discovered, recognised by their `.git` file pointer, and automatically linked to their parent site.
+
+---
+
+## PHP Dumps (`php_dd`)
+
+devctl injects `auto_prepend_file = {serverRoot}/devctl/prepend.php` into every installed PHP version's FPM ini. This makes a `php_dd()` helper available in all your sites without any configuration.
+
+Calling `php_dd()` sends a serialised variable dump over TCP to devctl's dump receiver (default port `9912`), which displays it in the **Dumps** tab in real time.
+
+```php
+php_dd($someVariable);         // displays in the Dumps tab
+php_dd($a, $b, $c);            // multiple args shown together
+dd($someVariable);             // alias — works the same way
+```
+
+No browser extension, no Xdebug, no configuration required.
+
+![Dumps page](docs/screenshot-dumps.png)
 
 ---
 
 ## SPX Profiler
 
-devctl includes native support for [SPX](https://github.com/NoiseByNorthwest/php-spx), a low-overhead PHP profiler. SPX is compiled directly into devctl's custom PHP binaries (available for PHP 8.1–8.4, x86_64) and has zero overhead when not actively profiling.
+devctl includes native support for [SPX](https://github.com/NoiseByNorthwest/php-spx), a low-overhead PHP profiler. SPX is compiled directly into devctl's custom PHP binaries (available for PHP 8.1–8.4, x86_64). It has zero overhead when not actively profiling.
 
-**Enabling SPX for a site:**
+### Enabling SPX for a site
 
 1. Open a site's settings dialog (gear icon on the site card).
 2. Toggle **SPX Profiling** on and save. devctl rewrites the PHP-FPM ini and restarts the pool.
 
 Once enabled, the **Profiler** navigation item appears in the sidebar.
 
-**Triggering a profile:**
+### Triggering a profile
 
-Activate profiling for a request by sending the `SPX_ENABLED=1` and `SPX_KEY=dev` cookies, or as query parameters:
+Activate profiling for a specific request by sending the `SPX_ENABLED=1` and `SPX_KEY=dev` cookies, or as query parameters:
 
 ```
 https://mysite.test/some/page?SPX_ENABLED=1&SPX_KEY=dev
 ```
 
-The profile is automatically saved to disk and appears in the Profiler tab.
+The profile is saved to `{serverRoot}/php/{version}/spx-data/` and appears in the Profiler tab automatically.
 
-**Profiler views:**
+### Profiler views
 
 | Tab | Description |
 |---|---|
@@ -282,67 +356,79 @@ The profile is automatically saved to disk and appears in the Profiler tab.
 | Timeline | Chronological call timeline with function name labels |
 | Metadata | Request URL, duration, peak memory, and other profiler metadata |
 
-**Data storage:** profiles are stored at `{serverRoot}/php/{version}/spx-data/` and can be cleared from the UI.
+Profiles can be cleared from the UI at any time.
 
 ---
 
-## PHP Dumps (`php_dd`)
+## Mail
 
-devctl injects `auto_prepend_file = /etc/devctl/prepend.php` into every installed PHP version's FPM ini. This makes a `php_dd()` helper available in all your sites — calling it sends a serialized variable dump to devctl's TCP listener (default port `9912`), which displays it in the **Dumps** tab.
+Mailpit provides a local SMTP server and web UI for catching all outbound email from your PHP sites.
 
-```php
-php_dd($someVariable);  // appears in the Dumps tab
+- **SMTP**: `127.0.0.1:1025` — configure your app's `MAIL_HOST` / `MAIL_PORT` to this address
+- **Web UI**: `http://127.0.0.1:8025` — or click the **Mail** link in the devctl sidebar
+- **Storage**: emails are stored at `{serverRoot}/mailpit/data/`
+
+For Laravel, set in your `.env`:
+
+```env
+MAIL_MAILER=smtp
+MAIL_HOST=127.0.0.1
+MAIL_PORT=1025
 ```
 
-No browser extension or Xdebug configuration required.
+Mailpit is configured via `MP_*` environment variables in `{serverRoot}/mailpit/config.env`. Click the file icon on the Mailpit row in the Services tab to edit this file directly.
 
 ---
 
-## Ports
+## Config Editor
 
-| Port | Service | Configurable |
-|---|---|---|
-| `127.0.0.1:4000` | devctl dashboard | Yes (Settings → Dashboard) |
-| `:80` / `:443` | Caddy | No |
-| `127.0.0.1:2019` | Caddy Admin API | Yes (Settings) |
-| `127.0.0.1:5354` | DNS server (UDP+TCP) | Yes (Services → DNS → Settings) |
-| `127.0.0.1:9912` | PHP dump receiver | Yes (Settings → PHP Dump Server) |
-| `127.0.0.1:6379` | Valkey | No |
-| `127.0.0.1:3306` | MySQL | No |
-| `127.0.0.1:7700` | Meilisearch | No |
-| `127.0.0.1:8108` | Typesense | No |
-| `127.0.0.1:8025` | Mailpit (web) | Yes |
-| `127.0.0.1:1025` | Mailpit (SMTP) | Yes |
-| `127.0.0.1:7383` | Laravel Reverb | No |
-| `127.0.0.1:8161` | WhoDB | No |
-| `127.0.0.1:9000` | RustFS (S3 API) | No |
-| `127.0.0.1:9001` | RustFS (console) | No |
+Every config-enabled service has a file icon in the Services tab that opens a full-screen config editor powered by CodeMirror 6.
 
----
+**Features:**
 
-## Data paths
+- Syntax highlighting and line numbers
+- Ctrl+F in-editor search
+- **Save & Restart** button — writes the file and restarts the service in one click
+- Ctrl+S keyboard shortcut for Save & Restart
 
-| Path | Contents |
+**Config-enabled services:**
+
+| Service | Config file(s) |
 |---|---|
-| `/etc/devctl/devctl.db` | SQLite database (sites, settings, dumps) |
-| `/etc/devctl/prepend.php` | PHP auto-prepend for `php_dd()` |
-| `/etc/systemd/system/devctl.service` | Systemd unit file |
-| `~/sites/server/` | Service binaries and data (Caddy, Valkey, MySQL, etc.) |
-| `~/sites/server/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, etc.) |
+| Valkey | `valkey.conf` |
+| MySQL | `my.cnf` |
+| Meilisearch | `config.toml` |
+| Typesense | `typesense.ini` |
+| Mailpit | `config.env` |
+| PHP-FPM | `php.ini`, `php-fpm.conf` (two tabs) |
+
+---
+
+## Browser Notifications
+
+devctl fires native desktop notifications when events occur while you are on another tab.
+
+| Event | Behaviour |
+|---|---|
+| New `php_dd()` dump | Fires when you are not on the Dumps page. Multiple dumps within 1.5 s are collapsed into one count notification. Clicking navigates to that dump. |
+| New email | Fires when you are not on the Mail page. Bursts are collapsed. Clicking navigates to the Mail page. |
+| Service updates available | Fires when the update checker (runs on startup and daily at 3 am) finds a newer version for any installed service. |
+
+Notification permission is requested automatically on first load. devctl uses the **Service Worker Notification API** when supported, with a direct `Notification` API fallback for browsers without service worker support.
 
 ---
 
 ## MCP Server
 
-devctl includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server, allowing AI assistants (Claude, OpenCode, Cursor, etc.) to interact with your local dev environment directly — checking service health, reading logs, switching PHP versions, managing DNS, and more.
+devctl includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server, allowing AI assistants (Claude, OpenCode, Cursor, and others) to interact with your local dev environment directly.
 
-The MCP server is embedded in the devctl binary and served at:
+The MCP server is embedded in the devctl binary and available at:
 
 ```
 http://127.0.0.1:4000/mcp
 ```
 
-It uses the **StreamableHTTP** transport, which is supported by all modern MCP clients.
+It uses the **StreamableHTTP** transport, supported by all modern MCP clients.
 
 ### Connecting an AI assistant
 
@@ -387,7 +473,7 @@ It uses the **StreamableHTTP** transport, which is supported by all modern MCP c
 | `stopService` | Stop a running service (required services are protected) |
 | `restartService` | Restart a service |
 | `getServiceCredentials` | Get connection credentials for a service (host, port, user, password) |
-| `listPHPVersions` | List installed PHP versions, FPM socket paths, and status |
+| `listPHPVersions` | List installed PHP versions, FPM socket paths, and running status |
 | `getPHPSettings` | Read current PHP ini settings (memory_limit, upload limits, etc.) |
 | `setPHPSettings` | Update PHP ini settings across all installed versions |
 | `getSettings` | Read devctl settings (ports, DNS config, TLD) |
@@ -423,27 +509,124 @@ It uses the **StreamableHTTP** transport, which is supported by all modern MCP c
 
 ---
 
-## Build commands
+## Ports
+
+All ports bind to `127.0.0.1` by default (loopback only). Ports marked configurable can be changed from the Settings tab.
+
+| Port | Service | Configurable |
+|---|---|---|
+| `127.0.0.1:4000` | devctl dashboard | Yes — Settings → Dashboard |
+| `:80` / `:443` | Caddy | No |
+| `127.0.0.1:2019` | Caddy Admin API | Yes — Settings |
+| `127.0.0.1:5354` | DNS server (UDP+TCP) | Yes — Services → DNS → Settings |
+| `127.0.0.1:9912` | PHP dump receiver (TCP) | Yes — Settings → PHP Dump Server |
+| `127.0.0.1:6379` | Valkey | No |
+| `127.0.0.1:5432` | PostgreSQL | No |
+| `127.0.0.1:3306` | MySQL | No |
+| `127.0.0.1:7700` | Meilisearch | No |
+| `127.0.0.1:8108` | Typesense | No |
+| `127.0.0.1:8025` | Mailpit web UI | Yes |
+| `127.0.0.1:1025` | Mailpit SMTP | Yes |
+| `127.0.0.1:7383` | Laravel Reverb | No |
+| `127.0.0.1:8161` | WhoDB | No |
+| `127.0.0.1:9000` | RustFS S3 API | No |
+| `127.0.0.1:9001` | RustFS console | No |
+
+---
+
+## Data Paths
+
+All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir}/server` (e.g. `~/sites/server`). The sites directory is chosen during `devctl install` and stored in the SQLite database.
+
+`{serverRoot}` is set in the systemd unit as `DEVCTL_SERVER_ROOT` and is the single source of truth — it is never hardcoded.
+
+| Path | Contents |
+|---|---|
+| `{serverRoot}/devctl/devctl.db` | SQLite database (sites, settings, dumps) |
+| `{serverRoot}/devctl/prepend.php` | PHP auto-prepend for `php_dd()` |
+| `{serverRoot}/devctl/devctl` | devctl binary (default install location) |
+| `{serverRoot}/bin/` | Shared symlink farm added to `PATH` via `/etc/profile.d/devctl.sh` |
+| `{serverRoot}/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, …) |
+| `{serverRoot}/caddy/` | Caddy binary, env file, internal CA data |
+| `{serverRoot}/valkey/` | Valkey binary, `valkey.conf`, data |
+| `{serverRoot}/postgres/` | PostgreSQL binary tarball, `data/` directory |
+| `{serverRoot}/mysql/` | MySQL binaries (extracted from `.deb`), `data/` directory |
+| `{serverRoot}/meilisearch/` | Meilisearch binary, `config.toml`, index data |
+| `{serverRoot}/typesense/` | Typesense binary, `typesense.ini`, data |
+| `{serverRoot}/mailpit/` | Mailpit binary, `config.env`, email storage |
+| `{serverRoot}/reverb/` | Laravel app that runs `php artisan reverb:start` |
+| `{serverRoot}/whodb/` | WhoDB binary, `config.env` |
+| `{serverRoot}/rustfs/` | RustFS binary, `config.env`, object data |
+| `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
+| `/etc/systemd/system/devctl.service` | Systemd unit file |
+| `/etc/profile.d/devctl.sh` | Adds `{serverRoot}/bin` to `PATH` for all users |
+
+---
+
+## Contributing & Development
+
+### Tech stack
+
+| Layer | Choice |
+|---|---|
+| Backend | Go 1.25, stdlib `net/http` (no third-party router) |
+| Database | SQLite (`modernc.org/sqlite`), sqlc (codegen), goose (migrations) |
+| Frontend | Vue 3, TypeScript, Pinia, Vite 7, Tailwind CSS v4, shadcn-vue |
+| Proxy / TLS | Caddy with internal CA, wildcard `*.test` certs |
+| Service unit | systemd system service |
+
+### Build commands
 
 ```sh
 make dev          # go run . (backend only, no frontend rebuild)
 make dev-ui       # Vite HMR dev server (frontend only)
-make build        # build frontend + go build
+make build        # build-ui + go build
 make install      # build + install binary + systemd unit (requires root)
-make sqlc         # regenerate db/queries/*.go from SQL
-make db-migrate   # apply goose migrations to /etc/devctl/devctl.db
+make sqlc         # regenerate db/queries/*.go from db/queries/*.sql
+make db-migrate   # apply goose migrations to {serverRoot}/devctl/devctl.db
 ```
 
----
+### Package layout
 
-## Tech stack
-
-| Layer | Choice |
+| Package | Responsibility |
 |---|---|
-| Backend | Go 1.25, stdlib `net/http` |
-| Database | SQLite (`modernc.org/sqlite`), sqlc, goose |
-| Frontend | Vue 3, TypeScript, Pinia, Vite 7, Tailwind CSS v4, shadcn-vue |
-| Proxy / TLS | Caddy with internal CA, wildcard `*.test` certs |
+| `main.go` | Entry point, subsystem wiring, graceful shutdown, update checker |
+| `api/` | HTTP handlers, route registration (`api/server.go`), SSE, WebSocket |
+| `services/` | Static service registry, exec manager, status poller, process supervisor |
+| `sites/` | Site CRUD (SQLite), Caddy Admin API client, fsnotify watcher |
+| `php/` | PHP-FPM version detection, install/uninstall, php.ini read/write |
+| `dumps/` | TCP dump receiver, WebSocket broadcast hub, SQLite store |
+| `install/` | Idempotent service installers — one file per service |
+| `config/` | `config.Load()`, static default service definitions (`defaults.go`) |
+| `paths/` | Single source of truth for all filesystem paths |
+| `dnsserver/` | Built-in DNS server goroutine |
+| `mcpserver/` | MCP server implementation |
+| `selfinstall/` | `devctl install` / `devctl uninstall` sub-commands |
+| `db/` | SQLite open, goose migrations (`db/migrations/`), sqlc queries (`db/queries/`) |
+| `frontend/` | Vue 3 SPA — `src/lib/api.ts` (all fetch wrappers), `src/stores/` (Pinia) |
+
+### Key conventions
+
+- **No third-party HTTP router** — use Go 1.22+ `METHOD /path/{param}` syntax in `net/http`.
+- **No CGO** — `modernc.org/sqlite` is pure Go.
+- **Frontend is embedded** in the binary via `//go:embed ui/dist`; run `make build-ui` before `go build` for a working UI.
+- **All REST calls** in the frontend go through `frontend/src/lib/api.ts` — never call `fetch()` directly in components or stores.
+- **Never hardcode paths** — always use the `paths` package or `DEVCTL_SERVER_ROOT`.
+- The binary **requires root** — enforced at startup, logged to the systemd journal.
+
+### Screenshots
+
+The dashboard is fully responsive. On narrow viewports the sidebar collapses into a slide-in drawer and service lists switch to a card layout.
+
+<p align="center">
+  <img src="docs/screenshot-mobile-services.png" width="260" alt="Services page on mobile">
+  <img src="docs/screenshot-mobile-sites.png" width="260" alt="Sites page on mobile">
+  <img src="docs/screenshot-mobile-mail.png" width="260" alt="Mail page on mobile">
+</p>
+
+Additional screenshots:
+
+![Settings page](docs/screenshot-settings.png)
 
 ---
 
