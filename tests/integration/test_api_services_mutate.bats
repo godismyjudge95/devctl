@@ -18,7 +18,7 @@ load setup
 # (Purge is blocked for required services — tested separately.)
 
 @test "caddy: installed=true in initial state" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"caddy\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"caddy\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "true" ]]
 }
@@ -43,7 +43,7 @@ load setup
 # ─── Valkey (Redis) ────────────────────────────────────────────────────────────
 
 @test "valkey: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"redis\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"redis\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -119,7 +119,7 @@ load setup
 # ─── Mailpit ───────────────────────────────────────────────────────────────────
 
 @test "mailpit: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"mailpit\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"mailpit\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -190,7 +190,7 @@ load setup
 # ─── Meilisearch ───────────────────────────────────────────────────────────────
 
 @test "meilisearch: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"meilisearch\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"meilisearch\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -221,7 +221,7 @@ load setup
 }
 
 @test "meilisearch: caddy vhost site appears in GET /api/sites" {
-  run bash -c "api_get /api/sites | jq -r '.[].domain' | grep -q meilisearch"
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q meilisearch"
   [ "$status" -eq 0 ]
 }
 
@@ -257,14 +257,14 @@ load setup
 }
 
 @test "meilisearch: caddy vhost removed after purge" {
-  run bash -c "api_get /api/sites | jq -r '.[].domain' | grep -q meilisearch"
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q meilisearch"
   [ "$status" -ne 0 ]
 }
 
 # ─── Typesense ─────────────────────────────────────────────────────────────────
 
 @test "typesense: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"typesense\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"typesense\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -295,7 +295,7 @@ load setup
 }
 
 @test "typesense: caddy vhost appears in GET /api/sites" {
-  run bash -c "api_get /api/sites | jq -r '.[].domain' | grep -q typesense"
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q typesense"
   [ "$status" -eq 0 ]
 }
 
@@ -333,7 +333,7 @@ load setup
 # ─── WhoDB ─────────────────────────────────────────────────────────────────────
 
 @test "whodb: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"whodb\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"whodb\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -359,7 +359,7 @@ load setup
 }
 
 @test "whodb: caddy vhost appears in GET /api/sites" {
-  run bash -c "api_get /api/sites | jq -r '.[].domain' | grep -q whodb"
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q whodb"
   [ "$status" -eq 0 ]
 }
 
@@ -397,7 +397,7 @@ load setup
 # ─── RustFS ────────────────────────────────────────────────────────────────────
 
 @test "rustfs: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"rustfs\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"rustfs\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -432,7 +432,7 @@ load setup
 }
 
 @test "rustfs: caddy vhost rustfs.test appears in GET /api/sites" {
-  run bash -c "api_get /api/sites | jq -r '.[].domain' | grep -q 'rustfs\.test'"
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q 'rustfs\.test'"
   [ "$status" -eq 0 ]
 }
 
@@ -470,7 +470,7 @@ load setup
 # ─── PostgreSQL ────────────────────────────────────────────────────────────────
 
 @test "postgres: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"postgres\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"postgres\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -542,7 +542,7 @@ load setup
 # ─── MySQL ─────────────────────────────────────────────────────────────────────
 
 @test "mysql: installed=false before install" {
-  run bash -c "api_get /api/services | jq -r '.[] | select(.id==\"mysql\") | .installed'"
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"mysql\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
@@ -563,8 +563,8 @@ load setup
   container_exec test -f "${SERVER_ROOT}/mysql/bin/mysqld"
 }
 
-@test "mysql: mysql client symlink in bin dir" {
-  container_exec test -L "${SERVER_ROOT}/bin/mysql"
+@test "mysql: mysql client wrapper in bin dir" {
+  container_exec test -x "${SERVER_ROOT}/bin/mysql"
 }
 
 @test "mysql: data directory initialised by mysqld --initialize-insecure" {

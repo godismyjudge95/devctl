@@ -150,4 +150,28 @@ func registerResources(s *server.MCPServer, c *client) {
 			return nil, fmt.Errorf("no site found with domain %q", domain)
 		},
 	)
+
+	// devctl://mail — recent emails from Mailpit
+	s.AddResource(
+		mcp.NewResource(
+			"devctl://mail",
+			"Recent emails (Mailpit)",
+			mcp.WithResourceDescription("The 20 most recent emails captured by Mailpit, including sender, recipients, subject, and read status."),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			resp, err := c.listMail(20, 0)
+			if err != nil {
+				return nil, err
+			}
+			b, _ := json.MarshalIndent(resp, "", "  ")
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{
+					URI:      "devctl://mail",
+					MIMEType: "application/json",
+					Text:     string(b),
+				},
+			}, nil
+		},
+	)
 }

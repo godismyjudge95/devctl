@@ -397,6 +397,42 @@ func lsbReleaseName(ctx context.Context) (string, error) {
 	return name, nil
 }
 
+// WrapperScriptIntoBinDir writes an executable shell wrapper named `name`
+// inside binDir. The wrapper sets the given environment variables then
+// exec-replaces itself with targetBinary, forwarding all arguments.  This is
+// useful when a binary reads config from a location determined by an env var
+// (e.g. MYSQL_HOME) that symlinks cannot provide.  The bin directory is
+// created if absent. Any existing file or symlink at the destination is
+// replaced (idempotent).
+func WrapperScriptIntoBinDir(binDir, name, targetBinary string, env map[string]string) error {
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("bin dir: mkdir: %w", err)
+	}
+	dest := filepath.Join(binDir, name)
+	_ = os.Remove(dest)
+
+	var sb strings.Builder
+	sb.WriteString("#!/bin/sh\n")
+	for k, v := range env {
+		sb.WriteString(k)
+		sb.WriteString("=")
+		sb.WriteString(v)
+		sb.WriteString("\n")
+		sb.WriteString("export ")
+		sb.WriteString(k)
+		sb.WriteString("\n")
+	}
+	sb.WriteString(`exec "`)
+	sb.WriteString(targetBinary)
+	sb.WriteString(`" "$@"`)
+	sb.WriteString("\n")
+
+	if err := os.WriteFile(dest, []byte(sb.String()), 0755); err != nil {
+		return fmt.Errorf("bin dir: write wrapper %s: %w", name, err)
+	}
+	return nil
+}
+
 // LinkIntoBinDir creates (or replaces) a symlink named `name` inside binDir
 // pointing at targetBinary. The bin directory is created if absent. The
 // operation is idempotent — any existing file or symlink at the destination is

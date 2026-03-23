@@ -76,7 +76,7 @@ SITE_ID=""
 }
 
 @test "sites: deleted site no longer in GET /api/sites" {
-  run bash -c "api_get /api/sites | jq -r '.[].domain' | grep -q '${SITE_DOMAIN}'"
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q '${SITE_DOMAIN}'"
   [ "$status" -ne 0 ]
 }
 

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # scripts/test-env-setup.sh — One-time setup for the devctl test environment:
-#   1. Build the devctl-ubuntu-base Incus image with prerequisites baked in.
+#   1. Build the devctl-ubuntu-base Incus image with all test tooling baked in.
 #   2. Create the devctl-test-artifacts persistent storage volume (for download caching).
 #
+# Baked into the image:
+#   - curl, jq (API helpers)
+#   - Node.js 22 (for bats + playwright)
+#   - bats-core (BATS integration tests run inside the container)
+#   - @playwright/test + Chromium (e2e tests run fully inside the container)
+#
 # Run once before your first test run, and again when you want to refresh the
-# base image or add new artifacts.  Idempotent — safe to re-run.
+# base image or add new tooling.  Idempotent — safe to re-run.
 set -euo pipefail
 
 if [ -t 1 ] && command -v tput &>/dev/null && tput colors &>/dev/null && [ "$(tput colors)" -ge 8 ]; then
@@ -36,11 +42,46 @@ while true; do
 done
 success "Systemd ready."
 
-info "Installing prerequisites (curl, jq)..."
+info "Installing base prerequisites (curl, jq, runtime libs for devctl services)..."
 incus exec "$BUILDER" -- apt-get update -qq
-incus exec "$BUILDER" -- apt-get install -y -qq curl jq
+incus exec "$BUILDER" -- apt-get install -y -qq \
+  curl jq \
+  libnuma1 \
+  libaio1t64 \
+  libreadline-dev
+success "Base prerequisites installed."
+
+# ─── Node.js 22 via NodeSource ────────────────────────────────────────────────
+info "Installing Node.js 22..."
+incus exec "$BUILDER" -- bash -c "curl -fsSL https://deb.nodesource.com/setup_22.x | bash -"
+incus exec "$BUILDER" -- apt-get install -y -qq nodejs
+NODE_VER="$(incus exec "$BUILDER" -- node --version 2>/dev/null || echo 'unknown')"
+success "Node.js installed: ${NODE_VER}"
+
+# ─── bats-core (global npm install) ───────────────────────────────────────────
+info "Installing bats-core..."
+incus exec "$BUILDER" -- npm install -g bats
+BATS_VER="$(incus exec "$BUILDER" -- bats --version 2>/dev/null || echo 'unknown')"
+success "bats installed: ${BATS_VER}"
+
+# ─── Playwright CLI + Chromium ────────────────────────────────────────────────
+# We install @playwright/test globally so 'npx playwright' is available without
+# a local node_modules.  Chromium and its system dependencies are installed once
+# here so every test container starts with a ready-to-use headless browser.
+info "Installing @playwright/test (this may take a minute)..."
+incus exec "$BUILDER" -- npm install -g @playwright/test
+PW_VER="$(incus exec "$BUILDER" -- npx playwright --version 2>/dev/null || echo 'unknown')"
+success "Playwright installed: ${PW_VER}"
+
+info "Installing Playwright Chromium + system dependencies (this may take several minutes)..."
+incus exec "$BUILDER" -- npx playwright install chromium --with-deps
+success "Playwright Chromium installed."
+
+# ─── Clean up package manager caches ─────────────────────────────────────────
+info "Cleaning apt and npm caches..."
 incus exec "$BUILDER" -- apt-get clean
-success "Prerequisites installed."
+incus exec "$BUILDER" -- npm cache clean --force 2>/dev/null || true
+success "Caches cleaned."
 
 info "Publishing image as devctl-ubuntu-base..."
 # Remove the old alias if it exists, stop the container, publish and tag.
@@ -64,5 +105,5 @@ fi
 echo ""
 success "Setup complete."
 echo "  • Run 'sudo make test-artifacts-download' to pre-download service binaries."
-echo "  • Run 'sudo make test-env' to launch an interactive test container."
-echo "  • Run 'sudo make test-run' to run the full test suite."
+echo "  • Run 'make build && make test-env' to launch an interactive test container."
+echo "  • Run 'make build && make test-run' to run the full test suite."

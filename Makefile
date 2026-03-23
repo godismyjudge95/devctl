@@ -1,6 +1,6 @@
 .PHONY: dev dev-ui build build-ui install deploy sqlc db-migrate \
         test-env-setup test-env test-run test-bats test-api test-e2e test \
-        test-artifacts-download test-artifacts-clean
+        test-artifacts-download test-artifacts-clean test-push
 
 BINARY     := devctl
 # Install into the site user's devctl directory.
@@ -85,7 +85,7 @@ db-migrate:
 test-env-setup:
 	@which incus > /dev/null 2>&1 || (echo "Incus is not installed. See: https://linuxcontainers.org/incus/docs/main/installing/" && exit 1)
 	@bash scripts/test-env-setup.sh
-	@echo "Setup complete. Run 'make test-env' to launch a test container."
+	@echo "Setup complete. Run 'make build && make test-env' to launch a test container."
 
 # Download all service binaries/archives into the persistent Incus artifact cache.
 # Run once after test-env-setup; re-run to update stale files.
@@ -102,6 +102,7 @@ test-artifacts-clean:
 	  if [ -d "$$CACHE_DIR" ]; then rm -rf "$$CACHE_DIR"/*; echo "Artifact cache cleared."; else echo "Cache dir not found: $$CACHE_DIR"; fi
 
 # Launch an ephemeral test container (interactive — Ctrl+C to destroy).
+# Tests run inside the container; the host devctl is never stopped.
 # Requires the binary to be pre-built: run 'make build' first.
 test-env:
 	@test -f ./devctl || (echo "Binary not found — run 'make build' first." && exit 1)
@@ -113,20 +114,47 @@ test-run:
 	@test -f ./devctl || (echo "Binary not found — run 'make build' first." && exit 1)
 	@bash scripts/test-env.sh --run-tests
 
-# Run BATS integration tests (DEVCTL_CONTAINER must be set by the test env).
+# Run BATS integration tests inside the container (DEVCTL_CONTAINER must be set).
 test-bats:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
-	PATH="$(NPX_BINDIR):$$PATH" $(NPX) bats tests/integration/
+	incus exec "$$DEVCTL_CONTAINER" -- mkdir -p /tmp/tests
+	tar -czf - -C tests integration/ | incus exec "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
+	incus exec "$$DEVCTL_CONTAINER" -- bats /tmp/tests/integration/
 
-# Run Go API integration tests (DEVCTL_BASE_URL must be set by the test env).
+# Compile the Go API test binary on the host, push it into the container, run it.
+# No Go toolchain needed inside the container.
 test-api:
-	@test -n "$$DEVCTL_BASE_URL" || (echo "DEVCTL_BASE_URL not set — start a test env first with 'make test-env'." && exit 1)
-	$(GO) test -tags=integration -v ./tests/api/...
+	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
+	$(GO) test -c -tags=integration -o devctl.test ./tests/api/
+	incus file push devctl.test "$$DEVCTL_CONTAINER/tmp/devctl.test"
+	incus exec "$$DEVCTL_CONTAINER" -- chmod 755 /tmp/devctl.test
+	rm -f devctl.test
+	incus exec "$$DEVCTL_CONTAINER" -- env DEVCTL_BASE_URL=http://127.0.0.1:4000 /tmp/devctl.test -test.v
 
-# Run Playwright e2e tests (DEVCTL_BASE_URL must be set by the test env).
+# Run Playwright e2e tests inside the container.
+# Playwright and Chromium are pre-baked into the devctl-ubuntu-base image.
 test-e2e:
-	@test -n "$$DEVCTL_BASE_URL" || (echo "DEVCTL_BASE_URL not set — start a test env first with 'make test-env'." && exit 1)
-	PLAYWRIGHT_BROWSERS_PATH="$(SITE_HOME)/.cache/ms-playwright" PATH="$(NPX_BINDIR):$$PATH" $(NPX) playwright test
+	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
+	tar -czf - -C tests e2e/ | incus exec "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
+	incus file push playwright.config.ts "$$DEVCTL_CONTAINER/tmp/playwright.config.ts"
+	incus exec "$$DEVCTL_CONTAINER" --cwd /tmp -- \
+	  env DEVCTL_BASE_URL=http://127.0.0.1:4000 npx playwright test
 
-# Run all three test layers (BATS + Go API + Playwright).
+# Run all three test layers inside the container.
 test: test-bats test-api test-e2e
+
+# Push a new devctl binary into a running test container and re-run all tests.
+# Requires: DEVCTL_CONTAINER=<name>   (or exported from 'make test-env')
+# Example:  DEVCTL_CONTAINER=devctl-test-1234567890 make test-push
+test-push:
+	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — specify the container name: DEVCTL_CONTAINER=devctl-test-xxx make test-push" && exit 1)
+	$(MAKE) build
+	incus file push ./devctl "$$DEVCTL_CONTAINER/usr/local/bin/devctl"
+	incus exec "$$DEVCTL_CONTAINER" -- chmod 755 /usr/local/bin/devctl
+	incus exec "$$DEVCTL_CONTAINER" -- systemctl restart devctl
+	@echo "Waiting for devctl to restart..."
+	@sleep 2
+	incus exec "$$DEVCTL_CONTAINER" -- curl -sf http://127.0.0.1:4000/api/settings/resolved > /dev/null \
+	  || (echo "devctl did not respond after restart — check: incus exec $$DEVCTL_CONTAINER -- journalctl -u devctl -n 20 --no-pager" && exit 1)
+	@echo "devctl restarted successfully. Running tests..."
+	$(MAKE) test

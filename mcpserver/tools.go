@@ -36,6 +36,10 @@ func registerTools(s *server.MCPServer, c *client) {
 	registerConfigureDNSTool(s, c)
 	registerTeardownDNSTool(s, c)
 	registerTrustCATool(s, c)
+	registerListMailTool(s, c)
+	registerGetMailTool(s, c)
+	registerDeleteMailTool(s, c)
+	registerDeleteAllMailTool(s, c)
 }
 
 // listSites — returns a summary of all sites.
@@ -924,4 +928,162 @@ func filterSuffix(domain string) string {
 		return fmt.Sprintf(" for domain %q", domain)
 	}
 	return ""
+}
+
+// listMail — lists recent emails from Mailpit.
+func registerListMailTool(s *server.MCPServer, c *client) {
+	tool := mcp.NewTool("listEmails",
+		mcp.WithDescription("List recent emails captured by Mailpit. Returns sender, recipients, subject, and read status. Use getEmail to read the full body of a specific email."),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum number of emails to return (default: 20, max: 100)."),
+		),
+		mcp.WithNumber("start",
+			mcp.Description("Offset for pagination (default: 0)."),
+		),
+	)
+	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		limit := req.GetInt("limit", 20)
+		if limit <= 0 || limit > 100 {
+			limit = 20
+		}
+		start := req.GetInt("start", 0)
+		if start < 0 {
+			start = 0
+		}
+
+		resp, err := c.listMail(limit, start)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to list emails: %v", err)), nil
+		}
+		if len(resp.Messages) == 0 {
+			return mcp.NewToolResultText("No emails found in Mailpit."), nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("%d email(s) (total: %d, unread: %d):\n\n", len(resp.Messages), resp.Total, resp.Unread))
+		for _, m := range resp.Messages {
+			readStatus := "read"
+			if !m.Read {
+				readStatus = "UNREAD"
+			}
+			to := formatAddresses(m.To)
+			sb.WriteString(fmt.Sprintf("• [%s] %s\n", readStatus, m.Subject))
+			sb.WriteString(fmt.Sprintf("  ID: %s\n", m.ID))
+			sb.WriteString(fmt.Sprintf("  From: %s | To: %s\n", formatAddress(m.From), to))
+			sb.WriteString(fmt.Sprintf("  Received: %s | Size: %d bytes\n\n", m.Created, m.Size))
+		}
+		sb.WriteString("Use getEmail(id) to read the full body of any email.")
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+}
+
+// getEmail — retrieves the full content of a single email by ID.
+func registerGetMailTool(s *server.MCPServer, c *client) {
+	tool := mcp.NewTool("getEmail",
+		mcp.WithDescription("Get the full content of a single email captured by Mailpit, including the plain-text and HTML body. Use listEmails first to find the email ID."),
+		mcp.WithString("id",
+			mcp.Required(),
+			mcp.Description("The email ID from listEmails (e.g. the ID field)."),
+		),
+	)
+	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id, err := req.RequireString("id")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		msg, err := c.getMail(id)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get email %q: %v", id, err)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Subject: %s\n", msg.Subject))
+		sb.WriteString(fmt.Sprintf("From:    %s\n", formatAddress(msg.From)))
+		sb.WriteString(fmt.Sprintf("To:      %s\n", formatAddresses(msg.To)))
+		if len(msg.Cc) > 0 {
+			sb.WriteString(fmt.Sprintf("Cc:      %s\n", formatAddresses(msg.Cc)))
+		}
+		sb.WriteString(fmt.Sprintf("Date:    %s\n", msg.Created))
+		sb.WriteString(fmt.Sprintf("ID:      %s\n", msg.ID))
+		sb.WriteString("\n")
+
+		if msg.Text != "" {
+			sb.WriteString("--- Plain Text ---\n")
+			sb.WriteString(msg.Text)
+			sb.WriteString("\n")
+		}
+		if msg.HTML != "" && msg.Text == "" {
+			// Only show HTML if there is no plain-text version.
+			sb.WriteString("--- HTML Body ---\n")
+			body := msg.HTML
+			if len(body) > 4000 {
+				body = body[:4000] + "\n[...truncated]"
+			}
+			sb.WriteString(body)
+			sb.WriteString("\n")
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	})
+}
+
+// deleteEmails — deletes specific emails by ID.
+func registerDeleteMailTool(s *server.MCPServer, c *client) {
+	tool := mcp.NewTool("deleteEmails",
+		mcp.WithDescription("Delete one or more emails from Mailpit by their IDs. Use listEmails to find the IDs. To delete all emails at once, use deleteAllEmails instead."),
+		mcp.WithString("ids",
+			mcp.Required(),
+			mcp.Description("Comma-separated list of email IDs to delete (e.g. 'abc123,def456')."),
+		),
+	)
+	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		idsStr, err := req.RequireString("ids")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		var ids []string
+		for _, id := range strings.Split(idsStr, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return mcp.NewToolResultError("No valid IDs provided."), nil
+		}
+
+		if err := c.deleteMail(ids); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete emails: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Deleted %d email(s).", len(ids))), nil
+	})
+}
+
+// deleteAllEmails — deletes every email in Mailpit.
+func registerDeleteAllMailTool(s *server.MCPServer, c *client) {
+	tool := mcp.NewTool("deleteAllEmails",
+		mcp.WithDescription("Delete all emails from Mailpit. This is irreversible."),
+	)
+	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if err := c.deleteAllMail(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete all emails: %v", err)), nil
+		}
+		return mcp.NewToolResultText("All emails have been deleted from Mailpit."), nil
+	})
+}
+
+// ---- helpers ----
+
+func formatAddress(a mailAddress) string {
+	if a.Name != "" {
+		return fmt.Sprintf("%s <%s>", a.Name, a.Address)
+	}
+	return a.Address
+}
+
+func formatAddresses(addrs []mailAddress) string {
+	parts := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		parts = append(parts, formatAddress(a))
+	}
+	return strings.Join(parts, ", ")
 }

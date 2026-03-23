@@ -58,6 +58,29 @@ Load these when working on specific areas:
 | `add-service` | Adding a new managed dev service (Definition + defaults.go entry) |
 | `install-package` | Implementing a new APT-based service installer |
 | `update-skills` | Creating or updating agent skills for this project |
+| `integration-testing` | Writing, running, or debugging any integration test |
+
+## Integration tests — MUST run inside Incus
+
+The integration tests in `tests/api/` are tagged `//go:build integration` and run against a **live devctl instance**. They mutate real state (emails, sites, services, settings). Running them against the host system devctl at `http://127.0.0.1:4000` will corrupt live data.
+
+**NEVER run integration tests on the host machine.** Always run them inside the dedicated Incus test container.
+
+```sh
+# WRONG — runs against host devctl, mutates live data
+go test -tags integration ./tests/api/
+
+# RIGHT — build first, then start the container, then run tests
+make build
+make test-env          # in one terminal — starts container, blocks until Ctrl+C
+DEVCTL_BASE_URL=http://127.0.0.1:4000 make test-api   # in another terminal
+```
+
+Load the `integration-testing` skill for the full workflow: container setup, TDD procedure, where to put tests, and available helpers.
+
+| Skill | Load when... |
+|---|---|
+| `integration-testing` | Writing, running, or debugging any integration test |
 
 ## Testing after changes
 

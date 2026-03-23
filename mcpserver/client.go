@@ -213,6 +213,43 @@ type spxProfileDetail struct {
 	Functions       []spxFunction `json:"functions"`
 }
 
+type mailAddress struct {
+	Name    string `json:"Name"`
+	Address string `json:"Address"`
+}
+
+type mailMessage struct {
+	ID      string        `json:"ID"`
+	Read    bool          `json:"Read"`
+	From    mailAddress   `json:"From"`
+	To      []mailAddress `json:"To"`
+	Cc      []mailAddress `json:"Cc"`
+	Subject string        `json:"Subject"`
+	Created string        `json:"Created"`
+	Size    int64         `json:"Size"`
+}
+
+type mailMessageDetail struct {
+	ID      string        `json:"ID"`
+	Read    bool          `json:"Read"`
+	From    mailAddress   `json:"From"`
+	To      []mailAddress `json:"To"`
+	Cc      []mailAddress `json:"Cc"`
+	Subject string        `json:"Subject"`
+	Created string        `json:"Created"`
+	Size    int64         `json:"Size"`
+	Text    string        `json:"Text"`
+	HTML    string        `json:"HTML"`
+}
+
+type mailListResponse struct {
+	Total    int           `json:"total"`
+	Unread   int           `json:"unread"`
+	Count    int           `json:"count"`
+	Start    int           `json:"start"`
+	Messages []mailMessage `json:"messages"`
+}
+
 // ---- Convenience wrappers ----
 
 func (c *client) listSites() ([]site, error) {
@@ -344,4 +381,47 @@ func (c *client) getSPXProfileDetail(key string) (spxProfileDetail, error) {
 
 func (c *client) clearDumps() error {
 	return c.delete("/api/dumps")
+}
+
+func (c *client) listMail(limit, start int) (mailListResponse, error) {
+	var out mailListResponse
+	path := fmt.Sprintf("/api/mail/api/v1/messages?limit=%d&start=%d", limit, start)
+	return out, c.get(path, &out)
+}
+
+func (c *client) getMail(id string) (mailMessageDetail, error) {
+	var out mailMessageDetail
+	return out, c.get("/api/mail/api/v1/message/"+id, &out)
+}
+
+func (c *client) deleteMail(ids []string) error {
+	return c.deleteWithBody("/api/mail/api/v1/messages", map[string]any{"IDs": ids})
+}
+
+// deleteAllMail deletes every message in Mailpit. Mailpit requires a no-body
+// DELETE to delete all messages; sending {"IDs":["*"]} is silently ignored.
+func (c *client) deleteAllMail() error {
+	return c.delete("/api/mail/api/v1/messages")
+}
+
+func (c *client) deleteWithBody(path string, body any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodDelete, c.base+path, strings.NewReader(string(b)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		rb, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("DELETE %s: HTTP %d: %s", path, resp.StatusCode, strings.TrimSpace(string(rb)))
+	}
+	return nil
 }

@@ -204,12 +204,17 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("mysql: write config.env: %w", err)
 	}
 
-	// 8. Symlink client binaries into the shared bin dir so they are in PATH.
-	fmt.Fprintln(w, "mysql: symlinking client binaries...")
+	// 8. Write wrapper scripts for client binaries into the shared bin dir so
+	//    they are in PATH. Wrappers (rather than plain symlinks) are used so
+	//    that MYSQL_HOME is set to the mysql service directory, causing the
+	//    MySQL client to read my.cnf from there and automatically use the
+	//    correct socket path without needing an explicit --socket flag.
+	fmt.Fprintln(w, "mysql: writing client binary wrappers...")
 	sharedBinDir := paths.BinDir(m.serverRoot)
+	mysqlEnv := map[string]string{"MYSQL_HOME": mysqlDir}
 	for _, bin := range []string{"mysql", "mysqldump", "mysqladmin"} {
-		if err := LinkIntoBinDir(sharedBinDir, bin, filepath.Join(binDir, bin)); err != nil {
-			fmt.Fprintf(w, "mysql: warning: symlink %s: %v\n", bin, err)
+		if err := WrapperScriptIntoBinDir(sharedBinDir, bin, filepath.Join(binDir, bin), mysqlEnv); err != nil {
+			fmt.Fprintf(w, "mysql: warning: wrapper %s: %v\n", bin, err)
 		}
 	}
 

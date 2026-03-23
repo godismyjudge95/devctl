@@ -10,6 +10,9 @@ BASE_URL="${DEVCTL_BASE_URL:-http://127.0.0.1:4000}"
 # Server root inside the container (matches the devctl.service unit written by test-env.sh).
 SERVER_ROOT="/home/testuser/ddev/sites/server"
 
+# Export so that `run bash -c "..."` subshells can use these variables.
+export BASE_URL SERVER_ROOT CONTAINER
+
 # ─── container_exec ────────────────────────────────────────────────────────────
 # Run a command inside the Incus container.
 # When DEVCTL_CONTAINER is set the tests run on the host and commands are

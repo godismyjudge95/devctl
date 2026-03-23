@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # scripts/test-env.sh — Incus container lifecycle for devctl testing
+#
+# All tests run INSIDE the container.  The host devctl is never stopped and
+# port 4000 on the host is never touched.  Multiple containers can run in
+# parallel without any port conflicts.
+#
 # Make this file executable: chmod +x scripts/test-env.sh
 set -euo pipefail
 
@@ -49,19 +54,11 @@ fi
 # ─── Step 3: Generate container name ─────────────────────────────────────────
 CONTAINER="devctl-test-$(date +%s)"
 
-# ─── Track whether we stopped the system devctl service ──────────────────────
-STOPPED_SYSTEM_DEVCTL=0
-
 # ─── EXIT trap (set before launch so it always fires) ─────────────────────────
 cleanup() {
   echo ""
   echo "Destroying container ${CONTAINER}..."
   incus delete --force "$CONTAINER" 2>/dev/null || true
-  if [[ "$STOPPED_SYSTEM_DEVCTL" -eq 1 ]]; then
-    info "Restarting system devctl service..."
-    systemctl start devctl 2>/dev/null || true
-    success "System devctl restarted."
-  fi
 }
 trap cleanup EXIT
 
@@ -105,6 +102,27 @@ incus exec "$CONTAINER" -- useradd -m testuser
 incus exec "$CONTAINER" -- mkdir -p /home/testuser/ddev/sites/server
 incus exec "$CONTAINER" -- chown -R testuser:testuser /home/testuser/ddev
 success "testuser created."
+
+# ─── Step 7a: Stub a PHP 8.4 installation for settings tests ──────────────────
+# The PHP settings tests (test_api_php_mutate.bats) require at least one PHP
+# version to be "installed" (i.e. php-fpm binary exists under SERVER_ROOT/php/).
+# We create a minimal stub: a zero-byte php-fpm binary and a real php.ini
+# copied from the embedded devctl template so the read/write round-trip works.
+info "Creating PHP 8.4 stub for settings tests..."
+PHP_DIR="/home/testuser/ddev/sites/server/php/8.4"
+incus exec "$CONTAINER" -- mkdir -p "$PHP_DIR"
+# Stub binary — just needs to exist for InstalledVersions() to recognise it.
+incus exec "$CONTAINER" -- bash -c "echo '#!/bin/sh' > ${PHP_DIR}/php-fpm && chmod 755 ${PHP_DIR}/php-fpm"
+# Write a minimal php.ini with the four tracked settings.
+incus exec "$CONTAINER" -- tee "${PHP_DIR}/php.ini" >/dev/null <<'PHPINI'
+; devctl stub php.ini — used by PHP settings tests
+memory_limit = 128M
+max_execution_time = 30
+upload_max_filesize = 2M
+post_max_size = 8M
+PHPINI
+incus exec "$CONTAINER" -- chown -R testuser:testuser /home/testuser/ddev
+success "PHP 8.4 stub created at ${PHP_DIR}."
 
 # ─── Step 7b: Mount artifact cache volume ─────────────────────────────────────
 ARTIFACTS_POOL="default"
@@ -188,29 +206,13 @@ incus exec "$CONTAINER" -- systemctl enable devctl
 incus exec "$CONTAINER" -- systemctl start devctl
 success "devctl service started."
 
-# ─── Step 10: Free port 4000 if system devctl is using it ────────────────────
-if ss -tlnp 2>/dev/null | grep -q '127.0.0.1:4000\|0\.0\.0\.0:4000\|\*:4000'; then
-  info "Port 4000 is in use — stopping system devctl service..."
-  systemctl stop devctl 2>/dev/null || true
-  STOPPED_SYSTEM_DEVCTL=1
-  # Wait a moment for the port to be released
-  sleep 1
-  success "System devctl stopped."
-fi
-
-# ─── Step 11: Add port proxy ─────────────────────────────────────────────────
-info "Adding port proxy (container:4000 → host:4000)..."
-incus config device add "$CONTAINER" devctl proxy \
-  listen=tcp:127.0.0.1:4000 connect=tcp:127.0.0.1:4000
-success "Port proxy configured."
-
-# ─── Step 12: Wait for devctl HTTP ───────────────────────────────────────────
+# ─── Step 10: Wait for devctl HTTP ───────────────────────────────────────────
 info "Waiting for devctl HTTP API to respond..."
 TIMEOUT=30
 ELAPSED=0
 while true; do
-  if curl -sf http://127.0.0.1:4000/api/settings/resolved >/dev/null 2>&1; then
-    success "devctl is responding on http://127.0.0.1:4000."
+  if incus exec "$CONTAINER" -- curl -sf http://127.0.0.1:4000/api/settings/resolved >/dev/null 2>&1; then
+    success "devctl is responding on http://127.0.0.1:4000 (inside container)."
     break
   fi
   if [[ $ELAPSED -ge $TIMEOUT ]]; then
@@ -224,17 +226,94 @@ while true; do
   ELAPSED=$((ELAPSED + 1))
 done
 
-# ─── Step 13: Export env vars ─────────────────────────────────────────────────
-export DEVCTL_CONTAINER="$CONTAINER"
-export DEVCTL_BASE_URL="http://127.0.0.1:4000"
+# ─── Step 10b: Install Caddy (required service) ───────────────────────────────
+# Caddy must be installed and running before tests begin. The mutate tests
+# assume caddy is pre-installed (it is a required service). Install via the API
+# and wait for it to reach running state.
+info "Installing Caddy (required service)..."
+INSTALL_RESPONSE=$(incus exec "$CONTAINER" -- \
+  curl -sf -X POST --max-time 120 --no-buffer \
+  http://127.0.0.1:4000/api/services/caddy/install 2>/dev/null || true)
+if echo "$INSTALL_RESPONSE" | grep -q "^event: done"; then
+  success "Caddy installed."
+elif echo "$INSTALL_RESPONSE" | grep -q "^event: error"; then
+  error "Caddy install failed:"
+  echo "$INSTALL_RESPONSE" | grep "^data:" | tail -5 >&2
+  exit 1
+else
+  # May have already been installed or an unexpected response — check status
+  CADDY_INSTALLED=$(incus exec "$CONTAINER" -- \
+    sh -c "curl -sf http://127.0.0.1:4000/api/services | jq -r '.[] | select(.id==\"caddy\") | .installed'" 2>/dev/null || echo "unknown")
+  if [[ "$CADDY_INSTALLED" == "true" ]]; then
+    success "Caddy already installed."
+  else
+    error "Caddy install did not return a done event (response: ${INSTALL_RESPONSE:0:200})"
+    exit 1
+  fi
+fi
 
-# ─── Step 14: Mode-specific behaviour ────────────────────────────────────────
+# Wait for Caddy to reach running state
+TIMEOUT=30; ELAPSED=0
+while true; do
+  CADDY_STATUS=$(incus exec "$CONTAINER" -- \
+    sh -c "curl -sf http://127.0.0.1:4000/api/services | jq -r '.[] | select(.id==\"caddy\") | .status'" 2>/dev/null || echo "")
+  if [[ "$CADDY_STATUS" == "running" ]]; then
+    success "Caddy is running."
+    break
+  fi
+  if [[ $ELAPSED -ge $TIMEOUT ]]; then
+    error "Timed out waiting for Caddy to reach running state (last: ${CADDY_STATUS})."
+    exit 1
+  fi
+  sleep 1; ELAPSED=$((ELAPSED+1))
+done
+
+# ─── Step 11: Push test assets into the container ───────────────────────────
+# Use tar-pipe for all multi-file transfers: single round-trip instead of one
+# Incus API call per file (which is very slow for even small directory trees).
+
+info "Pushing BATS integration tests..."
+incus exec "$CONTAINER" -- mkdir -p /tmp/tests
+tar -czf - -C tests integration/ | incus exec "$CONTAINER" -- tar -xzf - -C /tmp/tests/
+success "BATS tests pushed to /tmp/tests/integration/."
+
+# Go API test binary — compile on host, push binary only (no Go needed in container)
+if command -v go &>/dev/null; then
+  info "Compiling Go API test binary..."
+  go test -c -tags=integration -o devctl.test ./tests/api/ 2>&1
+  incus file push devctl.test "$CONTAINER/tmp/devctl.test"
+  incus exec "$CONTAINER" -- chmod 755 /tmp/devctl.test
+  rm -f devctl.test
+  success "Go API test binary pushed to /tmp/devctl.test."
+else
+  info "Go not found on host — skipping Go API test binary (test-api will be unavailable)."
+fi
+
+# Playwright e2e tests — copy test specs and config
+info "Pushing Playwright e2e tests..."
+tar -czf - -C tests e2e/ | incus exec "$CONTAINER" -- tar -xzf - -C /tmp/tests/
+# Write a minimal package.json so npx playwright resolves correctly and push config
+printf '{\n  "name": "devctl-tests",\n  "private": true\n}\n' \
+  | incus exec "$CONTAINER" -- tee /tmp/package.json >/dev/null
+incus file push playwright.config.ts "$CONTAINER/tmp/playwright.config.ts"
+success "Playwright e2e tests pushed to /tmp/tests/e2e/."
+
+# ─── Step 12: Export env vars ─────────────────────────────────────────────────
+export DEVCTL_CONTAINER="$CONTAINER"
+
+# ─── Step 13: Mode-specific behaviour ────────────────────────────────────────
 if [[ "$MODE" == "interactive" ]]; then
   echo ""
   printf '%s─────────────────────────────────────────────────────%s\n' "${BOLD}" "${RESET}"
   printf '%s devctl test environment ready%s\n'                          "${BOLD}" "${RESET}"
   printf ' Container : %s\n'                                             "${CONTAINER}"
-  printf ' Dashboard : %s%s%s\n'                                         "${CYAN}" "${DEVCTL_BASE_URL}" "${RESET}"
+  printf ' Tests run : %sinside the container%s (host devctl untouched)\n' "${CYAN}" "${RESET}"
+  echo ""
+  printf ' To run tests:\n'
+  printf '   DEVCTL_CONTAINER=%s make test-bats\n'                       "${CONTAINER}"
+  printf '   DEVCTL_CONTAINER=%s make test-api\n'                        "${CONTAINER}"
+  printf '   DEVCTL_CONTAINER=%s make test-e2e\n'                        "${CONTAINER}"
+  printf '   DEVCTL_CONTAINER=%s make test\n'                            "${CONTAINER}"
   echo ""
   printf ' Press Ctrl+C to stop and destroy the container.\n'
   printf '%s─────────────────────────────────────────────────────%s\n' "${BOLD}" "${RESET}"
@@ -245,7 +324,7 @@ else
   echo ""
   info "Running tests..."
   TEST_EXIT=0
-  make test || TEST_EXIT=$?
+  DEVCTL_CONTAINER="$CONTAINER" make test || TEST_EXIT=$?
   # EXIT trap will destroy the container; exit with test result
   exit $TEST_EXIT
 fi
