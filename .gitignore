@@ -7,6 +7,16 @@ frontend/node_modules/
 # Scripts dependencies
 scripts/node_modules/
 
+# Test tooling dependencies (root package.json)
+node_modules/
+
+# Test environment container artifacts
+.test-env/
+
+# Playwright output
+test-results/
+playwright-report/
+
 # Accidentally included project data directory
 home/
 

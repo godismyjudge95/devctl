@@ -188,6 +188,13 @@ func (s *Server) registerRoutes() {
 	// Speedscope static assets are served explicitly to prevent the SPA
 	// catch-all from intercepting /speedscope/* requests.
 	s.mux.HandleFunc("/speedscope/", s.handleSpeedscope)
+
+	// Catch-all for unknown /api/* routes — must be before the SPA handler.
+	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+
+	// Serve embedded Vue SPA — must be last.
 	s.mux.HandleFunc("/", s.handleSPA)
 }
 
