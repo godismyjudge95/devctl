@@ -59,8 +59,12 @@ func (s *Server) handleMailProxy(w http.ResponseWriter, r *http.Request) {
 			req.URL.Path = stripped
 			req.URL.RawQuery = r.URL.RawQuery
 			req.Host = target.Host
-			// Remove hop-by-hop headers.
+			// Remove hop-by-hop and browser-origin headers. The proxy makes a
+			// server-side request to Mailpit; forwarding Origin/Referer causes
+			// Mailpit's CORS middleware to reject requests from unknown origins.
 			req.Header.Del("X-Forwarded-For")
+			req.Header.Del("Origin")
+			req.Header.Del("Referer")
 		},
 	}
 	proxy.ServeHTTP(w, r)

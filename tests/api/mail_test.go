@@ -150,6 +150,27 @@ func sendTestEmail(t *testing.T) {
 	}
 }
 
+// sendTestEmailAndGetID injects a test email and returns its message ID.
+func sendTestEmailAndGetID(t *testing.T) string {
+	t.Helper()
+	sendTestEmail(t)
+
+	// Fetch the most-recent message to get its ID.
+	body := httpGet(t, "/api/mail/api/v1/messages?limit=1")
+	var resp struct {
+		Messages []struct {
+			ID string `json:"ID"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("sendTestEmailAndGetID: decode response: %v\nbody: %s", err, body)
+	}
+	if len(resp.Messages) == 0 {
+		t.Fatal("sendTestEmailAndGetID: no messages found after sending")
+	}
+	return resp.Messages[0].ID
+}
+
 // ---- Tests ----
 
 // TestDeleteAllEmails_MCPTool_DeletesAllMessages verifies that calling the
@@ -173,5 +194,98 @@ func TestDeleteAllEmails_MCPTool_DeletesAllMessages(t *testing.T) {
 	afterCount := mailCount(t)
 	if afterCount != 0 {
 		t.Errorf("deleteAllEmails: expected 0 emails after deletion, got %d", afterCount)
+	}
+}
+
+// TestDeleteAllEmails_UIPath_DeletesAllMessages verifies that a bodyless DELETE
+// to /api/mail/api/v1/messages removes all messages from Mailpit.
+//
+// This is the correct call pattern for the frontend's deleteAllMessages().
+// The previous bug was that deleteAllMessages() sent {"IDs":["*"]} which
+// Mailpit silently ignores, leaving all messages intact.
+func TestDeleteAllEmails_UIPath_DeletesAllMessages(t *testing.T) {
+	// Ensure there is at least one email to delete.
+	sendTestEmail(t)
+
+	beforeCount := mailCount(t)
+	if beforeCount == 0 {
+		t.Fatal("expected at least one email before delete-all, got 0")
+	}
+
+	// Send the correct (fixed) request: a bodyless DELETE.
+	_, status := httpDelete(t, "/api/mail/api/v1/messages")
+	if status != 200 && status != 204 {
+		t.Fatalf("DELETE /api/mail/api/v1/messages (no body): expected 200/204, got %d", status)
+	}
+
+	afterCount := mailCount(t)
+	if afterCount != 0 {
+		t.Errorf("deleteAllMessages: expected 0 emails after bodyless DELETE, got %d", afterCount)
+	}
+}
+
+// TestDeleteEmails_MCPTool_DeletesSpecificMessages verifies that the
+// deleteEmails MCP tool removes only the specified messages by ID.
+func TestDeleteEmails_MCPTool_DeletesSpecificMessages(t *testing.T) {
+	// Send two emails and collect their IDs.
+	id1 := sendTestEmailAndGetID(t)
+	id2 := sendTestEmailAndGetID(t)
+
+	beforeCount := mailCount(t)
+	if beforeCount < 2 {
+		t.Fatalf("expected at least 2 emails before deleteEmails, got %d", beforeCount)
+	}
+
+	session := mcpSession(t)
+	result := mcpCallTool(t, session, "deleteEmails", map[string]any{
+		"ids": id1 + "," + id2,
+	})
+
+	if !strings.Contains(result, "Deleted") {
+		t.Errorf("deleteEmails: unexpected result text: %q", result)
+	}
+
+	afterCount := mailCount(t)
+	expectedCount := beforeCount - 2
+	if afterCount != expectedCount {
+		t.Errorf("deleteEmails: expected %d emails after deletion of 2, got %d", expectedCount, afterCount)
+	}
+}
+
+// TestDeleteEmails_UIPath_DeletesSpecificMessages verifies that DELETE
+// /api/mail/api/v1/messages with a JSON body of specific IDs removes only
+// those messages (the UI path for per-message deletion).
+func TestDeleteEmails_UIPath_DeletesSpecificMessages(t *testing.T) {
+	// Send two emails and collect their IDs.
+	id1 := sendTestEmailAndGetID(t)
+	id2 := sendTestEmailAndGetID(t)
+
+	beforeCount := mailCount(t)
+	if beforeCount < 2 {
+		t.Fatalf("expected at least 2 emails before delete, got %d", beforeCount)
+	}
+
+	// Simulate what the frontend deleteMessages(ids) call does.
+	body, _ := json.Marshal(map[string]any{"IDs": []string{id1, id2}})
+	url := fmt.Sprintf("%s/api/mail/api/v1/messages", baseURL())
+	req, err := http.NewRequest(http.MethodDelete, url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build DELETE request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+		rb, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200/204, got %d: %s", resp.StatusCode, rb)
+	}
+
+	afterCount := mailCount(t)
+	expectedCount := beforeCount - 2
+	if afterCount != expectedCount {
+		t.Errorf("delete UI path: expected %d emails after deletion of 2, got %d", expectedCount, afterCount)
 	}
 }

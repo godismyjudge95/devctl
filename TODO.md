@@ -10,6 +10,7 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Backlog
 
+- double check we can do everything with https://github.com/coollabsio/maxio and then move to it instead of RustFS
 - create a demo mode with dummy data that does not save anything to sqlite on disk (it can create it in memory if needed) and mock anything else that would be needed to see the whole dashboard and all of its features.  Ideas for things to mock: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled with different statuses shown.  Etc.
 - an auto updater that updates from github's latest release binary
 

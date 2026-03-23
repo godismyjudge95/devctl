@@ -77,6 +77,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error(err.error ?? res.statusText)
   }
   if (res.status === 204) return undefined as T
+  const ct = res.headers.get('Content-Type') ?? ''
+  if (!ct.includes('application/json')) return undefined as T
   return res.json()
 }
 
@@ -355,8 +357,10 @@ export const searchMessages = (query: string, limit = 25, start = 0) =>
 export const deleteMessages = (ids: string[]) =>
   request<void>('DELETE', '/api/mail/api/v1/messages', { IDs: ids })
 
+// Mailpit silently ignores {"IDs":["*"]}; a bodyless DELETE is required to
+// delete all messages. Do not pass a body here.
 export const deleteAllMessages = () =>
-  request<void>('DELETE', '/api/mail/api/v1/messages', { IDs: ['*'] })
+  request<void>('DELETE', '/api/mail/api/v1/messages')
 
 export const markRead = (ids: string[], read: boolean) =>
   request<void>('PUT', '/api/mail/api/v1/messages', { IDs: ids, Read: read })

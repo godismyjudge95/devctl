@@ -84,15 +84,12 @@ Load the `integration-testing` skill for the full workflow: container setup, TDD
 
 ## Testing after changes
 
-After implementing any feature, **always test it in the browser** before considering the task done:
+After implementing any feature, add or update the relevant tests before considering the task done:
 
-1. Run `make install` to build and install the binary.
-2. Run `sudo systemctl restart devctl` and wait for it to be active.
-3. Open `http://127.0.0.1:4000` in the browser using the Playwright browser tool.
-4. Navigate to the relevant page and verify the feature works end-to-end.
-5. Check `sudo journalctl -u devctl -n 40 --no-pager` for any startup errors.
+- **Backend changes** → add or update Go API integration tests in `tests/api/`. Load the `integration-testing` skill for the full workflow.
+- **Frontend / UI changes** → add or update Playwright e2e tests in `tests/e2e/`. Load the `testing-dashboard` skill for conventions and tooling.
 
-Do not rely on a clean compile as a substitute for a live browser test.
+Do not rely on a clean compile as a substitute for automated tests.
 
 ## Networking / DNS
 
