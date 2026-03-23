@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.3.0 — 2026-03-23
+
 ### RustFS service
 
 - Added **RustFS** as an installable managed service. Install it from the Services tab; devctl downloads the latest binary from `dl.rustfs.com`, extracts it from the zip archive, writes a `config.env` with default credentials (`devctl`/`devctlsecret`), and registers a `rustfs.test` Caddy reverse-proxy vhost.
