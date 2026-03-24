@@ -191,7 +191,12 @@ func (r *RustFSInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error
 }
 
 // LatestVersion queries GitHub Releases for the latest RustFS version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (r *RustFSInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		return v, nil
+	}
 	return fetchGitHubLatestVersion(ctx, "rustfs/rustfs")
 }
 
@@ -263,6 +268,9 @@ func extractRustFSBinary(zipPath, dest string) error {
 			}
 			defer rc.Close()
 
+			// Remove old binary before writing replacement to avoid ETXTBSY
+			// when the process is currently running.
+			_ = os.Remove(dest)
 			out, err := os.Create(dest)
 			if err != nil {
 				return fmt.Errorf("create dest %s: %w", dest, err)

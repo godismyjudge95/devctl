@@ -46,7 +46,7 @@ test.describe('settings page — structure', () => {
   })
 
   test('settings page — TLS section is visible', async ({ page }) => {
-    await expect(page.getByText('TLS')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'TLS' })).toBeVisible()
     await expect(page.getByRole('button', { name: /download root certificate/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /trust certificate/i })).toBeVisible()
   })

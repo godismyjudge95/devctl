@@ -125,7 +125,14 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 // LatestVersion queries GitHub Releases for the latest Typesense version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (t *TypesenseInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		// Typesense pre-resolved versions may still carry a "v" prefix from
+		// the background version check; strip it to match download URL format.
+		return strings.TrimPrefix(v, "v"), nil
+	}
 	tag, err := fetchGitHubLatestVersion(ctx, "typesense/typesense")
 	if err != nil {
 		return "", err

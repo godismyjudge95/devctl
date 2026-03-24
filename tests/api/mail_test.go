@@ -171,11 +171,27 @@ func sendTestEmailAndGetID(t *testing.T) string {
 	return resp.Messages[0].ID
 }
 
+// requireMailpit skips the test if Mailpit is not installed/running (proxy
+// returns 502 or similar). Called at the top of every mail test so that runs
+// without Mailpit present do not produce false failures.
+func requireMailpit(t *testing.T) {
+	t.Helper()
+	resp, err := http.Get(fmt.Sprintf("%s/api/mail/api/v1/messages?limit=1", baseURL())) //nolint:noctx
+	if err != nil {
+		t.Skipf("requireMailpit: request error (Mailpit not available): %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
+		t.Skipf("requireMailpit: Mailpit not available (HTTP %d) — install it first", resp.StatusCode)
+	}
+}
+
 // ---- Tests ----
 
 // TestDeleteAllEmails_MCPTool_DeletesAllMessages verifies that calling the
 // deleteAllEmails MCP tool removes all messages from Mailpit.
 func TestDeleteAllEmails_MCPTool_DeletesAllMessages(t *testing.T) {
+	requireMailpit(t)
 	// Ensure there is at least one email to delete.
 	sendTestEmail(t)
 
@@ -204,6 +220,7 @@ func TestDeleteAllEmails_MCPTool_DeletesAllMessages(t *testing.T) {
 // The previous bug was that deleteAllMessages() sent {"IDs":["*"]} which
 // Mailpit silently ignores, leaving all messages intact.
 func TestDeleteAllEmails_UIPath_DeletesAllMessages(t *testing.T) {
+	requireMailpit(t)
 	// Ensure there is at least one email to delete.
 	sendTestEmail(t)
 
@@ -227,6 +244,7 @@ func TestDeleteAllEmails_UIPath_DeletesAllMessages(t *testing.T) {
 // TestDeleteEmails_MCPTool_DeletesSpecificMessages verifies that the
 // deleteEmails MCP tool removes only the specified messages by ID.
 func TestDeleteEmails_MCPTool_DeletesSpecificMessages(t *testing.T) {
+	requireMailpit(t)
 	// Send two emails and collect their IDs.
 	id1 := sendTestEmailAndGetID(t)
 	id2 := sendTestEmailAndGetID(t)
@@ -256,6 +274,7 @@ func TestDeleteEmails_MCPTool_DeletesSpecificMessages(t *testing.T) {
 // /api/mail/api/v1/messages with a JSON body of specific IDs removes only
 // those messages (the UI path for per-message deletion).
 func TestDeleteEmails_UIPath_DeletesSpecificMessages(t *testing.T) {
+	requireMailpit(t)
 	// Send two emails and collect their IDs.
 	id1 := sendTestEmailAndGetID(t)
 	id2 := sendTestEmailAndGetID(t)

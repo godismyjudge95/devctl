@@ -154,7 +154,12 @@ func (m *MeilisearchInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) 
 }
 
 // LatestVersion queries GitHub Releases for the latest Meilisearch version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (m *MeilisearchInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		return v, nil
+	}
 	return fetchGitHubLatestVersion(ctx, "meilisearch/meilisearch")
 }
 

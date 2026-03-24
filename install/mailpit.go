@@ -104,7 +104,12 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 // LatestVersion queries GitHub Releases for the latest Mailpit version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (m *MailpitInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		return v, nil
+	}
 	return fetchGitHubLatestVersion(ctx, "axllent/mailpit")
 }
 

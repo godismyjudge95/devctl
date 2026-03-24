@@ -544,23 +544,49 @@ func (s *Server) SetLatestVersion(id, version string) {
 	s.latestVersionsMu.Unlock()
 }
 
+// DeleteLatestVersion removes the cached latest version for a service. Called
+// after a successful update so that update_available clears immediately, even
+// if the subsequent recheckLatestVersion call fails (e.g. no network).
+func (s *Server) DeleteLatestVersion(id string) {
+	s.latestVersionsMu.Lock()
+	delete(s.latestVersions, id)
+	s.latestVersionsMu.Unlock()
+}
+
+// GetLatestVersion returns the cached latest version for a service, or "".
+func (s *Server) GetLatestVersion(id string) string {
+	s.latestVersionsMu.RLock()
+	v := s.latestVersions[id]
+	s.latestVersionsMu.RUnlock()
+	return v
+}
+
 // enrichStates copies the latest version and update_available flag from the
 // in-memory cache into a slice of ServiceState values. Returns the enriched
 // slice (new values, original slice is not mutated).
 func (s *Server) enrichStates(states []services.ServiceState) []services.ServiceState {
+	// Copy the map contents (not just the pointer) while holding the lock so
+	// that the subsequent iteration is lock-free and race-free. Copying the
+	// pointer only (lv := s.latestVersions) followed by RUnlock() is a data
+	// race: map mutations in SetLatestVersion / DeleteLatestVersion could run
+	// concurrently with the unlocked lv[st.ID] read below.
 	s.latestVersionsMu.RLock()
-	lv := s.latestVersions
+	lv := make(map[string]string, len(s.latestVersions))
+	for k, v := range s.latestVersions {
+		lv[k] = v
+	}
 	s.latestVersionsMu.RUnlock()
 
 	out := make([]services.ServiceState, len(states))
 	for i, st := range states {
 		if latest, ok := lv[st.ID]; ok && latest != "" {
 			st.LatestVersion = latest
-			// update_available when latest != current installed version (strip
-			// leading "v" for comparison so "v2.10.0" == "2.10.0" doesn't
-			// false-positive, but we do a simple string comparison on normalised
-			// values to keep it straightforward).
-			current := strings.TrimPrefix(st.InstallVersion, "v")
+			// update_available when latest != the currently running binary version.
+			// We compare against st.Version (the live version returned by the binary
+			// on each poll) rather than st.InstallVersion (a compile-time constant
+			// that never changes at runtime). Strip leading "v" so "v2.10.0" ==
+			// "2.10.0" normalises correctly.
+			current := strings.TrimPrefix(st.Version, "v")
 			latestNorm := strings.TrimPrefix(latest, "v")
 			if current != "" && latestNorm != "" && current != latestNorm {
 				st.UpdateAvailable = true
@@ -599,7 +625,11 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
-	if err := inst.UpdateW(r.Context(), pw); err != nil {
+	// Inject the cached latest version into the context so the installer's
+	// UpdateW does not need to re-fetch it from GitHub (avoids 403 in
+	// network-restricted environments and saves an unnecessary round trip).
+	updateCtx := install.WithPreResolvedVersion(r.Context(), s.GetLatestVersion(id))
+	if err := inst.UpdateW(updateCtx, pw); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
 	}
@@ -627,6 +657,72 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Clear the stale cached latest-version BEFORE sending "done" so that any
+	// client polling after they receive "done" will immediately see
+	// update_available=false. The background recheck goroutine may later
+	// re-populate the cache if a real newer version exists, but for now the
+	// installed version matches the "latest" so the badge must disappear.
+	s.DeleteLatestVersion(id)
+
 	go s.poller.Poll()
 	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
+
+	// Re-run the update checker for this service so update_available clears.
+	// Uses context.Background() because r.Context() is already cancelled now
+	// that the SSE stream has closed.
+	go s.recheckLatestVersion(context.Background(), id)
+}
+
+// ---------------------------------------------------------------------------
+// recheckLatestVersion
+// ---------------------------------------------------------------------------
+
+// recheckLatestVersion calls the installer's LatestVersion and updates the
+// in-memory cache, then triggers a poller broadcast. It is called as a
+// goroutine after a successful update so that update_available clears without
+// waiting for the next scheduled background check.
+func (s *Server) recheckLatestVersion(ctx context.Context, id string) {
+	inst, ok := s.installers[id]
+	if !ok {
+		return
+	}
+	latest, err := inst.LatestVersion(ctx)
+	if err != nil {
+		log.Printf("update-checker: recheck %s: %v", id, err)
+		return
+	}
+	s.SetLatestVersion(id, latest)
+	go s.poller.Poll()
+}
+
+// ---------------------------------------------------------------------------
+// /_testing/ handlers (only registered when DEVCTL_TESTING=true)
+// ---------------------------------------------------------------------------
+
+// handleTestingSetLatestVersion injects a fake "latest version" string for a
+// service into the in-memory latestVersions cache. This is used by integration
+// tests to trigger update_available=true without hitting external APIs.
+//
+// POST /_testing/services/{id}/latest-version
+// Body: {"version": "v9999.0.0"}
+func (s *Server) handleTestingSetLatestVersion(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var body struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Version == "" {
+		writeError(w, "version is required", http.StatusBadRequest)
+		return
+	}
+
+	s.SetLatestVersion(id, body.Version)
+	go s.poller.Poll()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }

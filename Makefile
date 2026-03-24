@@ -98,7 +98,9 @@ test-artifacts-download:
 test-artifacts-clean:
 	@which incus > /dev/null 2>&1 || (echo "Incus is not installed." && exit 1)
 	@POOL=default; VOLUME=devctl-test-artifacts; \
-	  CACHE_DIR=$$(incus storage volume get "$$POOL" "$$VOLUME" volatile.rootfs.path 2>/dev/null || echo "/var/lib/incus/storage-pools/$$POOL/custom/$$VOLUME"); \
+	  CACHE_DIR=$$(incus storage volume get "$$POOL" "$$VOLUME" volatile.rootfs.path 2>/dev/null || echo ""); \
+	  if [ -z "$$CACHE_DIR" ]; then CACHE_DIR="/var/lib/incus/storage-pools/$$POOL/custom/$${POOL}_$$VOLUME"; fi; \
+	  if [ ! -d "$$CACHE_DIR" ]; then CACHE_DIR="/var/lib/incus/storage-pools/$$POOL/custom/$$VOLUME"; fi; \
 	  if [ -d "$$CACHE_DIR" ]; then rm -rf "$$CACHE_DIR"/*; echo "Artifact cache cleared."; else echo "Cache dir not found: $$CACHE_DIR"; fi
 
 # Launch an ephemeral test container (interactive — Ctrl+C to destroy).
@@ -136,9 +138,10 @@ test-api:
 test-e2e:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	tar -czf - -C tests e2e/ | incus exec "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
+	incus exec "$$DEVCTL_CONTAINER" -- rm -f /tmp/playwright.config.ts
 	incus file push playwright.config.ts "$$DEVCTL_CONTAINER/tmp/playwright.config.ts"
 	incus exec "$$DEVCTL_CONTAINER" --cwd /tmp -- \
-	  env DEVCTL_BASE_URL=http://127.0.0.1:4000 npx playwright test
+	  env DEVCTL_BASE_URL=http://127.0.0.1:4000 NODE_PATH=/usr/lib/node_modules npx playwright test
 
 # Run all three test layers inside the container.
 test: test-bats test-api test-e2e

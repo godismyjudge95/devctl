@@ -113,7 +113,12 @@ func (c *CaddyInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error 
 }
 
 // LatestVersion queries GitHub Releases for the latest Caddy version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (c *CaddyInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		return v, nil
+	}
 	return fetchGitHubLatestVersion(ctx, "caddyserver/caddy")
 }
 

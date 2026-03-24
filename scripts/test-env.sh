@@ -193,6 +193,7 @@ RestartSec=5s
 Environment=HOME=/home/testuser
 Environment=DEVCTL_SITE_USER=testuser
 Environment=DEVCTL_SERVER_ROOT=/home/testuser/ddev/sites/server
+Environment=DEVCTL_TESTING=true
 
 [Install]
 WantedBy=multi-user.target

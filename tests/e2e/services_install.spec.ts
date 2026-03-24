@@ -121,7 +121,7 @@ test.describe('services install lifecycle — Mailpit', () => {
       return
     }
 
-    const startBtn = row.getByRole('button', { name: /start/i })
+    const startBtn = row.getByTitle('Start Mailpit')
     await expect(startBtn).toBeVisible({ timeout: 5_000 })
     await startBtn.click()
 

@@ -282,6 +282,38 @@ func pollServiceInstalled(t *testing.T, id string, want bool, timeout time.Durat
 	t.Fatalf("pollServiceInstalled: service %q not found in services list", id)
 }
 
+// pollUpdateAvailable polls GET /api/services until the named service's
+// update_available field matches want, or until the timeout is exceeded.
+func pollUpdateAvailable(t *testing.T, id string, want bool, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		body := httpGet(t, "/api/services")
+		services := decodeJSON[[]ServiceState](t, body)
+		for _, svc := range services {
+			if svc.ID == id {
+				if svc.UpdateAvailable == want {
+					return
+				}
+				break
+			}
+		}
+		time.Sleep(time.Second)
+	}
+	// Final check with assertion
+	body := httpGet(t, "/api/services")
+	services := decodeJSON[[]ServiceState](t, body)
+	for _, svc := range services {
+		if svc.ID == id {
+			if svc.UpdateAvailable != want {
+				t.Fatalf("pollUpdateAvailable: service %q: want update_available=%v, got %v after %v", id, want, svc.UpdateAvailable, timeout)
+			}
+			return
+		}
+	}
+	t.Fatalf("pollUpdateAvailable: service %q not found in services list", id)
+}
+
 // decodeJSON unmarshals body into a value of type T.
 // The test is marked as failed and stopped immediately on any parse error.
 func decodeJSON[T any](t *testing.T, body []byte) T {

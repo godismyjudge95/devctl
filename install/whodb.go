@@ -168,7 +168,12 @@ func (w *WhoDBInstaller) PurgeW(ctx context.Context, out io.Writer, _ bool) erro
 }
 
 // LatestVersion queries GitHub Releases for the latest WhoDB version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (w *WhoDBInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		return v, nil
+	}
 	return fetchGitHubLatestVersion(ctx, "clidey/whodb")
 }
 

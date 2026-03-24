@@ -23,8 +23,13 @@ VOLUME="devctl-test-artifacts"
 
 CACHE_DIR="$(incus storage volume get "$POOL" "$VOLUME" volatile.rootfs.path 2>/dev/null || true)"
 if [[ -z "$CACHE_DIR" ]]; then
-  # Fallback: dir driver keeps volumes at a predictable location
-  CACHE_DIR="/var/lib/incus/storage-pools/${POOL}/custom/${VOLUME}"
+  # Fallback: dir driver keeps volumes at a predictable location.
+  # The dir driver prepends the pool name: <pool>_<volume>
+  CACHE_DIR="/var/lib/incus/storage-pools/${POOL}/custom/${POOL}_${VOLUME}"
+  # Also try without the pool prefix in case the layout differs
+  if [[ ! -d "$CACHE_DIR" ]]; then
+    CACHE_DIR="/var/lib/incus/storage-pools/${POOL}/custom/${VOLUME}"
+  fi
 fi
 if [[ ! -d "$CACHE_DIR" ]]; then
   error "Cache directory '$CACHE_DIR' does not exist."
@@ -77,6 +82,10 @@ MAILPIT_VERSION="v1.29.2"
 download "Mailpit ${MAILPIT_VERSION}" \
   "https://github.com/axllent/mailpit/releases/download/${MAILPIT_VERSION}/mailpit-linux-amd64.tar.gz" \
   "mailpit-linux-amd64.tar.gz"
+# Update artifact: same tarball, filename matches the -o dest used by MailpitInstaller.UpdateW
+download "Mailpit ${MAILPIT_VERSION} (update artifact)" \
+  "https://github.com/axllent/mailpit/releases/download/${MAILPIT_VERSION}/mailpit-linux-amd64.tar.gz" \
+  "mailpit-update-linux-amd64.tar.gz"
 
 # ─── Meilisearch ──────────────────────────────────────────────────────────────
 MEILISEARCH_VERSION="v1.37.0"

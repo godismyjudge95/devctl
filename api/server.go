@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -183,6 +184,13 @@ func (s *Server) registerRoutes() {
 	// MCP (Model Context Protocol) — StreamableHTTP transport at /mcp
 	s.mux.Handle("/mcp", s.mcpHandler)
 	s.mux.Handle("/mcp/", s.mcpHandler)
+
+	// /_testing/ — debug/test endpoints. Only registered when DEVCTL_TESTING=true.
+	// These routes are used by integration tests to inject state without hitting
+	// external services (e.g. fake a newer upstream version to trigger update_available).
+	if os.Getenv("DEVCTL_TESTING") == "true" {
+		s.mux.HandleFunc("POST /_testing/services/{id}/latest-version", s.handleTestingSetLatestVersion)
+	}
 
 	// Serve embedded Vue SPA — must be last.
 	// Speedscope static assets are served explicitly to prevent the SPA

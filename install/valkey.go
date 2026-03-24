@@ -133,7 +133,12 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 }
 
 // LatestVersion queries GitHub Releases for the latest Valkey version.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// that value is returned immediately without hitting GitHub.
 func (v *ValkeyInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if v2 := preResolvedVersionFromCtx(ctx); v2 != "" {
+		return v2, nil
+	}
 	return fetchGitHubLatestVersion(ctx, "valkey-io/valkey")
 }
 
@@ -347,6 +352,11 @@ func extractFromTar(tarPath, binaryName, destPath string) error {
 			return err
 		}
 		if hdr.Typeflag == tar.TypeReg && strings.TrimSuffix(filepath.Base(hdr.Name), ".exe") == binaryName {
+			// Remove the old file before creating the new one.
+			// On Linux, overwriting a running executable in-place (os.Create/truncate)
+			// returns ETXTBSY. Unlinking first lets the kernel keep the old inode open
+			// while we write the replacement at a fresh inode.
+			_ = os.Remove(destPath)
 			out, err := os.Create(destPath)
 			if err != nil {
 				return err

@@ -31,6 +31,30 @@ const (
 	curlTimeout = 5 * time.Minute
 )
 
+// ctxKeyPreResolvedVersion is a context key used to inject a pre-resolved
+// latest version string into an UpdateW call, bypassing the upstream network
+// check. This is used by the API handler to avoid a redundant GitHub API call
+// when the version was already fetched during the update-available check.
+type ctxKeyPreResolvedVersionType struct{}
+
+var ctxKeyPreResolvedVersion = ctxKeyPreResolvedVersionType{}
+
+// WithPreResolvedVersion returns a new context that carries the given version
+// string. When LatestVersion implementations find this key they return the
+// pre-resolved value instead of hitting the upstream API.
+func WithPreResolvedVersion(ctx context.Context, version string) context.Context {
+	if version == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxKeyPreResolvedVersion, version)
+}
+
+// preResolvedVersionFromCtx returns the pre-resolved version from ctx, or "".
+func preResolvedVersionFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyPreResolvedVersion).(string)
+	return v
+}
+
 // Installer is implemented by each service installer.
 type Installer interface {
 	// ServiceID returns the services.yaml id for this service (e.g. "caddy").
