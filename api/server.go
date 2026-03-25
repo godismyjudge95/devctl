@@ -36,6 +36,7 @@ type Server struct {
 	hooks       *install.HookRegistry
 	serverRoot  string // absolute path to the devctl server directory
 	siteUser    string // OS username of the non-root site user (e.g. "daniel")
+	siteHome    string // home directory of the non-root site user (e.g. "/home/daniel")
 	devctlAddr  string // listen address passed to EnsureHTTPServer (e.g. "127.0.0.1:4000")
 	mux         *http.ServeMux
 	uiFS        embed.FS
@@ -62,6 +63,7 @@ func NewServer(
 	uiFS embed.FS,
 	serverRoot string,
 	siteUser string,
+	siteHome string,
 	devctlAddr string,
 ) *Server {
 	s := &Server{
@@ -78,6 +80,7 @@ func NewServer(
 		hooks:          hooks,
 		serverRoot:     serverRoot,
 		siteUser:       siteUser,
+		siteHome:       siteHome,
 		devctlAddr:     devctlAddr,
 		mux:            http.NewServeMux(),
 		uiFS:           uiFS,

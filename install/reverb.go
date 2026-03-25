@@ -2,17 +2,16 @@ package install
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
@@ -61,7 +60,7 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	//    laravel new treats <name> as relative to cwd, not as an absolute path.
 	laravelBin := filepath.Join(r.siteHome, ".config", "composer", "vendor", "bin", "laravel")
 	fmt.Fprintln(w, "reverb: creating Laravel project...")
-	_, err := runAsUserW(ctx, w, r.siteUser, r.siteHome, sitesDir,
+	_, err := runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, sitesDir,
 		fmt.Sprintf("%s new reverb --no-interaction --database=sqlite", laravelBin))
 	if err != nil {
 		return fmt.Errorf("laravel new: %w", err)
@@ -70,7 +69,7 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 3. Install broadcasting (sets BROADCAST_CONNECTION=reverb, writes
 	//    REVERB_APP_ID/KEY/SECRET to .env).
 	fmt.Fprintln(w, "reverb: installing broadcasting...")
-	_, err = runAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
+	_, err = runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
 		"php artisan install:broadcasting --reverb --without-node --no-interaction")
 	if err != nil {
 		return fmt.Errorf("install:broadcasting: %w", err)
@@ -136,7 +135,7 @@ func (r *ReverbInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "reverb: running composer update laravel/reverb...")
-	_, err := runAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
+	_, err := runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
 		"composer update laravel/reverb --no-interaction --prefer-dist")
 	if err != nil {
 		return fmt.Errorf("reverb: composer update: %w", err)
@@ -178,31 +177,6 @@ func (r *ReverbInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// runAsUserW runs a shell command as the given OS user via `sudo -u <user>`.
-// dir is the working directory (empty = default). Output is streamed to w
-// and also returned as a string.
-func runAsUserW(ctx context.Context, w io.Writer, username, home, dir, command string) (string, error) {
-	var shellCmd string
-	if dir != "" {
-		shellCmd = fmt.Sprintf("cd '%s' && %s", dir, command)
-	} else {
-		shellCmd = command
-	}
-	cmd := exec.CommandContext(ctx, "sudo", "-u", username, "--", "sh", "-c", shellCmd)
-	// Provide a minimal but correct environment: HOME must point to the
-	// siteUser's home so that tools like composer and npm resolve ~ correctly.
-	cmd.Env = append(os.Environ(),
-		"HOME="+home,
-		"USER="+username,
-	)
-	var buf bytes.Buffer
-	mw := io.MultiWriter(&buf, w)
-	cmd.Stdout = mw
-	cmd.Stderr = mw
-	err := cmd.Run()
-	return buf.String(), err
-}
 
 // patchEnvFile upserts key=value pairs in a .env file.
 // Existing keys are updated in-place; missing keys are appended.

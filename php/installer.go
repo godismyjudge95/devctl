@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
+	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
 )
 
@@ -27,8 +29,10 @@ const (
 // (e.g. "/home/alice/ddev/sites/server").
 // siteUser is the non-root OS username (e.g. "alice") — PHP-FPM workers run as
 // this user so they can write to site storage directories.
+// siteHome is the home directory of siteUser (e.g. "/home/alice") — used for
+// installing Composer global tools on behalf of the site user.
 // The binaries are installed to {serverRoot}/php/{ver}/.
-func Install(ctx context.Context, ver string, serverRoot string, siteUser string) error {
+func Install(ctx context.Context, ver string, serverRoot string, siteUser string, siteHome string) error {
 	phpDir := PHPDir(ver, serverRoot)
 	fpmBin := filepath.Join(phpDir, "php-fpm")
 	cliBin := filepath.Join(phpDir, "php")
@@ -95,6 +99,16 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 	if err := InstallWPCLI(ctx, binDir); err != nil {
 		// Non-fatal — log and continue.
 		fmt.Printf("php: install wp-cli: %v\n", err)
+	}
+
+	// 10. Install Laravel and Statamic CLIs globally via Composer for the site user.
+	if err := InstallLaravelCLI(ctx, siteUser, siteHome); err != nil {
+		// Non-fatal — log and continue.
+		fmt.Printf("php: install laravel cli: %v\n", err)
+	}
+	if err := InstallStatamicCLI(ctx, siteUser, siteHome); err != nil {
+		// Non-fatal — log and continue.
+		fmt.Printf("php: install statamic cli: %v\n", err)
 	}
 
 	return nil
@@ -179,6 +193,38 @@ func InstallWPCLI(ctx context.Context, binDir string) error {
 	}
 	if err := os.Chmod(dest, 0755); err != nil {
 		return fmt.Errorf("chmod wp-cli: %w", err)
+	}
+	return nil
+}
+
+// InstallLaravelCLI globally installs laravel/installer via Composer as siteUser.
+// The binary lands at {siteHome}/.config/composer/vendor/bin/laravel.
+// It is safe to call on every PHP install — Composer will upgrade if a newer
+// version is available.
+func InstallLaravelCLI(ctx context.Context, siteUser, siteHome string) error {
+	if siteUser == "" || siteHome == "" {
+		return fmt.Errorf("siteUser and siteHome must be set")
+	}
+	_, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
+		"composer global require laravel/installer --no-interaction --quiet")
+	if err != nil {
+		return fmt.Errorf("composer global require laravel/installer: %w", err)
+	}
+	return nil
+}
+
+// InstallStatamicCLI globally installs statamic/cli via Composer as siteUser.
+// The binary lands at {siteHome}/.config/composer/vendor/bin/statamic.
+// It is safe to call on every PHP install — Composer will upgrade if a newer
+// version is available.
+func InstallStatamicCLI(ctx context.Context, siteUser, siteHome string) error {
+	if siteUser == "" || siteHome == "" {
+		return fmt.Errorf("siteUser and siteHome must be set")
+	}
+	_, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
+		"composer global require statamic/cli --no-interaction --quiet")
+	if err != nil {
+		return fmt.Errorf("composer global require statamic/cli: %w", err)
 	}
 	return nil
 }

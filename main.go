@@ -279,7 +279,7 @@ func run() error {
 	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
 	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, installHooks, uiFS, cfg.ServerRoot, cfg.SiteUser, addr)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, installHooks, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr)
 
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {

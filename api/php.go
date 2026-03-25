@@ -52,7 +52,7 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := php.Install(r.Context(), ver, s.serverRoot, s.siteUser); err != nil {
+	if err := php.Install(r.Context(), ver, s.serverRoot, s.siteUser, s.siteHome); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
