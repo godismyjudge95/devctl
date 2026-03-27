@@ -144,6 +144,10 @@ func Run(args []string) error {
 			content := fmt.Sprintf("# Added by devctl — do not edit manually\nexport PATH=\"%s:$PATH\"\n", binDir)
 			return os.WriteFile(profileScript, []byte(content), 0644)
 		}},
+		{"Writing shell PATH config (.bashrc/.zshrc/.bash_profile)", func() error {
+			composerBinDir := php.ComposerGlobalBinDir(context.Background(), filepath.Join(binDir, "composer"), siteUser, siteHome)
+			return writeShellPathConfig(siteHome, binDir, composerBinDir)
+		}},
 		{"Running daemon-reload", func() error {
 			return systemctl("daemon-reload")
 		}},
@@ -553,6 +557,11 @@ func Uninstall(args []string) error {
 	// Remove profile.d PATH script (non-interactive, no prompt needed).
 	_ = os.Remove("/etc/profile.d/devctl.sh")
 
+	// Remove devctl PATH block from user shell config files.
+	if siteHome != "" {
+		removeShellPathConfig(siteHome)
+	}
+
 	// Stop and disable the service.
 	if isActive {
 		fmt.Print("Stopping service... ")
@@ -759,4 +768,93 @@ func serviceIsEnabled() bool {
 	}
 	s := strings.TrimSpace(string(out))
 	return s == "enabled" || s == "enabled-runtime"
+}
+
+// ---------------------------------------------------------------------------
+// Shell config file PATH helpers
+// ---------------------------------------------------------------------------
+
+// shellPathMarker is the unique comment marker that surrounds the devctl PATH
+// block in shell config files. Both install and uninstall use this to find and
+// manage the block idempotently.
+const shellPathMarker = "# Added by devctl — do not edit manually"
+
+// writeShellPathConfig appends the devctl PATH block to the user's shell config
+// files (.bashrc, .zshrc, .bash_profile) if they exist. The block adds both
+// the devctl bin dir and the Composer global bin dir to PATH. It is idempotent
+// — if the marker is already present the file is not modified.
+func writeShellPathConfig(siteHome, binDir, composerBinDir string) error {
+	block := fmt.Sprintf("\n%s\nexport PATH=\"%s:%s:$PATH\"\n", shellPathMarker, binDir, composerBinDir)
+
+	candidates := []string{
+		filepath.Join(siteHome, ".bashrc"),
+		filepath.Join(siteHome, ".zshrc"),
+		filepath.Join(siteHome, ".bash_profile"),
+	}
+
+	for _, f := range candidates {
+		if _, err := os.Stat(f); os.IsNotExist(err) {
+			continue
+		}
+		content, err := os.ReadFile(f)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", f, err)
+		}
+		if strings.Contains(string(content), shellPathMarker) {
+			// Already present — skip.
+			continue
+		}
+		f2, err := os.OpenFile(f, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", f, err)
+		}
+		_, writeErr := f2.WriteString(block)
+		closeErr := f2.Close()
+		if writeErr != nil {
+			return fmt.Errorf("write %s: %w", f, writeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close %s: %w", f, closeErr)
+		}
+	}
+	return nil
+}
+
+// removeShellPathConfig removes the devctl PATH block from the user's shell
+// config files. Lines between (and including) the marker line are removed.
+func removeShellPathConfig(siteHome string) {
+	candidates := []string{
+		filepath.Join(siteHome, ".bashrc"),
+		filepath.Join(siteHome, ".zshrc"),
+		filepath.Join(siteHome, ".bash_profile"),
+	}
+
+	for _, f := range candidates {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(string(content), shellPathMarker) {
+			continue
+		}
+		lines := strings.Split(string(content), "\n")
+		var out []string
+		skip := false
+		for _, line := range lines {
+			if line == shellPathMarker {
+				skip = true
+				// Also drop the leading blank line we added before the marker.
+				if len(out) > 0 && out[len(out)-1] == "" {
+					out = out[:len(out)-1]
+				}
+				continue
+			}
+			if skip {
+				skip = false
+				continue // skip the export PATH= line
+			}
+			out = append(out, line)
+		}
+		_ = os.WriteFile(f, []byte(strings.Join(out, "\n")), 0644)
+	}
 }

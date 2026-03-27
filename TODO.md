@@ -1,7 +1,7 @@
 # IMPORTANT - READ THIS FIRST BEFORE WORKING ON TODO ITEMS
 Do ONLY ONE task at a time
 Once you think you've completed the item, compile and test the feature/fix in the browser on both desktop and mobile - pay attention to spacing especially on mobile
-**Browser testing means exercising the feature end-to-end, not just checking the page loads.** For a new service: actually click Install, wait for the install stream to complete, confirm the service appears with "running" status, and confirm any vhost (e.g. rustfs.test) is reachable and functional. Verify health checks pass (status must show "running", not "warning"). Do NOT consider a feature done just because the UI renders without errors.
+We want to do TDD so create a failing test, then make it green.  Ensure we are testing every change and updating tests as needed to cover the new functionality and all feasible edge cases (leave out cases that can't realistically happen).
 The last step in completing any TODO item is to modify the README with any new features (if relevant) or update any sections that need updating (if necessary)
 Once an item is completed move it to the "Completed:" section and tag a date/time to it
 Add a TODO item to the end of the backlog if the item you just completed should be screenshotted (ie. added to the screenshot script) for the readme
@@ -10,10 +10,7 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Backlog
 
-- when a new site is autodetected it isn't setting it to the latest version of php
-- when the site directory is manually removed it isn't properly removing the site from devctl
-- when a new site is autodetected it isn't properly registering the paths
-- laravel and statamic installers are not installed globally
+- when a new site is autodetected it isn't properly registering the paths - for instance if I create a new laravel site I have to go in and set the public path to "public" before the site works - we should have an end to end test that creates a site and has a public directory.  It should load with an SSL immediately after creating it
 - replace the MCP with CLI equivalents, but I want the CLI stuff to be able to talk to the currently running devctl service without needing root.  For example, if I type `devctl services:restart caddy` then it should somehow communicate to the devctl service it needs to restart caddy and then return the result back to the cli.  Not sure if we do this purely through the json api (as I think that is what the MCP is using) or if we do it with some sort of socket connection
 - double check we can do everything with https://github.com/coollabsio/maxio and then move to it instead of RustFS
 - create a demo mode with dummy data that does not save anything to sqlite on disk (it can create it in memory if needed) and mock anything else that would be needed to see the whole dashboard and all of its features.  Ideas for things to mock: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled with different statuses shown.  Etc.
@@ -32,3 +29,6 @@ Commit all files to the repo BUT DO NOT PUSH
 - add a logs directory and make each service write their logs there — log rotation at 10 MB with 3 backups, DNS log file created, central Logs page with live SSE streaming *(completed 2026-03-19)*
 - make sure that each service has a config file if it's supported and write config changes there — Valkey uses full valkey.conf, Meilisearch uses config.toml, Typesense uses typesense.ini, Mailpit uses MP_* env vars in config.env; PHP ini seeded from php.ini-development with dev-safe OPcache (validate_timestamps=1, revalidate_freq=0); all config files written once and user-editable *(completed 2026-03-20)*
 - fix mysql error in logs: mysqld: Can't open shared library component_reference_cache.so — installer now extracts plugin .so files and ICU data to lib/mysql/private/; EnsureMySQLPlugins startup migration repairs existing installs automatically *(completed 2026-03-20)*
+- when a new site is autodetected it isn't setting it to the latest version of php *(completed 2026-03-27)*
+- when the site directory is manually removed it isn't properly removing the site from devctl *(completed 2026-03-27)*
+- laravel and statamic installers are not installed globally — `composer global require laravel/installer` and `statamic/cli` now run as the site user on PHP install; Composer global bin dir added to PATH in `.bashrc`/`.zshrc`/`.bash_profile` and prepended to PATH for all internal `sudo` commands *(completed 2026-03-27)*

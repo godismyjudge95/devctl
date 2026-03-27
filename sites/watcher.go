@@ -37,7 +37,7 @@ func (w *Watcher) Watch(ctx context.Context, dir string) error {
 	}
 	defer w.watcher.Close()
 
-	// Scan existing children on start.
+	// Scan existing children on start (also prunes stale entries).
 	w.scanExisting(ctx, dir)
 
 	for {
@@ -48,20 +48,26 @@ func (w *Watcher) Watch(ctx context.Context, dir string) error {
 			if !ok {
 				return nil
 			}
-			// Only care about Create events for direct children.
-			if event.Op&fsnotify.Create == 0 {
-				continue
-			}
 			if filepath.Dir(event.Name) != dir {
 				continue
 			}
-			info, err := os.Stat(event.Name)
-			if err != nil || !info.IsDir() {
-				continue
+
+			switch {
+			case event.Op&fsnotify.Create != 0:
+				// New directory — auto-discover as a site.
+				info, err := os.Stat(event.Name)
+				if err != nil || !info.IsDir() {
+					continue
+				}
+				if err := w.manager.AutoDiscover(ctx, event.Name); err != nil {
+					log.Printf("watcher: auto-discover %s: %v", event.Name, err)
+				}
+
+			case event.Op&(fsnotify.Remove|fsnotify.Rename) != 0:
+				// Directory removed or renamed — clean up the site if tracked.
+				w.manager.RemoveIfMissing(ctx, event.Name)
 			}
-			if err := w.manager.AutoDiscover(ctx, event.Name); err != nil {
-				log.Printf("watcher: auto-discover %s: %v", event.Name, err)
-			}
+
 		case err, ok := <-w.watcher.Errors:
 			if !ok {
 				return nil
@@ -72,6 +78,9 @@ func (w *Watcher) Watch(ctx context.Context, dir string) error {
 }
 
 func (w *Watcher) scanExisting(ctx context.Context, dir string) {
+	// First, remove any tracked sites whose directories no longer exist.
+	w.manager.PruneStale(ctx)
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		log.Printf("watcher: read dir %s: %v", dir, err)

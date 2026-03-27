@@ -221,8 +221,16 @@ Click the file icon on any PHP-FPM row in the Services tab to open the full-scre
 
 On each PHP version install, devctl creates:
 
-- `/usr/local/bin/php{version}` — version-specific CLI symlink (e.g. `php8.4`)
-- `/usr/local/bin/php` — always points to the highest installed version
+- `{serverRoot}/bin/php{version}` — version-specific CLI symlink (e.g. `php8.4`)
+- `{serverRoot}/bin/php` — always points to the highest installed version
+
+### Laravel and Statamic CLIs
+
+When PHP is installed, devctl also runs `composer global require laravel/installer` and `composer global require statamic/cli` as the site user. The binaries land in the Composer global bin directory (`{siteHome}/.config/composer/vendor/bin/` by default).
+
+devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.bashrc`, `.zshrc`, and `.bash_profile` (whichever exist). This means `laravel new`, `statamic new`, and other globally-installed Composer tools are available immediately in a new terminal.
+
+devctl also prepends the Composer global bin directory to PATH for every command it runs internally as the site user, so framework tools are accessible in the context of site commands regardless of the shell configuration.
 
 ---
 
@@ -265,7 +273,9 @@ Click **Remove** to delete the drop-in and restore the previous resolver behavio
 
 ## Sites
 
-devctl auto-discovers PHP projects in your configured sites watch directory (default: `~/sites`) and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA.
+devctl auto-discovers PHP projects in your configured sites watch directory (default: `~/sites`) and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA. Newly discovered sites are automatically assigned the latest installed PHP version.
+
+When a site directory is removed from disk, devctl automatically deregisters it — both at startup (stale entries are pruned on boot) and at runtime (the filesystem watcher detects deletions and removes the site immediately).
 
 ![Sites page](docs/screenshot-sites.png)
 

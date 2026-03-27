@@ -132,7 +132,7 @@ test-api:
 	incus file push devctl.test "$$DEVCTL_CONTAINER/tmp/devctl.test"
 	incus exec "$$DEVCTL_CONTAINER" -- chmod 755 /tmp/devctl.test
 	rm -f devctl.test
-	incus exec "$$DEVCTL_CONTAINER" -- env DEVCTL_BASE_URL=http://127.0.0.1:4000 /tmp/devctl.test -test.v
+	incus exec "$$DEVCTL_CONTAINER" -- env DEVCTL_BASE_URL=http://127.0.0.1:4000 DEVCTL_SITE_USER=testuser /tmp/devctl.test -test.v
 
 # Run Playwright e2e tests inside the container.
 # Playwright and Chromium are pre-baked into the devctl-ubuntu-base image.

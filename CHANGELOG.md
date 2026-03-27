@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+- Fixed: `laravel` and `statamic` CLI binaries (installed via `composer global require`) are now accessible both in the user's interactive shell and in all commands devctl runs internally as the site user. devctl appends a `PATH` export block to `.bashrc`, `.zshrc`, and `.bash_profile` at install time, and prepends the Composer global bin directory (`{siteHome}/.config/composer/vendor/bin`) to `PATH` for every command it runs as the site user via `sudo`.
 - Fixed: text-only emails (no HTML part) now render their plain text content in the HTML tab instead of showing "No HTML content"
-- Fixed: MySQL service no longer flickers to "warning" status immediately after a restart; the health check now retries up to 6 times (3 seconds total) before reporting a warning, giving mysqld time to bring its socket up
+- Fixed: MySQL service no longer flickers to "warning" status immediately after a restart; the health check now retries up to 6 times (3 seconds total) before reporting a restart, giving mysqld time to bring its socket up
+- Fixed: auto-discovered sites are now assigned the latest installed PHP version instead of a hardcoded "8.3" default
+- Fixed: manually removing a site's directory from disk now automatically deregisters it — stale sites are pruned on startup and removed in real-time via the filesystem watcher
 
 ## v0.3.0 — 2026-03-23
 

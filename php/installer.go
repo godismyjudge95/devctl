@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/danielgormly/devctl/internal/runuser"
@@ -197,8 +198,31 @@ func InstallWPCLI(ctx context.Context, binDir string) error {
 	return nil
 }
 
+// ComposerGlobalBinDir returns the absolute path to the Composer global bin
+// directory for the given user. It runs `composer global config bin-dir
+// --absolute` as siteUser to discover the actual path. If that fails (e.g.
+// Composer is not yet installed), it falls back to the XDG default:
+//
+//	{siteHome}/.config/composer/vendor/bin
+func ComposerGlobalBinDir(ctx context.Context, composerBin, siteUser, siteHome string) string {
+	if siteUser == "" || siteHome == "" {
+		return filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
+	}
+	out, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
+		composerBin+" global config bin-dir --absolute")
+	if err == nil {
+		dir := strings.TrimSpace(out)
+		if dir != "" {
+			return dir
+		}
+	}
+	// Fall back to XDG default.
+	return filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
+}
+
 // InstallLaravelCLI globally installs laravel/installer via Composer as siteUser.
-// The binary lands at {siteHome}/.config/composer/vendor/bin/laravel.
+// The binary lands in the Composer global bin directory (typically
+// {siteHome}/.config/composer/vendor/bin/laravel).
 // It is safe to call on every PHP install — Composer will upgrade if a newer
 // version is available.
 func InstallLaravelCLI(ctx context.Context, siteUser, siteHome string) error {
@@ -214,7 +238,8 @@ func InstallLaravelCLI(ctx context.Context, siteUser, siteHome string) error {
 }
 
 // InstallStatamicCLI globally installs statamic/cli via Composer as siteUser.
-// The binary lands at {siteHome}/.config/composer/vendor/bin/statamic.
+// The binary lands in the Composer global bin directory (typically
+// {siteHome}/.config/composer/vendor/bin/statamic).
 // It is safe to call on every PHP install — Composer will upgrade if a newer
 // version is available.
 func InstallStatamicCLI(ctx context.Context, siteUser, siteHome string) error {

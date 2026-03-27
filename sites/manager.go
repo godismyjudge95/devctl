@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/php"
 )
 
 // Manager handles site CRUD and keeps Caddy in sync.
@@ -60,7 +62,7 @@ type CreateSiteInput struct {
 // Create inserts a site into the DB and provisions its Caddy vhost.
 func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, error) {
 	if input.PHPVersion == "" {
-		input.PHPVersion = "8.3"
+		input.PHPVersion = m.latestPHPVersion()
 	}
 	if input.SiteType == "" {
 		input.SiteType = "php"
@@ -184,7 +186,7 @@ func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 	input := CreateSiteInput{
 		Domain:         domain,
 		RootPath:       dirPath,
-		PHPVersion:     "8.3",
+		PHPVersion:     m.latestPHPVersion(),
 		PublicDir:      DetectPublicDir(dirPath),
 		Aliases:        nil,
 		HTTPS:          true,
@@ -374,4 +376,61 @@ func DomainToID(domain string) string {
 	id = strings.ReplaceAll(id, ".", "-")
 	id = strings.ReplaceAll(id, "_", "-")
 	return id
+}
+
+// latestPHPVersion returns the newest installed PHP version string (e.g. "8.4").
+// Returns an empty string if no PHP versions are installed or the scan fails.
+func (m *Manager) latestPHPVersion() string {
+	versions, err := php.InstalledVersions(m.serverRoot)
+	if err != nil || len(versions) == 0 {
+		return ""
+	}
+	// InstalledVersions returns versions sorted newest-first.
+	return versions[0].Version
+}
+
+// PruneStale removes any site whose root_path no longer exists on disk.
+// Service vhosts and managed sites are never pruned.
+// Intended to be called at startup (e.g. from watcher.scanExisting).
+func (m *Manager) PruneStale(ctx context.Context) {
+	all, err := m.db.GetAllSites(ctx)
+	if err != nil {
+		fmt.Printf("sites: prune stale: get all sites: %v\n", err)
+		return
+	}
+	for _, site := range all {
+		if site.ServiceVhost != 0 {
+			continue // never remove managed service vhosts
+		}
+		if _, err := os.Stat(site.RootPath); os.IsNotExist(err) {
+			if delErr := m.Delete(ctx, site.ID); delErr != nil {
+				fmt.Printf("sites: prune stale: remove %s: %v\n", site.Domain, delErr)
+			} else {
+				fmt.Printf("sites: pruned stale site %s (path %s no longer exists)\n", site.Domain, site.RootPath)
+			}
+		}
+	}
+}
+
+// RemoveIfMissing removes a site from the DB and Caddy if its root_path no
+// longer exists on disk. It is a no-op if the path still exists or the site
+// is not tracked. Service vhosts are never removed this way.
+func (m *Manager) RemoveIfMissing(ctx context.Context, dirPath string) {
+	site, err := m.db.GetSiteByRootPath(ctx, dirPath)
+	if err != nil {
+		// Not tracked — nothing to do.
+		return
+	}
+	if site.ServiceVhost != 0 {
+		return
+	}
+	if _, statErr := os.Stat(dirPath); statErr == nil {
+		// Path still exists — don't remove.
+		return
+	}
+	if delErr := m.Delete(ctx, site.ID); delErr != nil {
+		fmt.Printf("sites: remove-if-missing: %s: %v\n", site.Domain, delErr)
+	} else {
+		fmt.Printf("sites: removed site %s (directory %s was deleted)\n", site.Domain, dirPath)
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/php"
 )
 
@@ -164,5 +165,37 @@ func assertExecutable(t *testing.T, path string) {
 	}
 	if info.Mode()&0111 == 0 {
 		t.Errorf("%s exists but is not executable (mode=%v)", path, info.Mode())
+	}
+}
+
+// TestComposerGlobalBinDir_FallsBackToXDGDefault verifies that
+// ComposerGlobalBinDir returns the XDG default path
+// ({siteHome}/.config/composer/vendor/bin) when composer is not on PATH.
+func TestComposerGlobalBinDir_FallsBackToXDGDefault(t *testing.T) {
+	siteUser, siteHome := requireSiteUserT(t)
+
+	// Use a nonexistent composer bin so it falls back to the XDG default.
+	got := php.ComposerGlobalBinDir(context.Background(), "/nonexistent/composer", siteUser, siteHome)
+	want := filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
+	if got != want {
+		t.Errorf("ComposerGlobalBinDir = %q, want %q", got, want)
+	}
+}
+
+// TestRunAsUserW_IncludesComposerBinInPath verifies that RunAsUserW prepends
+// the Composer global bin directory ({siteHome}/.config/composer/vendor/bin)
+// to PATH so that globally installed tools are accessible when devctl runs
+// commands as the site user.
+func TestRunAsUserW_IncludesComposerBinInPath(t *testing.T) {
+	siteUser, siteHome := requireSiteUserT(t)
+
+	out, err := runuser.RunAsUserW(context.Background(), os.Stderr, siteUser, siteHome, "", "echo $PATH")
+	if err != nil {
+		t.Fatalf("RunAsUserW: %v", err)
+	}
+
+	composerBinDir := filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
+	if !strings.Contains(out, composerBinDir) {
+		t.Errorf("PATH does not contain Composer global bin dir %q\ngot PATH: %s", composerBinDir, strings.TrimSpace(out))
 	}
 }
