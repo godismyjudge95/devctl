@@ -10,12 +10,19 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Backlog
 
+- when a new site is autodetected it isn't setting it to the latest version of php
+- when the site directory is manually removed it isn't properly removing the site from devctl
+- when a new site is autodetected it isn't properly registering the paths
+- laravel and statamic installers are not installed globally
+- replace the MCP with CLI equivalents, but I want the CLI stuff to be able to talk to the currently running devctl service without needing root.  For example, if I type `devctl services:restart caddy` then it should somehow communicate to the devctl service it needs to restart caddy and then return the result back to the cli.  Not sure if we do this purely through the json api (as I think that is what the MCP is using) or if we do it with some sort of socket connection
 - double check we can do everything with https://github.com/coollabsio/maxio and then move to it instead of RustFS
 - create a demo mode with dummy data that does not save anything to sqlite on disk (it can create it in memory if needed) and mock anything else that would be needed to see the whole dashboard and all of its features.  Ideas for things to mock: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled with different statuses shown.  Etc.
 - an auto updater that updates from github's latest release binary
 
 # Completed
 
+- mysql service keeps going into a warning state on restart or something *(completed 2026-03-26)*
+- mail doesn't render text emails in the html view like it should *(completed 2026-03-26)*
 - add whodb service - https://docs.whodb.com/installation#download-pre-compiled-binaries - download the binary don't do docker.  Make sure we preconfigure values for postgres, mysql, redis, etc. if any of those services are installed.  Also need to have some sort of hook system where if another service is installed/uninstalled it updates whodb.  I think we can generalize the hook system so we can reuse it with other services to hook into things.  Also need to add the ability to configure whodb manually - maybe we do it via a custom settings ui.  Also when we install we need to enable a sidebar item too that iframes to the whodb service.  Maybe we can generalize sidebar hooks too so that when services are installed it can add items to the sidebar easily. *(completed 2026-03-20)*
 - add rustfs as a service, always download latest binary https://rustfs.com/download/ and configure vhost (like meilisearch) - https://docs.rustfs.com/integration/nginx.html and add a config setup https://docs.rustfs.com/installation/linux/single-node-single-disk.html#_5-configure-environment-variables  DO NOT install it as a systemd service, DO NOT install it via apt *(completed 2026-03-20)*
 - poll the https://dl.static-php.dev/static-php-cli/bulk/?format=json api equivalent for the github binaries we build using actions for patch versions of each major version of PHP installed and show a browser notification if there is a newer version available, also add an update button to the services.  In fact, we should probably implement an "updater" system to each service.  We can look at the docs of each service to note if there are any migration steps and perform those as well.  For instance, Meilisearch I know needs to dump the data install the new version and import the dump.  PHP we can just stop the service, replace the binaries, etc.  So by the end, I want each service to have an "updater" sub system that knows how each service individually needs to be updated.  Each service should also have a check for updates method, and each service should show an update button with a tooltip on which version you are updating from/to. *(completed 2026-03-20)*

@@ -13,6 +13,12 @@ import {
 import { useServicesStore } from '@/stores/services'
 import { installPHP } from '@/lib/api'
 
+// Output log dialog state — shown when the user clicks "View output" after a
+// failed install.
+const outputDialogOpen = ref(false)
+const outputDialogContent = ref('')
+const outputDialogLabel = ref('')
+
 // SVG logo imports
 import caddySvg from '@/assets/services/caddy.svg?raw'
 import valkeySvg from '@/assets/services/valkey.svg?raw'
@@ -130,7 +136,9 @@ async function installService(id: string, label: string) {
         ? {
             label: 'View output',
             onClick: () => {
-              emit('installed', id)
+              outputDialogLabel.value = label
+              outputDialogContent.value = output
+              outputDialogOpen.value = true
             },
           }
         : undefined,
@@ -240,6 +248,19 @@ function handleInstall(row: InstallRow) {
           </Table>
         </div>
       </template>
+    </DialogContent>
+  </Dialog>
+
+  <!-- Output log dialog — shown when the user clicks "View output" after a failed install -->
+  <Dialog :open="outputDialogOpen" @update:open="(v) => outputDialogOpen = v">
+    <DialogContent class="sm:max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogHeader>
+        <DialogTitle>Install output — {{ outputDialogLabel }}</DialogTitle>
+        <DialogDescription>
+          The following output was captured during the failed installation.
+        </DialogDescription>
+      </DialogHeader>
+      <pre class="flex-1 overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre-wrap break-words">{{ outputDialogContent }}</pre>
     </DialogContent>
   </Dialog>
 </template>

@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/paths"
@@ -79,22 +80,24 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			HealthCheck:     postgresDir + "/bin/pg_isready -h 127.0.0.1 -p 5432 -U " + siteUser + " -d postgres",
 		},
 		{
-			ID:              "mysql",
-			Label:           "MySQL",
-			Description:     "Popular open-source relational database",
-			InstallVersion:  "8.4.8",
-			Installable:     true,
-			HasCredentials:  true,
-			Managed:         true,
-			ManagedCmd:      mysqlDir + "/bin/mysqld",
-			ManagedArgs:     "--defaults-file=./my.cnf --user=root",
-			ManagedDir:      mysqlDir,
-			ManagedEnvFile:  mysqlDir + "/mysql.env",
-			Version:         mysqlDir + "/bin/mysql --version",
-			VersionRegex:    `(?P<version>[\d.]+)`,
-			CredentialsFile: mysqlDir + "/config.env",
-			Log:             paths.LogPath(serverRoot, "mysql"),
-			HealthCheck:     mysqlDir + "/bin/mysqladmin --socket=" + mysqlDir + "/mysql.sock ping",
+			ID:                    "mysql",
+			Label:                 "MySQL",
+			Description:           "Popular open-source relational database",
+			InstallVersion:        "8.4.8",
+			Installable:           true,
+			HasCredentials:        true,
+			Managed:               true,
+			ManagedCmd:            mysqlDir + "/bin/mysqld",
+			ManagedArgs:           "--defaults-file=./my.cnf --user=root",
+			ManagedDir:            mysqlDir,
+			ManagedEnvFile:        mysqlDir + "/mysql.env",
+			Version:               mysqlDir + "/bin/mysql --version",
+			VersionRegex:          `(?P<version>[\d.]+)`,
+			CredentialsFile:       mysqlDir + "/config.env",
+			Log:                   paths.LogPath(serverRoot, "mysql"),
+			HealthCheck:           mysqlDir + "/bin/mysqladmin --socket=" + mysqlDir + "/mysql.sock ping",
+			HealthCheckRetries:    6,
+			HealthCheckRetryDelay: 500 * time.Millisecond,
 		},
 		{
 			ID:             "meilisearch",

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // Status represents the running state of a service.
@@ -63,6 +64,16 @@ type Definition struct {
 	// confirmed running. A non-zero exit code causes the status to be
 	// reported as StatusWarning instead of StatusRunning.
 	HealthCheck string
+	// HealthCheckRetries is the number of additional attempts to make if the
+	// first health check fails. Each attempt is separated by
+	// HealthCheckRetryDelay. A value of 0 (the default) means no retries —
+	// a single failure immediately yields StatusWarning (original behaviour).
+	// Use this for services (e.g. MySQL) whose Unix socket takes a few seconds
+	// to become available after the process starts.
+	HealthCheckRetries int
+	// HealthCheckRetryDelay is the pause between health check retry attempts.
+	// Defaults to 500ms when HealthCheckRetries > 0 and this field is zero.
+	HealthCheckRetryDelay time.Duration
 	// Description is a short one-liner shown in the install picker UI
 	// (e.g. "Redis-compatible in-memory data store").
 	Description string

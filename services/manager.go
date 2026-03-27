@@ -13,6 +13,18 @@ import (
 
 const cmdTimeout = 10 * time.Second
 
+// defaultHealthCheckRetryDelay is used when HealthCheckRetries > 0 but
+// HealthCheckRetryDelay is not set on the Definition.
+const defaultHealthCheckRetryDelay = 500 * time.Millisecond
+
+// runHealthCheck is a package-level variable so tests can replace it with a
+// stub without any external dependency. Production code always uses the real
+// implementation below.
+var runHealthCheck = func(command string) error {
+	_, err := runCommand(command)
+	return err
+}
+
 // Manager runs service commands and parses their output.
 type Manager struct {
 	registry   *Registry
@@ -42,7 +54,16 @@ func (m *Manager) GetStatus(def Definition) Status {
 	if def.Managed {
 		if m.supervisor.IsRunning(def.ID) {
 			if def.HealthCheck != "" {
-				if _, err := runCommand(def.HealthCheck); err != nil {
+				delay := def.HealthCheckRetryDelay
+				if delay == 0 && def.HealthCheckRetries > 0 {
+					delay = defaultHealthCheckRetryDelay
+				}
+				err := runHealthCheck(def.HealthCheck)
+				for attempt := 0; err != nil && attempt < def.HealthCheckRetries; attempt++ {
+					time.Sleep(delay)
+					err = runHealthCheck(def.HealthCheck)
+				}
+				if err != nil {
 					return StatusWarning
 				}
 			}

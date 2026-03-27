@@ -128,6 +128,7 @@ test-bats:
 test-api:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	$(GO) test -c -tags=integration -o devctl.test ./tests/api/
+	incus exec "$$DEVCTL_CONTAINER" -- rm -f /tmp/devctl.test
 	incus file push devctl.test "$$DEVCTL_CONTAINER/tmp/devctl.test"
 	incus exec "$$DEVCTL_CONTAINER" -- chmod 755 /tmp/devctl.test
 	rm -f devctl.test

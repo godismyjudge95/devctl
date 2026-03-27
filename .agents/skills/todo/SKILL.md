@@ -52,15 +52,17 @@ sudo journalctl -u devctl -n 40 --no-pager
 
 Do not proceed to testing until the service is running cleanly.
 
-### 5. Test in the browser
+### 5. Write and run integration tests
 
-Load the `testing-dashboard` skill, then:
+**If fixing a bug:** write a failing test that reproduces the bug *before* touching implementation code. Confirm it fails, then fix the bug, then confirm the test passes. This is non-negotiable.
 
-- Open `http://127.0.0.1:4000` using the Playwright browser tool.
-- Navigate to the area affected by the change.
-- Verify the feature works end-to-end — not just that the page loads.
-- Check for console errors, broken layout, and unexpected behaviour.
-- If anything is broken, fix it and repeat steps 4–5 until the test passes.
+For all work:
+
+- Load the `integration-testing` skill for backend/API changes; load `testing-dashboard` for UI changes.
+- Write end-to-end tests that cover every part of the feature or fix — not just the happy path.
+- Run the tests inside the Incus container (never against the host). See `integration-testing` skill for the full workflow.
+- If anything is broken, fix it and repeat steps 4–5 until all tests pass.
+- Do not consider the task done until automated tests exist and pass.
 
 ### 6. Update the README
 
@@ -100,7 +102,8 @@ Use this as a final gate before declaring the task done:
 - [ ] Implementation complete and compiles cleanly
 - [ ] `make install` succeeded
 - [ ] `sudo systemctl restart devctl` running without errors
-- [ ] Feature verified end-to-end in browser via Playwright
+- [ ] For bug fixes: failing test written *before* fix, confirmed failing, then confirmed passing
+- [ ] Integration/e2e tests written for every part of the feature or fix, all passing
 - [ ] README updated for new/changed/removed functionality
 - [ ] CHANGELOG.md updated with user-facing bullet points
 - [ ] TODO item moved to `# Completed` with date stamp

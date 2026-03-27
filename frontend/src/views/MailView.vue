@@ -424,8 +424,11 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
               class="w-full h-full border-0"
               title="Message HTML"
             />
+            <ScrollArea v-else-if="store.selectedMessage.Text" class="h-full">
+              <div class="p-4 md:p-6 text-sm leading-relaxed whitespace-pre-wrap">{{ store.selectedMessage.Text }}</div>
+            </ScrollArea>
             <div v-else class="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No HTML content
+              No content
             </div>
           </TabsContent>
 

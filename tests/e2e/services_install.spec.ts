@@ -164,6 +164,64 @@ test.describe('services install lifecycle — Mailpit', () => {
   })
 })
 
+/**
+ * Add Service modal — "View output" dialog opens on failed install.
+ *
+ * This test verifies that when the install SSE stream ends with an "error"
+ * event and output was captured, clicking "View output" in the error toast
+ * opens a Dialog (previously the button did nothing — it only called
+ * emit('installed', id) which just fetched credentials).
+ *
+ * We trigger the error path by intercepting the SSE response and returning a
+ * fake error event. This avoids any real install and keeps the test fast.
+ */
+test('install output dialog — opens when View output is clicked', async ({ page }) => {
+  // Intercept the install SSE endpoint and return a fake error stream so the
+  // install fails with captured output — this exercises the error toast +
+  // "View output" code path without performing a real install.
+  await page.route('**/api/services/*/install', async route => {
+    const fakeSSE = [
+      'event: output\ndata: "reverb: creating Laravel project..."\n\n',
+      'event: output\ndata: "Error: command not found"\n\n',
+      'event: error\ndata: {"error":"composer create-project: exit status 1"}\n\n',
+    ].join('')
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: fakeSSE,
+    })
+  })
+
+  await page.goto('/services')
+  await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible({ timeout: 10_000 })
+
+  // Open the "Add Service" modal.
+  await page.getByRole('button', { name: 'Add Service' }).click()
+  await expect(page.getByRole('dialog', { name: 'Add Service' })).toBeVisible({ timeout: 5_000 })
+
+  // Click Install on the first service that appears (any uninstalled service).
+  const installBtn = page.getByRole('button', { name: 'Install' }).first()
+  await expect(installBtn).toBeVisible({ timeout: 5_000 })
+  await installBtn.click()
+
+  // An error toast should appear.
+  await expect(page.getByText(/failed to install/i)).toBeVisible({ timeout: 10_000 })
+
+  // The "View output" action button should be present in the toast.
+  const viewOutputBtn = page.getByRole('button', { name: 'View output' })
+  await expect(viewOutputBtn).toBeVisible({ timeout: 5_000 })
+
+  // Clicking "View output" should open the install output dialog.
+  await viewOutputBtn.click()
+
+  // The output dialog should now be visible with the install log.
+  const outputDialog = page.getByRole('dialog', { name: /install output/i })
+  await expect(outputDialog).toBeVisible({ timeout: 5_000 })
+
+  // The dialog should contain the captured output text.
+  await expect(outputDialog).toContainText('reverb: creating Laravel project...')
+})
+
 test('services page — required services always show running status', async ({ page }) => {
   await page.goto('/services')
   await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible({ timeout: 10_000 })

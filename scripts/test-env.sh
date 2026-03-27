@@ -41,16 +41,6 @@ if ! command -v incus &>/dev/null; then
   exit 1
 fi
 
-# ─── Step 2b: Ensure container forwarding rules (WSL2 + Docker compat) ────────
-# Docker sets FORWARD policy to DROP. On WSL2 with mirrored networking this
-# blocks Incus container egress. Inject accept rules for incusbr0 if missing.
-if ! iptables -C FORWARD -i incusbr0 -j ACCEPT 2>/dev/null; then
-  info "Adding iptables FORWARD rules for incusbr0 (WSL2 + Docker compat)..."
-  iptables -I FORWARD 1 -i incusbr0 -j ACCEPT
-  iptables -I FORWARD 2 -o incusbr0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-  success "Forwarding rules added."
-fi
-
 # ─── Step 3: Generate container name ─────────────────────────────────────────
 CONTAINER="devctl-test-$(date +%s)"
 

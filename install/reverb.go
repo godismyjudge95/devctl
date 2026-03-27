@@ -25,7 +25,7 @@ type ReverbInstaller struct {
 	queries     *dbq.Queries
 	supervisor  *services.Supervisor
 	siteUser    string // non-root OS user who owns ~/sites (e.g. "alice")
-	siteHome    string // home directory of siteUser (e.g. "/home/alice") — used for runAsUserW and composer bin path
+	siteHome    string // home directory of siteUser (e.g. "/home/alice") — used as HOME for runAsUserW
 	serverRoot  string // absolute path to the devctl server directory (e.g. "/home/alice/ddev/sites/server")
 }
 
@@ -55,15 +55,18 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("reverb: create sites dir: %w", err)
 	}
 
-	// 2. Create a new Laravel project (must run as siteUser so files are
-	//    owned correctly). Run in sitesDir with "reverb" as the name —
-	//    laravel new treats <name> as relative to cwd, not as an absolute path.
-	laravelBin := filepath.Join(r.siteHome, ".config", "composer", "vendor", "bin", "laravel")
+	// 2. Create a new Laravel project using composer create-project (must run
+	//    as siteUser so files are owned correctly). Run in sitesDir with
+	//    "reverb" as the project name — composer treats it as relative to cwd.
+	//    We use composer directly rather than the `laravel` CLI installer
+	//    because the Laravel global installer is not guaranteed to be present;
+	//    composer IS always available at {serverRoot}/bin/composer.
+	composerBin := filepath.Join(paths.BinDir(r.serverRoot), "composer")
 	fmt.Fprintln(w, "reverb: creating Laravel project...")
 	_, err := runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, sitesDir,
-		fmt.Sprintf("%s new reverb --no-interaction --database=sqlite", laravelBin))
+		fmt.Sprintf("%s create-project laravel/laravel reverb --no-interaction --prefer-dist", composerBin))
 	if err != nil {
-		return fmt.Errorf("laravel new: %w", err)
+		return fmt.Errorf("composer create-project: %w", err)
 	}
 
 	// 3. Install broadcasting (sets BROADCAST_CONNECTION=reverb, writes

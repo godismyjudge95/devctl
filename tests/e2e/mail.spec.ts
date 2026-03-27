@@ -28,6 +28,62 @@ async function mailCount(page: Page): Promise<number> {
   return body.total ?? 0
 }
 
+/** Send a text-only email (no HTML part) via Mailpit's send API. */
+async function sendTextOnlyEmail(page: Page, text: string): Promise<void> {
+  const response = await page.request.post(`${BASE}/api/mail/api/v1/send`, {
+    data: {
+      From: { Email: 'sender@example.com', Name: 'Sender' },
+      To: [{ Email: 'dev@example.com', Name: 'Dev' }],
+      Subject: 'text-only test message',
+      Text: text,
+      // deliberately omit HTML so the message has no HTML part
+    },
+  })
+  expect(response.ok()).toBeTruthy()
+}
+
+test.describe('Mail page — text-only email rendering', () => {
+  test.beforeEach(async ({ page }) => {
+    if (await mailpitAvailable(page)) {
+      await page.request.delete(`${BASE}/api/mail/api/v1/messages`)
+    }
+  })
+
+  test.afterEach(async ({ page }) => {
+    if (await mailpitAvailable(page)) {
+      await page.request.delete(`${BASE}/api/mail/api/v1/messages`)
+    }
+  })
+
+  test('HTML tab renders plain text content when email has no HTML part', async ({ page }) => {
+    if (!await mailpitAvailable(page)) {
+      test.skip()
+      return
+    }
+
+    const textBody = 'Hello from a text-only email. No HTML here.'
+    await sendTextOnlyEmail(page, textBody)
+
+    await page.goto('/mail')
+
+    // Click the first message in the list to open it.
+    const firstMsg = page.locator('[class*="cursor-pointer"][class*="border-b"]').first()
+    await expect(firstMsg).toBeVisible({ timeout: 10_000 })
+    await firstMsg.click()
+
+    // The HTML tab should be active by default.
+    const htmlTab = page.getByRole('tab', { name: /html/i })
+    await expect(htmlTab).toBeVisible()
+    await expect(htmlTab).toHaveAttribute('data-state', 'active')
+
+    // The plain text content should be visible in the HTML tab — NOT "No HTML content".
+    await expect(page.getByText('No HTML content')).not.toBeVisible()
+    // Scope to the HTML tab panel to avoid matching the snippet in the message list.
+    const htmlPanel = page.getByRole('tabpanel', { name: /html/i })
+    await expect(htmlPanel.getByText(textBody)).toBeVisible({ timeout: 5_000 })
+  })
+})
+
 test.describe('Mail page — delete all emails', () => {
   test.beforeEach(async ({ page }) => {
     // Ensure Mailpit is empty before each test (if available).
@@ -61,8 +117,9 @@ test.describe('Mail page — delete all emails', () => {
     await expect(deleteAllBtn).toBeVisible({ timeout: 10_000 })
 
     // MailView uses window.confirm() for deletion confirmation.
-    // Register a one-time dialog handler to accept it before clicking.
-    page.once('dialog', (dialog) => dialog.accept())
+    // Stub window.confirm to always return true before clicking, so the
+    // headless browser doesn't block on the native dialog.
+    await page.evaluate(() => { window.confirm = () => true })
     await deleteAllBtn.click()
 
     // Wait for the inbox to show "empty" state.

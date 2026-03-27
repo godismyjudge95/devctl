@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: text-only emails (no HTML part) now render their plain text content in the HTML tab instead of showing "No HTML content"
+- Fixed: MySQL service no longer flickers to "warning" status immediately after a restart; the health check now retries up to 6 times (3 seconds total) before reporting a warning, giving mysqld time to bring its socket up
+
 ## v0.3.0 — 2026-03-23
 
 ### RustFS — S3-compatible object storage
