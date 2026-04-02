@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -50,6 +53,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "path-setup":
+			if err := runPathSetup(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "devctl path-setup: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "open":
 			if err := runOpen(); err != nil {
 				fmt.Fprintf(os.Stderr, "devctl open: %v\n", err)
@@ -74,6 +83,7 @@ Commands:
   open           Open the current project's .test URL in the browser
   install        Install devctl as a systemd service
   uninstall      Remove the devctl systemd service
+  path-setup     Write/remove the devctl PATH block in shell config files
   version        Print the version and exit
   --version      Print the version and exit
 
@@ -87,6 +97,12 @@ install flags:
 
 uninstall flags:
   --yes          Skip all confirmation prompts, remove binary and config
+
+path-setup flags:
+  --bin-dir      The bin directory to add to PATH (required unless --remove)
+  --home         Home directory of the target user (required)
+  --user         Username of the target user (required unless --remove)
+  --remove       Remove the PATH block instead of writing it
 
 `
 
@@ -419,4 +435,52 @@ func runUpdateChecker(ctx context.Context, srv *api.Server, installers map[strin
 			check()
 		}
 	}
+}
+
+// runPathSetup implements the `devctl path-setup` sub-command. It writes or
+// removes the devctl PATH block in the user's shell config files. This is
+// called by the Makefile so that the install/deploy targets don't need to
+// duplicate the shell-detection logic.
+func runPathSetup(args []string) error {
+	fs := flag.NewFlagSet("devctl path-setup", flag.ContinueOnError)
+	flagBinDir := fs.String("bin-dir", "", "bin directory to add to PATH")
+	flagHome := fs.String("home", "", "home directory of the target user")
+	flagUser := fs.String("user", "", "username of the target user")
+	flagRemove := fs.Bool("remove", false, "remove the PATH block instead of writing it")
+	fs.SetOutput(os.Stderr)
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *flagRemove {
+		if *flagHome == "" {
+			return errors.New("--home is required")
+		}
+		selfinstall.RemovePATHSetup(*flagHome)
+		return nil
+	}
+
+	if *flagBinDir == "" {
+		return errors.New("--bin-dir is required")
+	}
+	if *flagHome == "" {
+		return errors.New("--home is required")
+	}
+	if *flagUser == "" {
+		return errors.New("--user is required")
+	}
+
+	u, err := user.Lookup(*flagUser)
+	if err != nil {
+		return fmt.Errorf("lookup user %q: %w", *flagUser, err)
+	}
+	var uid, gid int
+	if _, err := fmt.Sscan(u.Uid, &uid); err != nil {
+		return fmt.Errorf("parse uid %q: %w", u.Uid, err)
+	}
+	if _, err := fmt.Sscan(u.Gid, &gid); err != nil {
+		return fmt.Errorf("parse gid %q: %w", u.Gid, err)
+	}
+	return selfinstall.WritePATHSetup(*flagBinDir, *flagHome, *flagUser, uid, gid)
 }

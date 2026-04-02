@@ -72,7 +72,8 @@ func Run(args []string) error {
 	}
 
 	// --- 2. Resolve sites directory ---
-	sitesDir, err := resolveSitesDir(*flagSitesDir, siteHome, *flagYes, r)
+	existingServiceFile := filepath.Join(serviceDir, serviceName)
+	sitesDir, err := resolveSitesDir(*flagSitesDir, siteHome, *flagYes, r, existingServiceFile)
 	if err != nil {
 		return err
 	}
@@ -88,8 +89,7 @@ func Run(args []string) error {
 	binaryDest := filepath.Join(installDir, "devctl")
 
 	// --- Check if already installed ---
-	serviceFile := filepath.Join(serviceDir, serviceName)
-	alreadyInstalled := fileExists(binaryDest) && fileExists(serviceFile)
+	alreadyInstalled := fileExists(binaryDest) && fileExists(existingServiceFile)
 	if alreadyInstalled && !*flagYes {
 		fmt.Printf("devctl appears to already be installed at %s.\n", binaryDest)
 		fmt.Print("Reinstall / upgrade? [y/N] ")
@@ -101,16 +101,15 @@ func Run(args []string) error {
 	}
 
 	binDir := paths.BinDir(serverRoot)
-	profileScript := "/etc/profile.d/devctl.sh"
 
 	// --- Confirmation summary ---
 	if !*flagYes {
 		fmt.Println("devctl will perform the following steps:")
 		fmt.Printf("  1. Copy binary      → %s\n", binaryDest)
-		fmt.Printf("  2. Write service    → %s\n", serviceFile)
+		fmt.Printf("  2. Write service    → %s\n", existingServiceFile)
 		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
 		fmt.Printf("  4. Link binary      → %s/devctl\n", binDir)
-		fmt.Printf("  5. Write PATH setup → %s\n", profileScript)
+		fmt.Printf("  5. Configure shell PATH for %s\n", siteUser)
 		fmt.Println("  6. systemctl daemon-reload")
 		fmt.Println("  7. systemctl enable devctl")
 		fmt.Println("  8. systemctl start devctl")
@@ -132,7 +131,7 @@ func Run(args []string) error {
 		}},
 		{"Writing service file", func() error {
 			content := buildServiceFile(binaryDest, siteUser, siteHome, serverRoot)
-			return os.WriteFile(serviceFile, []byte(content), 0644)
+			return os.WriteFile(existingServiceFile, []byte(content), 0644)
 		}},
 		{"Saving sites directory", func() error {
 			return saveSitesDir(serverRoot, sitesDir)
@@ -140,13 +139,19 @@ func Run(args []string) error {
 		{"Linking binary into bin dir", func() error {
 			return install.LinkIntoBinDir(binDir, "devctl", binaryDest)
 		}},
-		{"Writing profile.d PATH script", func() error {
-			content := fmt.Sprintf("# Added by devctl — do not edit manually\nexport PATH=\"%s:$PATH\"\n", binDir)
-			return os.WriteFile(profileScript, []byte(content), 0644)
-		}},
-		{"Writing shell PATH config (.bashrc/.zshrc/.bash_profile)", func() error {
-			composerBinDir := php.ComposerGlobalBinDir(context.Background(), filepath.Join(binDir, "composer"), siteUser, siteHome)
-			return writeShellPathConfig(siteHome, binDir, composerBinDir)
+		{"Configuring shell PATH", func() error {
+			u, err := user.Lookup(siteUser)
+			if err != nil {
+				return fmt.Errorf("lookup user %q: %w", siteUser, err)
+			}
+			var uid, gid int
+			if _, err := fmt.Sscan(u.Uid, &uid); err != nil {
+				return fmt.Errorf("parse uid %q: %w", u.Uid, err)
+			}
+			if _, err := fmt.Sscan(u.Gid, &gid); err != nil {
+				return fmt.Errorf("parse gid %q: %w", u.Gid, err)
+			}
+			return WritePATHSetup(binDir, siteHome, siteUser, uid, gid)
 		}},
 		{"Running daemon-reload", func() error {
 			return systemctl("daemon-reload")
@@ -254,12 +259,20 @@ func resolveUser(flagVal string, skipPrompt bool, r *bufio.Reader) (username, ho
 }
 
 // resolveSitesDir prompts for the directory where sites are stored.
-func resolveSitesDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader) (string, error) {
+// serviceFile is the path to the existing systemd service file (if any). When
+// it contains a DEVCTL_SERVER_ROOT value, its parent directory is used as the
+// default instead of ~/sites — this prevents the reinstall bug where the old
+// sites directory would be overwritten with the wrong default.
+func resolveSitesDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader, serviceFile string) (string, error) {
 	if flagVal != "" {
 		return filepath.Clean(flagVal), nil
 	}
 
+	// On reinstall, prefer the sites dir from the existing service file.
 	defaultDir := filepath.Join(siteHome, "sites")
+	if detected := detectServerRoot(serviceFile); detected != "" {
+		defaultDir = filepath.Dir(detected)
+	}
 
 	if skipPrompt {
 		return defaultDir, nil
@@ -554,12 +567,9 @@ func Uninstall(args []string) error {
 		fmt.Println()
 	}
 
-	// Remove profile.d PATH script (non-interactive, no prompt needed).
-	_ = os.Remove("/etc/profile.d/devctl.sh")
-
-	// Remove devctl PATH block from user shell config files.
+	// Remove devctl PATH block from shell config files and any legacy profile.d script.
 	if siteHome != "" {
-		removeShellPathConfig(siteHome)
+		RemovePATHSetup(siteHome)
 	}
 
 	// Stop and disable the service.
@@ -774,87 +784,245 @@ func serviceIsEnabled() bool {
 // Shell config file PATH helpers
 // ---------------------------------------------------------------------------
 
-// shellPathMarker is the unique comment marker that surrounds the devctl PATH
-// block in shell config files. Both install and uninstall use this to find and
-// manage the block idempotently.
-const shellPathMarker = "# Added by devctl — do not edit manually"
+// pathBlockStart and pathBlockEnd are the sentinel comments that bracket the
+// devctl-managed PATH block in shell config files. Using a matching pair (open
+// + close) lets us safely replace the block in-place on re-runs (e.g. when the
+// bin dir changes) without duplicating it.
+const pathBlockStart = "# >>> devctl PATH >>>"
+const pathBlockEnd = "# <<< devctl PATH <<<"
 
-// writeShellPathConfig appends the devctl PATH block to the user's shell config
-// files (.bashrc, .zshrc, .bash_profile) if they exist. The block adds both
-// the devctl bin dir and the Composer global bin dir to PATH. It is idempotent
-// — if the marker is already present the file is not modified.
-func writeShellPathConfig(siteHome, binDir, composerBinDir string) error {
-	block := fmt.Sprintf("\n%s\nexport PATH=\"%s:%s:$PATH\"\n", shellPathMarker, binDir, composerBinDir)
+// pathBlock returns the full idempotent PATH block for a given bin directory.
+func pathBlock(binDir string) string {
+	return pathBlockStart + "\n" +
+		"# Managed by devctl — do not edit manually\n" +
+		`export PATH="` + binDir + `:$PATH"` + "\n" +
+		pathBlockEnd + "\n"
+}
 
-	candidates := []string{
-		filepath.Join(siteHome, ".bashrc"),
-		filepath.Join(siteHome, ".zshrc"),
-		filepath.Join(siteHome, ".bash_profile"),
+// getUserShell returns the base name of the login shell for the given username
+// (e.g. "zsh", "bash", "sh"). It tries `getent passwd` first (Linux) and falls
+// back to parsing /etc/passwd directly (macOS, containers without getent).
+// Returns an empty string if the shell cannot be determined.
+func getUserShell(username string) string {
+	// Try getent first (available on Linux, not always on macOS).
+	if out, err := exec.Command("getent", "passwd", username).Output(); err == nil {
+		return shellFromPasswdLine(strings.TrimSpace(string(out)))
 	}
 
-	for _, f := range candidates {
-		if _, err := os.Stat(f); os.IsNotExist(err) {
-			continue
+	// Fallback: scan /etc/passwd directly.
+	data, err := os.ReadFile("/etc/passwd")
+	if err != nil {
+		return ""
+	}
+	prefix := username + ":"
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return shellFromPasswdLine(line)
 		}
-		content, err := os.ReadFile(f)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", f, err)
+	}
+	return ""
+}
+
+// shellFromPasswdLine extracts the base shell name from a colon-delimited
+// passwd line (field 7, 0-indexed field 6).
+func shellFromPasswdLine(line string) string {
+	parts := strings.Split(line, ":")
+	if len(parts) < 7 {
+		return ""
+	}
+	return filepath.Base(strings.TrimSpace(parts[6]))
+}
+
+// shellTargets returns the list of shell config files that should receive the
+// PATH block, based on the user's detected login shell.
+//
+// Rules:
+//   - zsh  → always write ~/.zshenv (create if absent); that file is sourced
+//     for every zsh invocation including non-interactive and VSCode terminals.
+//   - bash → always write ~/.bashrc (create if absent); also write
+//     ~/.bash_profile and ~/.profile if they already exist.
+//   - sh / other → write ~/.profile only if it already exists.
+//
+// The bool in each pair indicates whether the file should be created when it
+// does not already exist.
+type shellTarget struct {
+	path       string
+	mustCreate bool
+}
+
+func shellTargets(shell, siteHome string) []shellTarget {
+	switch shell {
+	case "zsh":
+		targets := []shellTarget{
+			{filepath.Join(siteHome, ".zshenv"), true},
 		}
-		if strings.Contains(string(content), shellPathMarker) {
-			// Already present — skip.
-			continue
+		return targets
+	case "bash":
+		targets := []shellTarget{
+			{filepath.Join(siteHome, ".bashrc"), true},
 		}
-		f2, err := os.OpenFile(f, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("open %s: %w", f, err)
+		for _, f := range []string{".bash_profile", ".profile"} {
+			p := filepath.Join(siteHome, f)
+			if fileExists(p) {
+				targets = append(targets, shellTarget{p, false})
+			}
 		}
-		_, writeErr := f2.WriteString(block)
-		closeErr := f2.Close()
-		if writeErr != nil {
-			return fmt.Errorf("write %s: %w", f, writeErr)
+		return targets
+	default:
+		p := filepath.Join(siteHome, ".profile")
+		if fileExists(p) {
+			return []shellTarget{{p, false}}
 		}
-		if closeErr != nil {
-			return fmt.Errorf("close %s: %w", f, closeErr)
+		return nil
+	}
+}
+
+// WritePATHSetup writes the devctl PATH block to the appropriate shell config
+// files for the given user. It detects the user's login shell and only touches
+// files that belong to that shell. The operation is idempotent — running it
+// again with the same (or a different) binDir replaces the existing block.
+//
+// uid and gid are the numeric owner to set on any file written or created.
+// Pass the target user's uid/gid so that files created while running as root
+// are owned by the user, not root.
+//
+// This is exported so it can also be invoked from the path-setup sub-command.
+func WritePATHSetup(binDir, siteHome, username string, uid, gid int) error {
+	shell := getUserShell(username)
+
+	targets := shellTargets(shell, siteHome)
+	if len(targets) == 0 {
+		// Unknown or unsupported shell — nothing to do, not an error.
+		return nil
+	}
+
+	block := "\n" + pathBlock(binDir)
+	for _, t := range targets {
+		if err := updateShellFile(t.path, block, t.mustCreate, uid, gid); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// removeShellPathConfig removes the devctl PATH block from the user's shell
-// config files. Lines between (and including) the marker line are removed.
-func removeShellPathConfig(siteHome string) {
+// RemovePATHSetup removes the devctl PATH block from all shell config files it
+// may have written to. It also removes the legacy /etc/profile.d/devctl.sh if
+// it still exists (migration for installs that predate this mechanism).
+//
+// Exported so it can be called from the path-setup --remove sub-command.
+func RemovePATHSetup(siteHome string) {
+	// Remove legacy profile.d script if it exists.
+	_ = os.Remove("/etc/profile.d/devctl.sh")
+
+	// Candidates covers every file we may have ever written to.
 	candidates := []string{
+		filepath.Join(siteHome, ".zshenv"),
 		filepath.Join(siteHome, ".bashrc"),
-		filepath.Join(siteHome, ".zshrc"),
 		filepath.Join(siteHome, ".bash_profile"),
+		filepath.Join(siteHome, ".profile"),
+	}
+	for _, f := range candidates {
+		removeBlockFromFile(f)
+	}
+}
+
+// updateShellFile writes or replaces the devctl PATH block in a single shell
+// config file.
+//
+//   - If the file contains the sentinel markers, the block between them
+//     (inclusive) is replaced — this handles bin-dir changes on re-install.
+//   - If the markers are absent, the block is appended.
+//   - If the file does not exist and mustCreate is true, the file is created
+//     containing only the block.
+//   - If the file does not exist and mustCreate is false, the call is a no-op.
+func updateShellFile(path, block string, mustCreate bool, uid, gid int) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if !mustCreate {
+				return nil
+			}
+			// Create the file with just the block (strip leading newline).
+			if err := os.WriteFile(path, []byte(strings.TrimLeft(block, "\n")+"\n"), 0644); err != nil {
+				return err
+			}
+			return os.Lchown(path, uid, gid)
+		}
+		return fmt.Errorf("read %s: %w", path, err)
 	}
 
-	for _, f := range candidates {
-		content, err := os.ReadFile(f)
-		if err != nil {
-			continue
+	content := string(data)
+
+	startIdx := strings.Index(content, pathBlockStart)
+	endIdx := strings.Index(content, pathBlockEnd)
+
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		// Replace the existing block in-place.
+		// Preserve everything before the start marker and after the end marker.
+		before := content[:startIdx]
+		after := content[endIdx+len(pathBlockEnd):]
+		// Trim any leading newline from after (the newline that preceded the start marker).
+		after = strings.TrimLeft(after, "\n")
+		// Re-assemble: keep trailing newline on before, insert block, then after.
+		newContent := strings.TrimRight(before, "\n") + "\n" + block
+		if after != "" {
+			newContent += "\n" + after
 		}
-		if !strings.Contains(string(content), shellPathMarker) {
-			continue
+		if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
+			return err
 		}
-		lines := strings.Split(string(content), "\n")
-		var out []string
-		skip := false
-		for _, line := range lines {
-			if line == shellPathMarker {
-				skip = true
-				// Also drop the leading blank line we added before the marker.
-				if len(out) > 0 && out[len(out)-1] == "" {
-					out = out[:len(out)-1]
-				}
-				continue
-			}
-			if skip {
-				skip = false
-				continue // skip the export PATH= line
-			}
-			out = append(out, line)
-		}
-		_ = os.WriteFile(f, []byte(strings.Join(out, "\n")), 0644)
+		return os.Lchown(path, uid, gid)
 	}
+
+	// No existing block — append.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	_, writeErr := f.WriteString(block)
+	closeErr := f.Close()
+	if writeErr != nil {
+		return fmt.Errorf("write %s: %w", path, writeErr)
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Lchown(path, uid, gid)
+}
+
+// removeBlockFromFile removes the sentinel-delimited PATH block from a single
+// file. The file is rewritten without the block (and the blank line that
+// precedes it, if any). If the file does not exist or contains no block, it is
+// left untouched.
+func removeBlockFromFile(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	content := string(data)
+
+	startIdx := strings.Index(content, pathBlockStart)
+	endIdx := strings.Index(content, pathBlockEnd)
+	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
+		return
+	}
+
+	before := content[:startIdx]
+	after := content[endIdx+len(pathBlockEnd):]
+
+	// Trim the trailing newline that we added before the start marker.
+	before = strings.TrimRight(before, "\n")
+	// Trim the leading newline after the end marker.
+	after = strings.TrimLeft(after, "\n")
+
+	var newContent string
+	if before != "" && after != "" {
+		newContent = before + "\n" + after
+	} else if before != "" {
+		newContent = before + "\n"
+	} else {
+		newContent = after
+	}
+
+	_ = os.WriteFile(path, []byte(newContent), 0644)
 }

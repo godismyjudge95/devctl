@@ -60,6 +60,20 @@ Load these when working on specific areas:
 | `update-skills` | Creating or updating agent skills for this project |
 | `integration-testing` | Writing, running, or debugging any integration test |
 
+## NEVER run tests on the host machine
+
+**Do not run any `go test` commands on the host.** This machine is a live development system. Even unit tests that appear safe (no build tags, use `t.TempDir()`, etc.) must not be run on the host — the rule is absolute, with no exceptions.
+
+All tests must run inside the dedicated Incus test container:
+
+```sh
+make build
+make test-env          # in one terminal — starts container, blocks until Ctrl+C
+DEVCTL_BASE_URL=http://127.0.0.1:4000 make test-api   # in another terminal
+```
+
+Load the `integration-testing` skill for the full workflow.
+
 ## Integration tests — MUST run inside Incus
 
 The integration tests in `tests/api/` are tagged `//go:build integration` and run against a **live devctl instance**. They mutate real state (emails, sites, services, settings). Running them against the host system devctl at `http://127.0.0.1:4000` will corrupt live data.

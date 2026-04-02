@@ -58,9 +58,10 @@ func ServiceDir(serverRoot, id string) string {
 	return filepath.Join(serverRoot, id)
 }
 
-// BinDir returns the shared symlink farm that is prepended to PATH via
-// /etc/profile.d/devctl.sh. Each service installer drops a symlink here on
-// install and removes it on purge.
+// BinDir returns the shared symlink farm that is prepended to PATH via the
+// user's shell config files (e.g. ~/.zshenv for zsh users, ~/.bashrc for bash
+// users). Each service installer drops a symlink here on install and removes
+// it on purge.
 //
 //	{serverRoot}/bin
 func BinDir(serverRoot string) string {

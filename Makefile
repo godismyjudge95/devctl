@@ -36,22 +36,13 @@ build: build-ui
 	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) .
 
 # Install the binary and systemd system service (requires root).
-# The service file is only copied if /etc/systemd/system/devctl.service does not
-# already exist, so re-running install does not clobber a configured service.
+# Builds the binary, copies it into place, then delegates the full install
+# sequence (service file, bin dir, PATH setup, systemd enable+start) to
+# `devctl install --yes` so there is a single source of truth.
 install: build
 	mkdir -p $(INSTALL_DIR)
 	sudo install -m 755 $(BINARY) $(INSTALL_DIR)/$(BINARY)
-	@if [ ! -f $(SERVICE_DIR)/devctl.service ]; then \
-		sudo install -m 644 devctl.service $(SERVICE_DIR)/devctl.service; \
-		echo "Service file installed."; \
-	else \
-		echo "Service file already exists — skipping (run 'make install-service' to force overwrite)."; \
-	fi
-	mkdir -p $(BIN_DIR)
-	ln -sf $(INSTALL_DIR)/$(BINARY) $(BIN_DIR)/$(BINARY)
-	printf '# Added by devctl — do not edit manually\nexport PATH="%s:$$PATH"\n' "$(BIN_DIR)" | sudo tee /etc/profile.d/devctl.sh > /dev/null
-	sudo systemctl daemon-reload
-	@echo "Installed to $(INSTALL_DIR)/$(BINARY). Run: systemctl enable --now devctl"
+	sudo $(INSTALL_DIR)/$(BINARY) install --yes --user $(SITE_USER)
 
 # Force-install the service file (use this when you intentionally want to update it).
 install-service:
@@ -63,11 +54,7 @@ install-service:
 deploy:
 	mkdir -p $(INSTALL_DIR)
 	sudo install -m 755 $(BINARY) $(INSTALL_DIR)/$(BINARY)
-	mkdir -p $(BIN_DIR)
-	ln -sf $(INSTALL_DIR)/$(BINARY) $(BIN_DIR)/$(BINARY)
-	printf '# Added by devctl — do not edit manually\nexport PATH="%s:$$PATH"\n' "$(BIN_DIR)" | sudo tee /etc/profile.d/devctl.sh > /dev/null
-	sudo systemctl daemon-reload
-	sudo systemctl restart devctl
+	sudo $(INSTALL_DIR)/$(BINARY) install --yes --user $(SITE_USER)
 	@echo "Deployed and restarted devctl."
 
 # Run sqlc code generation
