@@ -30,7 +30,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [Mail](#mail)
 - [Config Editor](#config-editor)
 - [Browser Notifications](#browser-notifications)
-- [MCP Server](#mcp-server)
+- [CLI](#cli)
 - [Ports](#ports)
 - [Data Paths](#data-paths)
 - [Contributing & Development](#contributing--development)
@@ -46,7 +46,7 @@ devctl is a self-contained development environment manager for PHP projects on L
 - **One dashboard** at `http://127.0.0.1:4000` to start/stop/install services, manage PHP versions, view logs, and inspect variable dumps.
 - **Automatic HTTPS** for all `*.test` sites via Caddy's internal CA — no browser warnings once you trust the certificate once.
 - **Zero config files to edit** — devctl writes sensible defaults on first install. Every config file is user-editable and never overwritten on restart.
-- **AI-native** — a built-in MCP server lets Claude, Cursor, OpenCode, and other AI assistants interact with your dev environment directly.
+- **AI-friendly** — a CLI lets AI agents (OpenCode, Claude, Cursor) interact with your dev environment without root: `devctl services:list`, `devctl sites:list`, `devctl logs:tail caddy`, etc.
 
 All service binaries are downloaded directly from their upstream releases and stored under your sites directory (default `~/sites/server/`). Nothing is installed system-wide except the devctl binary and systemd unit.
 
@@ -428,94 +428,74 @@ Notification permission is requested automatically on first load. devctl uses th
 
 ---
 
-## MCP Server
+## CLI
 
-devctl includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server, allowing AI assistants (Claude, OpenCode, Cursor, and others) to interact with your local dev environment directly.
+The devctl binary doubles as a CLI that talks to the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`). All commands work without root.
 
-The MCP server is embedded in the devctl binary and available at:
-
-```
-http://127.0.0.1:4000/mcp
-```
-
-It uses the **StreamableHTTP** transport, supported by all modern MCP clients.
-
-### Connecting an AI assistant
-
-**OpenCode** (`~/.config/opencode/opencode.json`):
-
-```json
-{
-  "mcp": {
-    "devctl": {
-      "type": "remote",
-      "url": "http://127.0.0.1:4000/mcp"
-    }
-  }
-}
+```sh
+devctl services:list              # list all services and status
+devctl services:restart caddy     # restart a service
+devctl sites:list                 # list all sites
+devctl sites:php myapp.test 8.4   # switch PHP version for a site
+devctl logs:tail caddy            # stream the tail of a log
+devctl mail:list                  # list captured emails
+devctl settings:get               # show all settings
+devctl settings:set devctl_port=4001  # change a setting (key=value)
+devctl php:settings               # show PHP ini settings
+devctl php:set memory_limit=512M  # update a PHP ini setting
+devctl dns:status                 # check systemd-resolved DNS setup
+devctl dumps:list                 # list recent php_dd() dumps
+devctl spx:profiles               # list recent SPX profiler captures
+devctl tls:trust                  # trust Caddy's internal CA
+devctl devctl:skill               # generate an OpenCode CLI skill file
 ```
 
-**Claude Desktop** (`claude_desktop_config.json`):
+### Global flags
 
-```json
-{
-  "mcpServers": {
-    "devctl": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://127.0.0.1:4000/mcp"]
-    }
-  }
-}
-```
-
-**Cursor / other clients** — add `http://127.0.0.1:4000/mcp` as an MCP server URL in your client's settings.
-
-### Available tools
-
-| Tool | Description |
+| Flag | Description |
 |---|---|
-| `listSites` | List all sites with domain, PHP version, framework, HTTPS and SPX state |
-| `getSiteDetail` | Full details for a single site by domain |
-| `switchPHPVersion` | Switch the PHP version for a site |
-| `toggleSPXProfiler` | Enable or disable the SPX profiler for a site |
-| `listServices` | List all managed services and their current status |
-| `startService` | Start a stopped service |
-| `stopService` | Stop a running service (required services are protected) |
-| `restartService` | Restart a service |
-| `getServiceCredentials` | Get connection credentials for a service (host, port, user, password) |
-| `listPHPVersions` | List installed PHP versions, FPM socket paths, and running status |
-| `getPHPSettings` | Read current PHP ini settings (memory_limit, upload limits, etc.) |
-| `setPHPSettings` | Update PHP ini settings across all installed versions |
-| `getSettings` | Read devctl settings (ports, DNS config, TLD) |
-| `setSettings` | Update devctl settings |
-| `getSPXProfiles` | List recent SPX profiler captures, optionally filtered by domain |
-| `getSPXProfileDetail` | Get top CPU hotspot functions for a specific profile |
-| `getDumps` | List recent `php_dd()` variable dumps |
-| `clearDumps` | Delete all captured dumps |
-| `listLogs` | List available log files |
-| `getLogTail` | Read the tail of a log file |
-| `clearLog` | Truncate a log file |
-| `checkDNSSetup` | Check whether `systemd-resolved` is configured for `*.test` routing |
-| `configureDNS` | Write the `systemd-resolved` drop-in for `*.test` routing |
-| `teardownDNS` | Remove the `systemd-resolved` drop-in |
-| `trustCA` | Trust Caddy's internal CA in the system and browser certificate stores |
+| `--json` | Output raw JSON instead of formatted text (works on every command) |
+| `--addr=host:port` | Override the daemon address (default: `127.0.0.1:4000`, or `$DEVCTL_ADDR`) |
+| `--help` | Show help for a specific command |
 
-### Available prompts
+### Available commands
 
-| Prompt | Description |
-|---|---|
-| `DiagnoseSiteIssue` | Walk the AI through diagnosing a broken or misbehaving site |
-| `EnableProfiling` | Guide the AI through enabling SPX and capturing a profile |
-| `ServiceHealthCheck` | Check all services, identify unhealthy ones, and offer to fix them |
+| Namespace | Command | Description |
+|---|---|---|
+| `services` | `services:list` | List all services and current status |
+| | `services:start <id>` | Start a stopped service |
+| | `services:stop <id>` | Stop a service |
+| | `services:restart <id>` | Restart a service |
+| | `services:credentials <id>` | Show connection credentials |
+| `sites` | `sites:list` | List all sites |
+| | `sites:get <domain>` | Show full details for a site |
+| | `sites:php <domain> <version>` | Switch PHP version |
+| | `sites:spx <domain> on\|off` | Enable/disable SPX profiler |
+| `php` | `php:versions` | List installed PHP versions |
+| | `php:settings` | Show PHP ini settings |
+| | `php:set <key=value>...` | Update PHP ini settings |
+| `logs` | `logs:list` | List available log files |
+| | `logs:tail <id>` | Read the tail of a log |
+| | `logs:clear <id>` | Truncate a log file |
+| `dumps` | `dumps:list` | List recent `php_dd()` dumps |
+| | `dumps:clear` | Delete all dumps |
+| `spx` | `spx:profiles` | List recent SPX profiler captures |
+| | `spx:profile <key>` | Show CPU hotspot detail for a capture |
+| `mail` | `mail:list` | List captured emails |
+| | `mail:get <id>` | Show a single email |
+| | `mail:delete <id>` | Delete a single email |
+| | `mail:clear` | Delete all emails |
+| `dns` | `dns:status` | Check `systemd-resolved` DNS setup |
+| | `dns:setup` | Configure `systemd-resolved` for `*.test` |
+| | `dns:teardown` | Remove `systemd-resolved` DNS config |
+| `tls` | `tls:trust` | Trust Caddy's internal CA |
+| `settings` | `settings:get` | Show all settings |
+| | `settings:set <key=value>...` | Update settings |
+| `devctl` | `devctl:skill` | Generate an OpenCode agent skill file |
 
-### Available resources
+### OpenCode integration
 
-| Resource | Description |
-|---|---|
-| `devctl://services` | Live snapshot of all service statuses |
-| `devctl://sites` | All configured sites |
-| `devctl://php-versions` | Installed PHP versions |
-| `devctl://settings` | Current devctl settings |
+Run `devctl devctl:skill` once to write an OpenCode skill file to `~/.agents/skills/devctl-cli/SKILL.md`. The daemon silently regenerates the file on every startup if it already exists.
 
 ---
 
@@ -610,7 +590,7 @@ make db-migrate   # apply goose migrations to {serverRoot}/devctl/devctl.db
 | `config/` | `config.Load()`, static default service definitions (`defaults.go`) |
 | `paths/` | Single source of truth for all filesystem paths |
 | `dnsserver/` | Built-in DNS server goroutine |
-| `mcpserver/` | MCP server implementation |
+| `cli/` | CLI command registry, HTTP client, lipgloss output, per-namespace command files |
 | `selfinstall/` | `devctl install` / `devctl uninstall` sub-commands |
 | `db/` | SQLite open, goose migrations (`db/migrations/`), sqlc queries (`db/queries/`) |
 | `frontend/` | Vue 3 SPA — `src/lib/api.ts` (all fetch wrappers), `src/stores/` (Pinia) |

@@ -374,7 +374,7 @@ func TestDetectServerRoot_ReadsFromServiceFile(t *testing.T) {
 Description=devctl
 
 [Service]
-ExecStart=/home/daniel/ddev/sites/server/devctl/devctl
+ExecStart=/home/daniel/ddev/sites/server/devctl/devctl daemon
 Environment=HOME=/home/daniel
 Environment=DEVCTL_SITE_USER=daniel
 Environment=DEVCTL_SERVER_ROOT=/home/daniel/ddev/sites/server
@@ -400,7 +400,7 @@ func TestDetectServerRoot_ReturnsEmptyWhenMissing(t *testing.T) {
 	serviceFile := filepath.Join(dir, "devctl.service")
 
 	content := `[Service]
-ExecStart=/usr/local/bin/devctl
+ExecStart=/usr/local/bin/devctl daemon
 `
 	if err := os.WriteFile(serviceFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -456,5 +456,59 @@ func TestResolveSitesDir_FallsBackToDefaultWhenNoServiceFile(t *testing.T) {
 	want := "/home/alice/sites"
 	if got != want {
 		t.Errorf("resolveSitesDir = %q, want %q", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// detectBinaryPath
+// ---------------------------------------------------------------------------
+
+// TestDetectBinaryPath_ReturnsPathWithDaemonArg verifies that detectBinaryPath
+// strips the "daemon" subcommand from ExecStart and returns only the binary path.
+func TestDetectBinaryPath_ReturnsPathWithDaemonArg(t *testing.T) {
+	dir := t.TempDir()
+	serviceFile := filepath.Join(dir, "devctl.service")
+
+	content := `[Service]
+ExecStart=/home/alice/sites/server/devctl/devctl daemon
+Environment=HOME=/home/alice
+`
+	if err := os.WriteFile(serviceFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := detectBinaryPath(serviceFile)
+	want := "/home/alice/sites/server/devctl/devctl"
+	if got != want {
+		t.Errorf("detectBinaryPath = %q, want %q", got, want)
+	}
+}
+
+// TestDetectBinaryPath_ReturnsPathWithoutArgs verifies that detectBinaryPath
+// works for legacy service files where ExecStart has no subcommand.
+func TestDetectBinaryPath_ReturnsPathWithoutArgs(t *testing.T) {
+	dir := t.TempDir()
+	serviceFile := filepath.Join(dir, "devctl.service")
+
+	content := `[Service]
+ExecStart=/usr/local/bin/devctl
+`
+	if err := os.WriteFile(serviceFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := detectBinaryPath(serviceFile)
+	want := "/usr/local/bin/devctl"
+	if got != want {
+		t.Errorf("detectBinaryPath = %q, want %q", got, want)
+	}
+}
+
+// TestDetectBinaryPath_ReturnsEmptyWhenMissing verifies that detectBinaryPath
+// returns an empty string when the file does not exist.
+func TestDetectBinaryPath_ReturnsEmptyWhenMissing(t *testing.T) {
+	got := detectBinaryPath("/nonexistent/devctl.service")
+	if got != "" {
+		t.Errorf("expected empty string for missing file, got %q", got)
 	}
 }

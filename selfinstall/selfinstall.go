@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/cli"
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/install"
@@ -184,6 +185,23 @@ func Run(args []string) error {
 	fmt.Println()
 	fmt.Println("devctl is running. Open http://127.0.0.1:4000")
 	fmt.Println()
+
+	// --- Optional: install OpenCode skill ---
+	if !*flagYes && isTTY {
+		fmt.Print("Install OpenCode CLI skill for devctl? [y/N] ")
+		if confirm(r) {
+			skillPath, err := cli.DefaultSkillPath()
+			if err == nil {
+				if err := cli.WriteSkill(skillPath); err != nil {
+					fmt.Printf("  warning: could not write skill: %v\n", err)
+				} else {
+					fmt.Println("  Skill written to " + skillPath)
+				}
+			}
+		}
+		fmt.Println()
+	}
+
 	return nil
 }
 
@@ -411,7 +429,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s
+ExecStart=%s daemon
 Restart=on-failure
 RestartSec=5s
 Environment=HOME=%s
@@ -733,6 +751,8 @@ func purgeInstalledServices(ctx context.Context, serverRoot, siteHome string, w 
 }
 
 // detectBinaryPath reads ExecStart= from the service file to find where the binary lives.
+// It returns only the first field (the executable path), stripping any arguments such as
+// the "daemon" subcommand that was added when support for CLI subcommands was introduced.
 func detectBinaryPath(serviceFile string) string {
 	data, err := os.ReadFile(serviceFile)
 	if err != nil {
@@ -741,7 +761,9 @@ func detectBinaryPath(serviceFile string) string {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "ExecStart=") {
-			return strings.TrimPrefix(line, "ExecStart=")
+			val := strings.TrimPrefix(line, "ExecStart=")
+			// Return only the binary path — strip any subcommand/args that follow.
+			return strings.Fields(val)[0]
 		}
 	}
 	return ""

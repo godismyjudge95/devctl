@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added **CLI** (`devctl <namespace>:<command>`): the devctl binary now doubles as a CLI that communicates with the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`) without requiring root. All 30+ operations from the old MCP server are available as colon-namespaced commands: `services:list`, `services:restart <id>`, `sites:list`, `sites:php <domain> <ver>`, `logs:tail <id>`, `mail:list`, `settings:set key=val`, `php:set memory_limit=512M`, `dns:status`, `dumps:list`, `spx:profiles`, `tls:trust`, etc. Every command supports `--json` for machine-readable output.
+- Added **OpenCode skill auto-generation**: run `devctl devctl:skill` to write `~/.agents/skills/devctl-cli/SKILL.md`. The daemon silently regenerates the file on each startup if it already exists.
+- Added **OpenCode skill prompt during install**: `devctl install` now offers an optional "Install OpenCode skill?" prompt after the service starts (skipped with `--yes`).
+- Removed **MCP server**: the `/mcp` endpoint and `mcpserver/` package have been removed. The CLI replaces all MCP tooling with no external protocol dependency.
 - Fixed: `laravel` and `statamic` CLI binaries (installed via `composer global require`) are now accessible both in the user's interactive shell and in all commands devctl runs internally as the site user. devctl appends a `PATH` export block to `.bashrc`, `.zshrc`, and `.bash_profile` at install time, and prepends the Composer global bin directory (`{siteHome}/.config/composer/vendor/bin`) to `PATH` for every command it runs as the site user via `sudo`.
 - Fixed: text-only emails (no HTML part) now render their plain text content in the HTML tab instead of showing "No HTML content"
 - Fixed: MySQL service no longer flickers to "warning" status immediately after a restart; the health check now retries up to 6 times (3 seconds total) before reporting a restart, giving mysqld time to bring its socket up

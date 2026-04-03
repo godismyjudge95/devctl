@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/danielgormly/devctl/api"
+	"github.com/danielgormly/devctl/cli"
 	"github.com/danielgormly/devctl/config"
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
@@ -40,6 +41,12 @@ func main() {
 		switch os.Args[1] {
 		case "--version", "version":
 			fmt.Println(version)
+			return
+		case "daemon":
+			if err := run(); err != nil {
+				fmt.Fprintf(os.Stderr, "devctl: %v\n", err)
+				os.Exit(1)
+			}
 			return
 		case "install":
 			if err := selfinstall.Run(os.Args[2:]); err != nil {
@@ -66,45 +73,20 @@ func main() {
 			}
 			return
 		case "--help", "-h", "help":
-			fmt.Print(usage)
+			cli.PrintHelp()
 			return
+		default:
+			// Dispatch colon-namespaced CLI commands (e.g. services:restart caddy)
+			if cli.Dispatch(os.Args[1:]) {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "devctl: unknown command %q\n\nRun `devctl help` for a list of commands.\n", os.Args[1])
+			os.Exit(1)
 		}
 	}
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "devctl: %v\n", err)
-		os.Exit(1)
-	}
+	// No subcommand: print help
+	cli.PrintHelp()
 }
-
-const usage = `Usage: devctl <command> [flags]
-
-Commands:
-  (no command)   Start the devctl daemon (requires root)
-  open           Open the current project's .test URL in the browser
-  install        Install devctl as a systemd service
-  uninstall      Remove the devctl systemd service
-  path-setup     Write/remove the devctl PATH block in shell config files
-  version        Print the version and exit
-  --version      Print the version and exit
-
-install flags:
-  --user         Non-root user whose sites dir devctl will manage
-                 (auto-detected from SUDO_USER if omitted)
-  --sites-dir    Directory where sites are stored (default: ~/sites)
-  --path         Directory to install the devctl binary into
-                 (default: ~/sites/server/devctl)
-  --yes          Skip all confirmation prompts (for scripted installs)
-
-uninstall flags:
-  --yes          Skip all confirmation prompts, remove binary and config
-
-path-setup flags:
-  --bin-dir      The bin directory to add to PATH (required unless --remove)
-  --home         Home directory of the target user (required)
-  --user         Username of the target user (required unless --remove)
-  --remove       Remove the PATH block instead of writing it
-
-`
 
 func run() error {
 	t0 := time.Now()
@@ -341,6 +323,10 @@ func run() error {
 	// --- Update checker ---
 	// Runs once on startup, then again every day at 3am.
 	go runUpdateChecker(runCtx, srv, installRegistry)
+
+	// --- Skill auto-update ---
+	// If the user has the devctl CLI skill installed, regenerate it silently.
+	go cli.UpdateSkillIfInstalled()
 
 	// --- Graceful shutdown ---
 	sigCh := make(chan os.Signal, 1)

@@ -64,9 +64,19 @@ Load these when working on specific areas:
 
 **Do not run any `go test` commands on the host.** This machine is a live development system. Even unit tests that appear safe (no build tags, use `t.TempDir()`, etc.) must not be run on the host — the rule is absolute, with no exceptions.
 
-All tests must run inside the dedicated Incus test container:
+All tests — including plain unit tests in Go packages — must run inside the dedicated Incus test container. Use `go test -c` to compile the test binary on the host, then push and run it inside the container:
 
 ```sh
+# Unit tests (e.g. cli/ package)
+make build
+make test-env          # in one terminal — starts container, blocks until Ctrl+C
+# in another terminal:
+go test -c -o mypackage.test ./cli/
+incus file push mypackage.test $DEVCTL_CONTAINER/tmp/mypackage.test
+incus exec $DEVCTL_CONTAINER -- chmod 755 /tmp/mypackage.test
+incus exec $DEVCTL_CONTAINER -- /tmp/mypackage.test -test.v
+
+# Integration tests (tests/api/)
 make build
 make test-env          # in one terminal — starts container, blocks until Ctrl+C
 DEVCTL_BASE_URL=http://127.0.0.1:4000 make test-api   # in another terminal
@@ -100,10 +110,11 @@ Load the `integration-testing` skill for the full workflow: container setup, TDD
 
 After implementing any feature, add or update the relevant tests before considering the task done:
 
-- **Backend changes** → add or update Go API integration tests in `tests/api/`. Load the `integration-testing` skill for the full workflow.
+- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c`, push the binary into the Incus container, and run it there.
+- **Backend API changes** → add or update Go API integration tests in `tests/api/`. Load the `integration-testing` skill for the full workflow.
 - **Frontend / UI changes** → add or update Playwright e2e tests in `tests/e2e/`. Load the `testing-dashboard` skill for conventions and tooling.
 
-Do not rely on a clean compile as a substitute for automated tests.
+Do not rely on a clean compile as a substitute for automated tests. Never skip running tests because they "look simple" — compile, push, and run in the container every time.
 
 ## Networking / DNS
 
