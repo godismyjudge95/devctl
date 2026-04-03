@@ -165,6 +165,12 @@ memory_limit = 256M
 max_execution_time = 120
 post_max_size = 128M
 
+; --- Error display and logging ---
+; html_errors must be Off so that error log entries are plain text.
+; With html_errors=On (the upstream default) PHP wraps messages in <b>/<br>
+; tags which makes log files hard to read and parse.
+html_errors = Off
+
 ; --- Auto-prepend for dd() dump interception (CLI) ---
 ; FPM processes override this via php_value in php-fpm.conf.
 auto_prepend_file = %s
@@ -192,8 +198,9 @@ spx.data_dir = %s
 
 	// Write php-fpm.conf — always regenerated.
 	// FPM is launched with -c php.ini so all php.ini settings apply to workers.
-	// php_value[auto_prepend_file] is set at the pool level as an authoritative
-	// override so the dump interceptor is always active for FPM requests.
+	// php_value directives here set runtime-specific paths that cannot be baked
+	// into php.ini (they depend on serverRoot and ver). auto_prepend_file uses
+	// php_admin_value so user code cannot disable the dump interceptor.
 	fpmGlobalLog := paths.LogPath(serverRoot, "php-fpm-"+ver+"-global")
 	fpmPoolLog := paths.LogPath(serverRoot, "php-fpm-"+ver)
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
@@ -212,9 +219,8 @@ pm.max_children = 10
 pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 4
-php_admin_value[error_log] = %s
-php_admin_flag[log_errors] = on
-php_value[auto_prepend_file] = %s
+php_value[error_log] = %s
+php_admin_value[auto_prepend_file] = %s
 `, ver, fpmGlobalLog, siteUser, siteUser, socketPath, siteUser, siteUser, fpmPoolLog, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
