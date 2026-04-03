@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func init() {
@@ -37,25 +40,54 @@ func init() {
 	Register(&Cmd{
 		Name:        "logs:tail",
 		Description: "Show the tail of a log file",
-		Usage:       "<log-id> [--bytes=N]",
+		Usage:       "<log-id> [--bytes=N] [--follow]",
 		Args:        []ArgDef{{Name: "log-id", Description: "Log file ID (use logs:list to see IDs)"}},
-		Flags:       []FlagDef{{Name: "bytes", Default: "16384", Description: "Number of bytes to read from end of file (max 131072)"}},
+		Flags: []FlagDef{
+			{Name: "bytes", Default: "16384", Description: "Number of bytes to read from end of file (max 131072)"},
+			{Name: "follow", Default: "false", Description: "Follow the log output (like tail -f)"},
+		},
 		Examples: []string{
 			"devctl logs:tail caddy",
 			"devctl logs:tail php-fpm-8.3 --bytes=32768",
+			"devctl logs:tail caddy --follow",
+			"devctl logs:tail caddy -f",
 		},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
 			fs := flag.NewFlagSet("logs:tail", flag.ContinueOnError)
 			fs.SetOutput(os.Stderr)
 			bytes := fs.Int("bytes", 16384, "bytes to read from end")
-			if err := fs.Parse(args); err != nil {
+			follow := fs.Bool("follow", false, "follow the log output")
+			// Support short -f flag.
+			fs.BoolVar(follow, "f", false, "follow the log output (shorthand)")
+
+			// Go's flag package stops parsing at the first non-flag argument,
+			// so "logs:tail php-fpm-8.4 -f" would leave "-f" unparsed.
+			// Fix: extract the positional log-id first (the first arg that does
+			// not start with "-"), then pass only the remaining flag args to
+			// fs.Parse so all flags are parsed regardless of their position.
+			var logID string
+			var flagArgs []string
+			for _, a := range args {
+				if logID == "" && len(a) > 0 && a[0] != '-' {
+					logID = a
+				} else {
+					flagArgs = append(flagArgs, a)
+				}
+			}
+			if logID == "" {
+				return fmt.Errorf("usage: devctl logs:tail <log-id> [--bytes=N] [--follow]")
+			}
+			if err := fs.Parse(flagArgs); err != nil {
 				return err
 			}
-			remaining := fs.Args()
-			if len(remaining) == 0 {
-				return fmt.Errorf("usage: devctl logs:tail <log-id> [--bytes=N]")
+
+			if *follow {
+				// Live-follow mode: consume SSE stream, exit on Ctrl-C.
+				ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+				defer cancel()
+				return c.StreamLog(ctx, logID, os.Stdout)
 			}
-			logID := remaining[0]
+
 			n := *bytes
 			if n <= 0 {
 				n = 16384

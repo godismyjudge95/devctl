@@ -70,6 +70,9 @@ func TestLogsList_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "logs
 func TestLogsTail_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "logs:tail", wantArgs: true, wantFlag: "bytes"})
 }
+func TestLogsTail_HasFollowFlag(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "logs:tail", wantFlag: "follow"})
+}
 func TestLogsClear_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "logs:clear", wantArgs: true})
 }

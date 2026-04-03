@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -439,6 +440,81 @@ func (c *Client) GetLogTail(id string, bytes int) (string, error) {
 		path += fmt.Sprintf("?bytes=%d", bytes)
 	}
 	return c.getRaw(path)
+}
+
+// StreamLog connects to the SSE log stream for id and writes decoded log lines
+// to w until ctx is cancelled or the server closes the connection.
+func (c *Client) StreamLog(ctx context.Context, id string, w io.Writer) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.base+fmt.Sprintf("/api/logs/%s", id), nil)
+	if err != nil {
+		return err
+	}
+	// Use a client without a timeout for the streaming connection.
+	hc := &http.Client{}
+	resp, err := hc.Do(req)
+	if err != nil {
+		// Context cancellation is a normal exit (user pressed Ctrl-C), not an error.
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s", strings.TrimSpace(string(b)))
+	}
+
+	// Use bufio.Reader instead of bufio.Scanner. Scanner treats (n, io.EOF)
+	// returned by the HTTP transport in a single Read call as terminal — it
+	// stops even though the connection is still open and more data will arrive.
+	// ReadString blocks until the next newline or an error; on io.EOF it means
+	// "no full line yet", so we retry instead of stopping.
+	reader := bufio.NewReader(resp.Body)
+	for {
+		// Check for cancellation before each read.
+		if ctx.Err() != nil {
+			return nil
+		}
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			if line == "" {
+				// Empty read on EOF means the server closed the connection cleanly.
+				return nil
+			}
+			// Partial read (no trailing newline yet) — server hasn't sent more
+			// data yet, or sent a partial line. Process what we have and loop.
+			if strings.HasPrefix(line, "data:") {
+				// Shouldn't normally happen (data lines are always newline-terminated),
+				// but handle it gracefully.
+				data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				var chunk string
+				if json.Unmarshal([]byte(data), &chunk) == nil {
+					fmt.Fprint(w, chunk)
+				}
+			}
+			continue
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		// The server JSON-encodes the log chunk as a string.
+		var chunk string
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			// Fallback: write raw data.
+			fmt.Fprintln(w, data)
+			continue
+		}
+		fmt.Fprint(w, chunk)
+	}
 }
 
 func (c *Client) ClearLog(id string) error {
