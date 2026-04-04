@@ -32,6 +32,22 @@ make sqlc         # regenerate db/queries/*.go from db/queries/*.sql
 make db-migrate   # apply goose migrations to /etc/devctl/devctl.db
 ```
 
+### Running `make install`
+
+Run it without any `sudo` prefix — the Makefile builds the UI and binary as your normal user, then calls `sudo` internally only for the steps that need root:
+
+```sh
+make install
+```
+
+**Never** run `sudo make install` — it builds the frontend as root, leaving `ui/dist/` owned by root and breaking all future builds with an EACCES error.
+
+If `ui/dist/` is already owned by root (symptoms: Vite fails with `EACCES, Permission denied: .../ui/dist/assets`), fix it first:
+
+```sh
+sudo chown -R daniel:daniel ui/dist/
+```
+
 ## Key source files
 
 ```

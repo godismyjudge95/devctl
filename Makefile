@@ -36,10 +36,12 @@ build: build-ui
 	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) .
 
 # Install the binary and systemd system service (requires root).
-# Builds the binary, copies it into place, then delegates the full install
-# sequence (service file, bin dir, PATH setup, systemd enable+start) to
-# `devctl install --yes` so there is a single source of truth.
-install: build
+# Builds the UI and Go binary as the current (non-root) user first,
+# then only uses sudo for the binary copy and service install steps.
+# This prevents ui/dist/ from being owned by root.
+# Usage: make install   (no sudo needed — the recipe calls sudo internally)
+install: build-ui
+	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) .
 	mkdir -p $(INSTALL_DIR)
 	sudo install -m 755 $(BINARY) $(INSTALL_DIR)/$(BINARY)
 	sudo $(INSTALL_DIR)/$(BINARY) install --yes --user $(SITE_USER)

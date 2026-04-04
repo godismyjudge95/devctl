@@ -126,17 +126,42 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 	prependPath := paths.PrependPath(serverRoot)
 	spxDataDir := SPXDataDir(ver, serverRoot)
 
-	// Ensure spx-data directory exists and is writable by siteUser workers.
+	// Resolve siteUser uid/gid once; used throughout for chown calls.
+	// devctl runs as root so every file/dir it creates is root-owned by default.
+	// FPM workers run as siteUser and must be able to write to their log file
+	// and read their config files — so we chown everything they touch.
+	var uid, gid int = -1, -1
+	if u, err := user.Lookup(siteUser); err == nil {
+		fmt.Sscan(u.Uid, &uid)
+		fmt.Sscan(u.Gid, &gid)
+	}
+	chown := func(path string) {
+		if uid >= 0 {
+			_ = os.Chown(path, uid, gid)
+		}
+	}
+
+	// Ensure the central logs directory exists and is owned by siteUser.
+	logsDir := paths.LogsDir(serverRoot)
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return fmt.Errorf("create logs dir: %w", err)
+	}
+	chown(logsDir)
+
+	// Ensure the pool log file exists and is owned by siteUser.
+	// The FPM master process (root) writes the global log; pool workers (siteUser)
+	// write the pool log. If the file is root-owned, PHP errors are silently lost.
+	poolLog := paths.LogPath(serverRoot, "php-fpm-"+ver)
+	if f, err := os.OpenFile(poolLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+		f.Close()
+	}
+	chown(poolLog)
+
+	// Ensure spx-data directory exists and is owned by siteUser.
 	if err := os.MkdirAll(spxDataDir, 0755); err != nil {
 		return fmt.Errorf("create spx-data dir: %w", err)
 	}
-	// chown spx-data to siteUser so FPM workers (running as siteUser) can write profiles.
-	if u, err := user.Lookup(siteUser); err == nil {
-		var uid, gid int
-		fmt.Sscan(u.Uid, &uid)
-		fmt.Sscan(u.Gid, &gid)
-		_ = os.Chown(spxDataDir, uid, gid)
-	}
+	chown(spxDataDir)
 
 	// Migrate existing php.ini files: restore spx.http_key = dev if it was
 	// previously cleared to empty (SPX requires a non-empty key).
@@ -195,12 +220,19 @@ spx.data_dir = %s
 			return fmt.Errorf("write php.ini: %w", err)
 		}
 	}
+	// Always chown php.ini — it may have been created by root on a previous
+	// startup before this fix, or by the installer.
+	chown(iniPath)
 
 	// Write php-fpm.conf — always regenerated.
 	// FPM is launched with -c php.ini so all php.ini settings apply to workers.
-	// php_value directives here set runtime-specific paths that cannot be baked
-	// into php.ini (they depend on serverRoot and ver). auto_prepend_file uses
-	// php_admin_value so user code cannot disable the dump interceptor.
+	// php_value directives override php.ini for pool workers. We use php_value
+	// (not php_admin_value) for all settings except auto_prepend_file so that
+	// the user's php.ini remains the single source of truth for everything else.
+	//
+	// html_errors must be Off here because: (a) php.ini is write-once and may
+	// pre-date this setting, and (b) PHP defaults html_errors=On in web context,
+	// which wraps log entries in HTML tags making them unreadable.
 	fpmGlobalLog := paths.LogPath(serverRoot, "php-fpm-"+ver+"-global")
 	fpmPoolLog := paths.LogPath(serverRoot, "php-fpm-"+ver)
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
@@ -220,11 +252,14 @@ pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 4
 php_value[error_log] = %s
+php_value[html_errors] = Off
 php_admin_value[auto_prepend_file] = %s
 `, ver, fpmGlobalLog, siteUser, siteUser, socketPath, siteUser, siteUser, fpmPoolLog, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}
+	chown(fpmConfPath)
+	chown(PHPDir(ver, serverRoot))
 
 	return nil
 }
