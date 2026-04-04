@@ -16,6 +16,7 @@ node_modules/
 # Playwright output
 test-results/
 playwright-report/
+.playwright-mcp/
 
 # Accidentally included project data directory
 home/
