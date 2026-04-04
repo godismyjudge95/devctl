@@ -110,23 +110,26 @@ test.describe('Mail page — delete all emails', () => {
 
     await page.goto('/mail')
 
-    // Wait for the mail view to load — use the "Delete All" button (visible
-    // in the toolbar once the page mounts) rather than a heading, since
-    // MailView has no page-level heading element.
-    const deleteAllBtn = page.getByRole('button', { name: /delete all/i })
+    // Wait for the mail view to load and for the message list to populate.
+    // The "Delete All" button is disabled when store.total === 0 (before the
+    // first fetch completes). Wait for it to become enabled so we know the
+    // store has loaded the messages before we click.
+    const deleteAllBtn = page.getByTitle('Delete all messages')
     await expect(deleteAllBtn).toBeVisible({ timeout: 10_000 })
+    await expect(deleteAllBtn).toBeEnabled({ timeout: 10_000 })
 
     // MailView uses window.confirm() for deletion confirmation.
-    // Stub window.confirm to always return true before clicking, so the
-    // headless browser doesn't block on the native dialog.
-    await page.evaluate(() => { window.confirm = () => true })
+    // Register a dialog handler BEFORE clicking so the native confirm dialog
+    // is accepted immediately when it fires.
+    page.once('dialog', dialog => dialog.accept())
     await deleteAllBtn.click()
 
-    // Wait for the inbox to show "empty" state.
-    // After deletion, the count should drop to 0.
-    await expect(async () => {
-      const after = await mailCount(page)
-      expect(after).toBe(0)
-    }).toPass({ timeout: 10_000 })
+    // Wait for the UI to show the "No messages" empty state — this confirms
+    // the delete was processed and the store refreshed.
+    await expect(page.getByText('No messages')).toBeVisible({ timeout: 10_000 })
+
+    // Also verify via the API that the count is truly zero.
+    const after = await mailCount(page)
+    expect(after).toBe(0)
   })
 })

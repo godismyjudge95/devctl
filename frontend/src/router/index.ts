@@ -8,7 +8,7 @@ import SettingsView from '@/views/SettingsView.vue'
 import LogsView from '@/views/LogsView.vue'
 import ConfigEditorView from '@/views/ConfigEditorView.vue'
 import WhoDBView from '@/views/WhoDBView.vue'
-import RustFSView from '@/views/RustFSView.vue'
+import MaxIOView from '@/views/MaxIOView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -21,7 +21,7 @@ const router = createRouter({
     { path: '/mail',      component: MailView,    meta: { fullWidth: true } },
     { path: '/spx',       component: SpxView,     meta: { fullWidth: true } },
     { path: '/whodb',     component: WhoDBView,   meta: { fullWidth: true } },
-    { path: '/rustfs',    component: RustFSView,  meta: { fullWidth: true } },
+    { path: '/maxio',     component: MaxIOView,   meta: { fullWidth: true } },
     { path: '/logs',      component: LogsView,    meta: { fullWidth: true } },
     { path: '/settings',  component: SettingsView },
   ],

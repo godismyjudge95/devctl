@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 )
@@ -144,7 +143,6 @@ func (p *Poller) poll() {
 		select {
 		case ch <- update:
 		default:
-			log.Printf("poller: subscriber channel full, dropping update")
 		}
 	}
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch, defineComponent, h } from 'vue'
-import { useRustFSStore, type TreeNode } from '@/stores/rustfs'
+import { useMaxIOStore, type TreeNode } from '@/stores/maxio'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -37,7 +37,7 @@ import {
   FolderPlus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
 } from 'lucide-vue-next'
 
-const store = useRustFSStore()
+const store = useMaxIOStore()
 
 // ── TreeNodeRow — recursive inline component ──────────────────────────────
 const TreeNodeRow: ReturnType<typeof defineComponent> = defineComponent({
@@ -397,14 +397,6 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString()
 }
 
-function formatUptime(seconds: number): string {
-  if (!seconds) return '—'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h > 24) return `${Math.floor(h / 24)}d ${h % 24}h`
-  return `${h}h ${m}m`
-}
-
 function folderName(prefix: string): string {
   const parts = prefix.split('/').filter(Boolean)
   return parts[parts.length - 1] ?? prefix
@@ -413,32 +405,6 @@ function folderName(prefix: string): string {
 function fileName(key: string): string {
   const parts = key.split('/')
   return parts[parts.length - 1] ?? key
-}
-
-// ── Info bar computed ────────────────────────────────────────────────────────
-const usagePct = computed(() => {
-  const info = store.serverInfo
-  if (!info) return 0
-  const total = info.disks.reduce((s, d) => s + d.totalSpace, 0)
-  if (!total) return 0
-  return Math.round((info.usage / total) * 100)
-})
-
-const totalDiskSpace = computed(() => {
-  const info = store.serverInfo
-  if (!info) return 0
-  return info.disks.reduce((s, d) => s + d.totalSpace, 0)
-})
-
-// ── Mobile navigation ────────────────────────────────────────────────────────
-const mobileView = ref<'list' | 'objects'>('list')
-
-watch(() => store.selectedBucket, (val) => {
-  if (val) mobileView.value = 'objects'
-})
-
-function goBackToList() {
-  mobileView.value = 'list'
 }
 
 // ── Context-menu helpers ─────────────────────────────────────────────────────
@@ -469,10 +435,20 @@ function zipNameFor(keys: string[]): string {
   return (parts[parts.length - 1] ?? store.selectedBucket ?? 'download') + '.zip'
 }
 
+// ── Mobile navigation ────────────────────────────────────────────────────────
+const mobileView = ref<'list' | 'objects'>('list')
+
+watch(() => store.selectedBucket, (val) => {
+  if (val) mobileView.value = 'objects'
+})
+
+function goBackToList() {
+  mobileView.value = 'list'
+}
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 onMounted(() => {
   store.loadBuckets()
-  store.loadServerInfo()
 })
 </script>
 
@@ -489,25 +465,10 @@ onMounted(() => {
       :class="mobileView === 'objects' ? 'hidden md:flex' : 'flex'"
     >
       <!-- Info bar -->
-      <div class="px-4 py-3 border-b border-border space-y-2">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-1.5">
-            <HardDrive class="w-3.5 h-3.5 text-muted-foreground" />
-            <span class="text-xs font-medium">RustFS</span>
-          </div>
-          <Badge v-if="store.serverInfo?.version" variant="secondary" class="text-xs px-1.5 py-0">
-            {{ store.serverInfo.version.includes('@') ? store.serverInfo.version.split('@').pop() : store.serverInfo.version }}
-          </Badge>
-        </div>
-        <Progress :model-value="usagePct" class="h-1.5" />
-        <div class="flex justify-between text-xs text-muted-foreground">
-          <span>{{ formatSize(store.serverInfo?.usage ?? 0) }} used</span>
-          <span>{{ formatSize(totalDiskSpace) }} total</span>
-        </div>
-        <div class="flex gap-3 text-xs text-muted-foreground">
-          <span>{{ store.serverInfo?.buckets ?? '—' }} buckets</span>
-          <span>{{ store.serverInfo?.objects ?? '—' }} objects</span>
-          <span v-if="store.serverInfo?.uptime">up {{ formatUptime(store.serverInfo.uptime) }}</span>
+      <div class="px-4 py-3 border-b border-border">
+        <div class="flex items-center gap-1.5">
+          <HardDrive class="w-3.5 h-3.5 text-muted-foreground" />
+          <span class="text-xs font-medium">MaxIO</span>
         </div>
       </div>
 

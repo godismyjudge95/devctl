@@ -394,76 +394,76 @@ load setup
   [ "$status" -eq 0 ]
 }
 
-# ─── RustFS ────────────────────────────────────────────────────────────────────
+# ─── MaxIO ─────────────────────────────────────────────────────────────────────
 
-@test "rustfs: installed=false before install" {
-  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"rustfs\") | .installed'"
+@test "maxio: installed=false before install" {
+  run bash -c "curl -sf '${BASE_URL}/api/services' | jq -r '.[] | select(.id==\"maxio\") | .installed'"
   [ "$status" -eq 0 ]
   [[ "$output" == "false" ]]
 }
 
-@test "rustfs: install SSE stream ends with done event" {
-  api_sse POST /api/services/rustfs/install 180
+@test "maxio: install SSE stream ends with done event" {
+  api_sse POST /api/services/maxio/install 180
 }
 
-@test "rustfs: installed=true after install" {
-  poll_service_field rustfs installed true 10
+@test "maxio: installed=true after install" {
+  poll_service_field maxio installed true 10
 }
 
-@test "rustfs: status=running after install" {
-  poll_service_status rustfs running 30
+@test "maxio: status=running after install" {
+  poll_service_status maxio running 30
 }
 
-@test "rustfs: binary exists on disk" {
-  container_exec test -f "${SERVER_ROOT}/rustfs/rustfs"
+@test "maxio: binary exists on disk" {
+  container_exec test -f "${SERVER_ROOT}/maxio/maxio"
 }
 
-@test "rustfs: symlink in bin dir" {
-  container_exec test -L "${SERVER_ROOT}/bin/rustfs"
+@test "maxio: symlink in bin dir" {
+  container_exec test -L "${SERVER_ROOT}/bin/maxio"
 }
 
-@test "rustfs: config.env exists and contains access key" {
-  container_exec test -s "${SERVER_ROOT}/rustfs/config.env"
-  container_exec grep -q "RUSTFS_ACCESS_KEY\|RUSTFS_ROOT_USER\|ACCESS_KEY" "${SERVER_ROOT}/rustfs/config.env"
+@test "maxio: config.env exists and contains access key" {
+  container_exec test -s "${SERVER_ROOT}/maxio/config.env"
+  container_exec grep -q "MAXIO_ACCESS_KEY\|MAXIO_ROOT_USER\|ACCESS_KEY" "${SERVER_ROOT}/maxio/config.env"
 }
 
-@test "rustfs: connection.env exists" {
-  container_exec test -s "${SERVER_ROOT}/rustfs/connection.env"
+@test "maxio: connection.env exists" {
+  container_exec test -s "${SERVER_ROOT}/maxio/connection.env"
 }
 
-@test "rustfs: caddy vhost rustfs.test appears in GET /api/sites" {
-  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q 'rustfs\.test'"
+@test "maxio: caddy vhost maxio.test appears in GET /api/sites" {
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -r '.[].domain' | grep -q 'maxio\.test'"
   [ "$status" -eq 0 ]
 }
 
-@test "rustfs: stop returns 200" {
-  status=$(api_post_status /api/services/rustfs/stop "")
+@test "maxio: stop returns 200" {
+  status=$(api_post_status /api/services/maxio/stop "")
   [ "$status" -eq 200 ]
 }
 
-@test "rustfs: status=stopped after stop" {
-  poll_service_status rustfs stopped 15
+@test "maxio: status=stopped after stop" {
+  poll_service_status maxio stopped 15
 }
 
-@test "rustfs: start returns 200" {
-  status=$(api_post_status /api/services/rustfs/start "")
+@test "maxio: start returns 200" {
+  status=$(api_post_status /api/services/maxio/start "")
   [ "$status" -eq 200 ]
 }
 
-@test "rustfs: status=running after start" {
-  poll_service_status rustfs running 20
+@test "maxio: status=running after start" {
+  poll_service_status maxio running 20
 }
 
-@test "rustfs: purge SSE stream ends with done event" {
-  api_sse DELETE /api/services/rustfs 60
+@test "maxio: purge SSE stream ends with done event" {
+  api_sse DELETE /api/services/maxio 60
 }
 
-@test "rustfs: installed=false after purge" {
-  poll_service_field rustfs installed false 10
+@test "maxio: installed=false after purge" {
+  poll_service_field maxio installed false 10
 }
 
-@test "rustfs: binary removed after purge" {
-  run container_exec bash -c "test ! -f '${SERVER_ROOT}/rustfs/rustfs'"
+@test "maxio: binary removed after purge" {
+  run container_exec bash -c "test ! -f '${SERVER_ROOT}/maxio/maxio'"
   [ "$status" -eq 0 ]
 }
 

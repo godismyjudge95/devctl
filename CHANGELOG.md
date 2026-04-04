@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Replaced RustFS with MaxIO — S3-compatible object storage now uses the MaxIO binary from coollabsio/maxio; vhosts renamed to maxio.test / s3.maxio.test; Laravel connection.env keys unchanged (AWS_*)
 - Added **CLI** (`devctl <namespace>:<command>`): the devctl binary now doubles as a CLI that communicates with the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`) without requiring root. All 30+ operations from the old MCP server are available as colon-namespaced commands: `services:list`, `services:restart <id>`, `sites:list`, `sites:php <domain> <ver>`, `logs:tail <id>`, `mail:list`, `settings:set key=val`, `php:set memory_limit=512M`, `dns:status`, `dumps:list`, `spx:profiles`, `tls:trust`, etc. Every command supports `--json` for machine-readable output.
 - Added **OpenCode skill auto-generation**: run `devctl devctl:skill` to write `~/.agents/skills/devctl-cli/SKILL.md`. The daemon silently regenerates the file on each startup if it already exists.
 - Added **OpenCode skill prompt during install**: `devctl install` now offers an optional "Install OpenCode skill?" prompt after the service starts (skipped with `--yes`).

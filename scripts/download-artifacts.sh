@@ -105,10 +105,14 @@ download "WhoDB ${WHODB_VERSION}" \
   "https://github.com/clidey/whodb/releases/download/${WHODB_VERSION}/whodb-${WHODB_VERSION}-linux-amd64" \
   "whodb-${WHODB_VERSION}-linux-amd64"
 
-# ─── RustFS ───────────────────────────────────────────────────────────────────
-download "RustFS (latest)" \
-  "https://dl.rustfs.com/artifacts/rustfs/release/rustfs-linux-x86_64-musl-latest.zip" \
-  "rustfs-linux-x86_64-musl-latest.zip"
+# ─── MaxIO ────────────────────────────────────────────────────────────────────
+# MaxIO releases a versioned tar.gz; the installer queries the GitHub API to
+# find the latest release URL.  Cache the latest known release here and update
+# this URL whenever the version changes.
+MAXIO_VERSION="v0.0.10"
+download "MaxIO ${MAXIO_VERSION}" \
+  "https://github.com/coollabsio/maxio/releases/download/${MAXIO_VERSION}/maxio-linux-amd64.tar.gz" \
+  "maxio-linux-amd64.tar.gz"
 
 # ─── PostgreSQL (Percona) ─────────────────────────────────────────────────────
 POSTGRES_VERSION="18.3"

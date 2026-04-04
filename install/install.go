@@ -179,7 +179,7 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 	}
 	m["whodb"] = whodb
 	m["dns"] = &DNSInstaller{}
-	m["rustfs"] = &RustFSInstaller{
+	m["maxio"] = &MaxIOInstaller{
 		siteManager: siteManager,
 		supervisor:  supervisor,
 		serverRoot:  serverRoot,

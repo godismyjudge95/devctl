@@ -177,7 +177,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/devctl
+ExecStart=/usr/local/bin/devctl daemon
 Restart=on-failure
 RestartSec=5s
 Environment=HOME=/home/testuser
@@ -258,6 +258,30 @@ while true; do
   fi
   sleep 1; ELAPSED=$((ELAPSED+1))
 done
+
+# ─── Step 10c: Install PHP 8.3 (required by Reverb installer) ────────────────
+# The Reverb installer runs `{serverRoot}/bin/php {serverRoot}/bin/composer
+# create-project laravel/laravel reverb`.  Those binaries are installed by the
+# devctl PHP installer.  Without them the reverb test fails with exit status 127
+# (command not found).  Install PHP 8.3 here — the curl shim (step 7c) will
+# serve the static binaries from the artifact cache if available, otherwise they
+# are downloaded from GitHub.
+# NOTE: POST /api/php/versions/{ver}/install returns JSON (not SSE), and blocks
+# until the full install completes.  Use a generous --max-time to accommodate
+# binary downloads.
+info "Installing PHP 8.3 (required by Reverb installer)..."
+PHP_INSTALL_STATUS=$(incus exec "$CONTAINER" -- \
+  curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 600 \
+  http://127.0.0.1:4000/api/php/versions/8.3/install 2>/dev/null || echo "000")
+if [[ "$PHP_INSTALL_STATUS" == "200" ]]; then
+  success "PHP 8.3 installed."
+elif [[ "$PHP_INSTALL_STATUS" == "000" ]]; then
+  error "PHP 8.3 install request timed out or failed to connect."
+  exit 1
+else
+  error "PHP 8.3 install returned HTTP ${PHP_INSTALL_STATUS}."
+  exit 1
+fi
 
 # ─── Step 11: Push test assets into the container ───────────────────────────
 # Use tar-pipe for all multi-file transfers: single round-trip instead of one

@@ -498,14 +498,14 @@ export const getWhoDBSettings = () =>
 export const putWhoDBSettings = (data: Pick<WhoDBSettings, 'disable_credential_form' | 'manual_connections'>) =>
   request<{ status: string }>('PUT', '/api/services/whodb/settings', data)
 
-// --- RustFS ---
+// --- MaxIO ---
 
-export interface RustFSBucket {
+export interface MaxIOBucket {
   name: string
   creationDate: string
 }
 
-export interface RustFSObject {
+export interface MaxIOObject {
   key: string
   size: number
   lastModified: string
@@ -513,28 +513,10 @@ export interface RustFSObject {
   storageClass: string
 }
 
-export interface RustFSListResult {
-  objects: RustFSObject[]
+export interface MaxIOListResult {
+  objects: MaxIOObject[]
   prefixes: string[]  // virtual "folders"
   isTruncated: boolean
-}
-
-export interface RustFSServerInfo {
-  mode: string
-  buckets: number
-  objects: number
-  usage: number       // bytes
-  version: string
-  uptime: number      // seconds
-  disks: RustFSDisk[]
-}
-
-export interface RustFSDisk {
-  endpoint: string
-  totalSpace: number
-  usedSpace: number
-  availableSpace: number
-  state: string
 }
 
 // XML parsing helpers
@@ -547,8 +529,8 @@ function getText(el: Element | Document, tag: string): string {
 }
 
 /** List all buckets. Calls S3 GET / */
-export async function listBuckets(): Promise<RustFSBucket[]> {
-  const res = await fetch('/api/rustfs/s3/')
+export async function listBuckets(): Promise<MaxIOBucket[]> {
+  const res = await fetch('/api/maxio/s3/')
   if (!res.ok) throw new Error(`listBuckets: ${res.status} ${res.statusText}`)
   const text = await res.text()
   const doc = parseXML(text)
@@ -560,25 +542,25 @@ export async function listBuckets(): Promise<RustFSBucket[]> {
 
 /** Create a bucket. */
 export async function createBucket(name: string): Promise<void> {
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(name)}`, { method: 'PUT' })
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(name)}`, { method: 'PUT' })
   if (!res.ok) throw new Error(`createBucket: ${res.status} ${res.statusText}`)
 }
 
 /** Delete an empty bucket. */
 export async function deleteBucket(name: string): Promise<void> {
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(name)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`deleteBucket: ${res.status} ${res.statusText}`)
 }
 
 /** List ALL objects under a prefix recursively (no delimiter — no virtual folder splitting).
  *  Used for subtree moves: fetches every key under a given prefix. */
-export async function listAllObjects(bucket: string, prefix: string): Promise<RustFSObject[]> {
+export async function listAllObjects(bucket: string, prefix: string): Promise<MaxIOObject[]> {
   let continuationToken: string | undefined
-  const all: RustFSObject[] = []
+  const all: MaxIOObject[] = []
   do {
     const q = new URLSearchParams({ 'list-type': '2', prefix })
     if (continuationToken) q.set('continuation-token', continuationToken)
-    const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(bucket)}?${q}`)
+    const res = await fetch(`/api/maxio/s3/${encodeURIComponent(bucket)}?${q}`)
     if (!res.ok) throw new Error(`listAllObjects: ${res.status} ${res.statusText}`)
     const doc = parseXML(await res.text())
     for (const c of Array.from(doc.querySelectorAll('Contents'))) {
@@ -597,14 +579,14 @@ export async function listAllObjects(bucket: string, prefix: string): Promise<Ru
 }
 
 /** List objects (and common prefixes = virtual folders) in a bucket under prefix. */
-export async function listObjects(bucket: string, prefix = ''): Promise<RustFSListResult> {
+export async function listObjects(bucket: string, prefix = ''): Promise<MaxIOListResult> {
   const q = new URLSearchParams({ 'list-type': '2', delimiter: '/', prefix })
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(bucket)}?${q}`)
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(bucket)}?${q}`)
   if (!res.ok) throw new Error(`listObjects: ${res.status} ${res.statusText}`)
   const text = await res.text()
   const doc = parseXML(text)
 
-  const objects: RustFSObject[] = Array.from(doc.querySelectorAll('Contents')).map(c => ({
+  const objects: MaxIOObject[] = Array.from(doc.querySelectorAll('Contents')).map(c => ({
     key: getText(c, 'Key'),
     size: parseInt(getText(c, 'Size') || '0', 10),
     lastModified: getText(c, 'LastModified'),
@@ -623,7 +605,7 @@ export async function listObjects(bucket: string, prefix = ''): Promise<RustFSLi
 
 /** Delete a single object. */
 export async function deleteObject(bucket: string, key: string): Promise<void> {
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(bucket)}/${key}`, { method: 'DELETE' })
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(bucket)}/${key}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`deleteObject: ${res.status} ${res.statusText}`)
 }
 
@@ -632,7 +614,7 @@ export async function deleteObjects(bucket: string, keys: string[]): Promise<voi
   const objectsXML = keys.map(k => `<Object><Key>${k}</Key></Object>`).join('')
   const body = `<?xml version="1.0" encoding="UTF-8"?><Delete><Quiet>true</Quiet>${objectsXML}</Delete>`
   const md5 = await computeMD5Base64(body)
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(bucket)}?delete`, {
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(bucket)}?delete`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/xml',
@@ -664,7 +646,7 @@ export function uploadObject(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', `/api/rustfs/s3/${encodeURIComponent(bucket)}/${key}`)
+    xhr.open('PUT', `/api/maxio/s3/${encodeURIComponent(bucket)}/${key}`)
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
@@ -680,7 +662,7 @@ export function uploadObject(
 
 /** Copy an object within the same bucket (S3 server-side copy). */
 export async function copyObject(bucket: string, srcKey: string, dstKey: string): Promise<void> {
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(bucket)}/${dstKey}`, {
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(bucket)}/${dstKey}`, {
     method: 'PUT',
     headers: {
       'x-amz-copy-source': `/${encodeURIComponent(bucket)}/${srcKey}`,
@@ -692,7 +674,7 @@ export async function copyObject(bucket: string, srcKey: string, dstKey: string)
 
 /** Upload a zero-byte object to create a virtual folder (key ends with '/'). */
 export async function createFolder(bucket: string, key: string): Promise<void> {
-  const res = await fetch(`/api/rustfs/s3/${encodeURIComponent(bucket)}/${key}`, {
+  const res = await fetch(`/api/maxio/s3/${encodeURIComponent(bucket)}/${key}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/octet-stream',
@@ -706,32 +688,6 @@ export async function createFolder(bucket: string, key: string): Promise<void> {
 /** Get a presigned URL for downloading an object. */
 export async function getPresignedUrl(bucket: string, key: string): Promise<string> {
   const q = new URLSearchParams({ bucket, key })
-  const data = await request<{ url: string }>('GET', `/api/rustfs/presign?${q}`)
+  const data = await request<{ url: string }>('GET', `/api/maxio/presign?${q}`)
   return data.url
-}
-
-/** Get RustFS server info from admin API. */
-export async function getRustFSInfo(): Promise<RustFSServerInfo> {
-  const res = await fetch('/api/rustfs/admin/rustfs/admin/v3/info')
-  if (!res.ok) throw new Error(`getRustFSInfo: ${res.status} ${res.statusText}`)
-  const data = await res.json()
-  // Map response fields to our interface.
-  const firstServer = Array.isArray(data.servers) && data.servers.length > 0 ? data.servers[0] : null
-  const drives: RustFSDisk[] = firstServer?.drives?.map((d: Record<string, unknown>) => ({
-    endpoint: String(d.endpoint ?? ''),
-    totalSpace: Number(d.totalspace ?? 0),
-    usedSpace: Number(d.usedspace ?? 0),
-    availableSpace: Number(d.availspace ?? 0),
-    state: String(d.state ?? ''),
-  })) ?? []
-
-  return {
-    mode: data.mode ?? '',
-    buckets: data.buckets?.count ?? 0,
-    objects: data.objects?.count ?? 0,
-    usage: data.usage?.size ?? 0,
-    version: firstServer?.version ?? '',
-    uptime: firstServer?.uptime ?? 0,
-    disks: drives,
-  }
 }

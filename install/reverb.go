@@ -49,6 +49,8 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	sitesDir := paths.ServerDir(r.serverRoot)
 	reverbDir := paths.ServiceDir(r.serverRoot, "reverb")
+	composerBin := filepath.Join(paths.BinDir(r.serverRoot), "composer")
+	phpBin := filepath.Join(paths.BinDir(r.serverRoot), "php")
 
 	// 1. Ensure $HOME/sites exists (owned by siteUser).
 	if err := os.MkdirAll(sitesDir, 0755); err != nil {
@@ -58,13 +60,11 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 2. Create a new Laravel project using composer create-project (must run
 	//    as siteUser so files are owned correctly). Run in sitesDir with
 	//    "reverb" as the project name — composer treats it as relative to cwd.
-	//    We use composer directly rather than the `laravel` CLI installer
-	//    because the Laravel global installer is not guaranteed to be present;
-	//    composer IS always available at {serverRoot}/bin/composer.
-	composerBin := filepath.Join(paths.BinDir(r.serverRoot), "composer")
+	//    We use the devctl-managed composer and php binaries from {serverRoot}/bin/
+	//    to avoid relying on system-installed PHP or Composer.
 	fmt.Fprintln(w, "reverb: creating Laravel project...")
 	_, err := runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, sitesDir,
-		fmt.Sprintf("%s create-project laravel/laravel reverb --no-interaction --prefer-dist", composerBin))
+		phpBin+" "+composerBin+" create-project laravel/laravel reverb --no-interaction --prefer-dist")
 	if err != nil {
 		return fmt.Errorf("composer create-project: %w", err)
 	}
@@ -73,7 +73,7 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	//    REVERB_APP_ID/KEY/SECRET to .env).
 	fmt.Fprintln(w, "reverb: installing broadcasting...")
 	_, err = runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
-		"php artisan install:broadcasting --reverb --without-node --no-interaction")
+		phpBin+" artisan install:broadcasting --reverb --without-node --no-interaction")
 	if err != nil {
 		return fmt.Errorf("install:broadcasting: %w", err)
 	}
@@ -138,8 +138,10 @@ func (r *ReverbInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "reverb: running composer update laravel/reverb...")
+	composerBin := filepath.Join(paths.BinDir(r.serverRoot), "composer")
+	phpBin := filepath.Join(paths.BinDir(r.serverRoot), "php")
 	_, err := runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
-		"composer update laravel/reverb --no-interaction --prefer-dist")
+		phpBin+" "+composerBin+" update laravel/reverb --no-interaction --prefer-dist")
 	if err != nil {
 		return fmt.Errorf("reverb: composer update: %w", err)
 	}

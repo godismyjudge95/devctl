@@ -6,7 +6,7 @@
 
 A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.
 
-devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, RustFS) — all from a single dashboard without touching config files.
+devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO) — all from a single dashboard without touching config files.
 
 ![Services page showing Caddy running and available services](docs/screenshot-services.png)
 
@@ -155,12 +155,12 @@ devctl checks for newer versions on startup and again daily at 3 am. When an upd
 | Mailpit | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) | — | [github.com/axllent/mailpit](https://github.com/axllent/mailpit/releases) | `{serverRoot}/mailpit/config.env` (env vars) |
 | Laravel Reverb | `127.0.0.1:7383` | `reverb.test` | [packagist.org/laravel/reverb](https://packagist.org/packages/laravel/reverb) (via Composer) | `{serverRoot}/reverb/.env` |
 | WhoDB | `127.0.0.1:8161` | `whodb.test` | [github.com/clidey/whodb](https://github.com/clidey/whodb/releases) | `{serverRoot}/whodb/config.env` |
-| RustFS | `127.0.0.1:9000` (S3 API), `127.0.0.1:9001` (console) | `rustfs.test` | [dl.rustfs.com](https://dl.rustfs.com/artifacts/rustfs/release/) (always latest) | `{serverRoot}/rustfs/config.env` |
+| MaxIO | `127.0.0.1:9000` (S3 API), `127.0.0.1:9001` (console) | `maxio.test` | [github.com/coollabsio/maxio](https://github.com/coollabsio/maxio/releases) (always latest) | `{serverRoot}/maxio/config.env` |
 | PHP-FPM (per version) | Unix socket | — | [static-php-cli](https://github.com/crazywhalecc/static-php-cli) | `{serverRoot}/php/{version}/php.ini` |
 
 **Notes:**
 
-- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, RustFS, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
+- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, MaxIO, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
 - PostgreSQL runs as a supervised child process but drops privileges to `DEVCTL_SITE_USER` (PostgreSQL refuses to start as root).
 - Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
 - Config files are written once on install and never overwritten on restart. User edits are preserved.
@@ -178,9 +178,15 @@ A **WhoDB** section in Settings lets you:
 
 Connections are stored in the devctl SQLite database and applied immediately.
 
-### RustFS
+### MaxIO
 
-[RustFS](https://rustfs.com) is an S3-compatible object storage server. Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/rustfs/config.env` to change them. Data is stored at `{serverRoot}/rustfs/data`. The `rustfs.test` vhost proxies to the console UI at port `9001`.
+[MaxIO](https://github.com/coollabsio/maxio) is a high-performance S3-compatible object storage server (single binary from coollabsio/maxio). Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/maxio/config.env` to change them. Data is stored at `{serverRoot}/maxio/data`. The `maxio.test` vhost proxies to the console UI at port `9001`.
+
+For Laravel, copy the generated `connection.env` values into your `.env`:
+
+```env
+AWS_ENDPOINT=https://s3.maxio.test
+```
 
 ---
 
@@ -519,8 +525,8 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 | `127.0.0.1:1025` | Mailpit SMTP | Yes |
 | `127.0.0.1:7383` | Laravel Reverb | No |
 | `127.0.0.1:8161` | WhoDB | No |
-| `127.0.0.1:9000` | RustFS S3 API | No |
-| `127.0.0.1:9001` | RustFS console | No |
+| `127.0.0.1:9000` | MaxIO S3 API | No |
+| `127.0.0.1:9001` | MaxIO console | No |
 
 ---
 
@@ -546,7 +552,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/mailpit/` | Mailpit binary, `config.env`, email storage |
 | `{serverRoot}/reverb/` | Laravel app that runs `php artisan reverb:start` |
 | `{serverRoot}/whodb/` | WhoDB binary, `config.env` |
-| `{serverRoot}/rustfs/` | RustFS binary, `config.env`, object data |
+| `{serverRoot}/maxio/` | MaxIO binary, `config.env`, object data |
 | `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
 | `/etc/systemd/system/devctl.service` | Systemd unit file |
 | `/etc/profile.d/devctl.sh` | Adds `{serverRoot}/bin` to `PATH` for all users |

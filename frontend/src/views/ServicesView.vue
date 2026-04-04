@@ -347,10 +347,10 @@ async function doPHPUninstall() {
                   <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
                   <Square v-else class="w-3.5 h-3.5" />
                 </Button>
-                <!-- Sep before Restart when Stop/Start is present -->
-                <ButtonGroupSeparator v-if="svc.status !== 'running' || !svc.required" />
-                <!-- Restart -->
+                <!-- Sep + Restart only when running -->
+                <ButtonGroupSeparator v-if="svc.status === 'running'" />
                 <Button
+                  v-if="svc.status === 'running'"
                   variant="outline" size="icon-sm"
                   :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
                   :title="`Restart ${svc.label}`"
@@ -551,10 +551,10 @@ async function doPHPUninstall() {
                       <Square v-else class="w-3.5 h-3.5" />
                       Stop
                     </Button>
-                    <!-- Sep before Restart when Stop/Start is present -->
-                    <ButtonGroupSeparator v-if="svc.status !== 'running' || !svc.required" />
-                    <!-- Restart -->
+                    <!-- Sep + Restart only when running -->
+                    <ButtonGroupSeparator v-if="svc.status === 'running'" />
                     <Button
+                      v-if="svc.status === 'running'"
                       variant="outline" size="sm"
                       :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
                       :title="`Restart ${svc.label}`"

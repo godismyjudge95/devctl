@@ -175,10 +175,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/mail/", s.handleMailProxy)
 	s.mux.HandleFunc("GET /ws/mail", s.handleMailWS)
 
-	// RustFS — presign must be registered before the catch-all proxies.
-	s.mux.HandleFunc("GET /api/rustfs/presign", s.handleRustFSPresign)
-	s.mux.HandleFunc("/api/rustfs/s3/", s.handleRustFSS3Proxy)
-	s.mux.HandleFunc("/api/rustfs/admin/", s.handleRustFSAdminProxy)
+	// MaxIO — presign must be registered before the catch-all proxy.
+	s.mux.HandleFunc("GET /api/maxio/presign", s.handleMaxIOPresign)
+	s.mux.HandleFunc("/api/maxio/s3/", s.handleMaxIOS3Proxy)
 
 	// /_testing/ — debug/test endpoints. Only registered when DEVCTL_TESTING=true.
 	// These routes are used by integration tests to inject state without hitting

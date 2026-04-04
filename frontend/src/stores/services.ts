@@ -41,8 +41,8 @@ export const useServicesStore = defineStore('services', () => {
     states.value.some(s => s.id === 'mailpit' && s.installed)
   )
 
-  const rustfsInstalled = computed(() =>
-    states.value.some(s => s.id === 'rustfs' && s.installed)
+  const maxioInstalled = computed(() =>
+    states.value.some(s => s.id === 'maxio' && s.installed)
   )
 
   function connectSSE() {
@@ -179,7 +179,7 @@ export const useServicesStore = defineStore('services', () => {
     stoppedCount,
     whodbInstalled,
     mailpitInstalled,
-    rustfsInstalled,
+    maxioInstalled,
     connectSSE,
     start,
     stop,

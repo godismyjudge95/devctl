@@ -114,9 +114,9 @@ watch(() => servicesStore.whodbInstalled, (installed) => {
   }
 })
 
-// Redirect away from /rustfs if RustFS becomes uninstalled.
-watch(() => servicesStore.rustfsInstalled, (installed) => {
-  if (!installed && route.path.startsWith('/rustfs')) {
+// Redirect away from /maxio if MaxIO becomes uninstalled.
+watch(() => servicesStore.maxioInstalled, (installed) => {
+  if (!installed && route.path.startsWith('/maxio')) {
     router.replace('/services')
   }
 })
@@ -135,7 +135,7 @@ const allNavItems = [
   { path: '/mail',      label: 'Mail',      icon: Mail,        requiresMailpit: true },
   { path: '/spx',       label: 'Profiler',  icon: Activity,    requiresSPX: true },
   { path: '/whodb',     label: 'WhoDB',     icon: Database,    requiresWhoDB: true },
-  { path: '/rustfs',    label: 'Storage',   icon: HardDrive,   requiresRustFS: true },
+  { path: '/maxio',     label: 'Storage',   icon: HardDrive,   requiresMaxIO: true },
   { path: '/logs',      label: 'Logs',      icon: ScrollText },
   { path: '/settings',  label: 'Settings',  icon: Settings },
 ]
@@ -145,7 +145,7 @@ const navItems = computed(() =>
     (!item.requiresMailpit || servicesStore.mailpitInstalled) &&
     (!item.requiresSPX || spxAvailable.value) &&
     (!item.requiresWhoDB || servicesStore.whodbInstalled) &&
-    (!(item as { requiresRustFS?: boolean }).requiresRustFS || servicesStore.rustfsInstalled)
+    (!(item as { requiresMaxIO?: boolean }).requiresMaxIO || servicesStore.maxioInstalled)
   )
 )
 </script>

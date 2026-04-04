@@ -24,11 +24,11 @@ func TestGetDumps_ReturnsSlice(t *testing.T) {
 	_ = decodeJSON[[]DumpEntry](t, body)
 }
 
-// TestClearDumps_StatusOK verifies DELETE /api/dumps returns HTTP 200.
+// TestClearDumps_StatusOK verifies DELETE /api/dumps returns HTTP 204.
 func TestClearDumps_StatusOK(t *testing.T) {
 	_, status := httpDelete(t, "/api/dumps")
-	if status != 200 {
-		t.Fatalf("DELETE /api/dumps: expected 200, got %d", status)
+	if status != 204 {
+		t.Fatalf("DELETE /api/dumps: expected 204, got %d", status)
 	}
 }
 
@@ -36,8 +36,8 @@ func TestClearDumps_StatusOK(t *testing.T) {
 // list is empty.
 func TestClearDumps_EmptiesTheList(t *testing.T) {
 	_, status := httpDelete(t, "/api/dumps")
-	if status != 200 {
-		t.Fatalf("DELETE /api/dumps: expected 200, got %d", status)
+	if status != 204 {
+		t.Fatalf("DELETE /api/dumps: expected 204, got %d", status)
 	}
 
 	body := httpGet(t, "/api/dumps")

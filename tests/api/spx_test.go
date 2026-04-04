@@ -30,10 +30,10 @@ func TestGetSpxProfile_UnknownKey_Returns404(t *testing.T) {
 	httpGetStatus(t, "/api/spx/profiles/does-not-exist", 404)
 }
 
-// TestClearSpxProfiles_StatusOK verifies DELETE /api/spx/profiles returns 200.
+// TestClearSpxProfiles_StatusOK verifies DELETE /api/spx/profiles returns 204.
 func TestClearSpxProfiles_StatusOK(t *testing.T) {
 	_, status := httpDelete(t, "/api/spx/profiles")
-	if status != 200 {
-		t.Fatalf("DELETE /api/spx/profiles: expected 200, got %d", status)
+	if status != 204 {
+		t.Fatalf("DELETE /api/spx/profiles: expected 204, got %d", status)
 	}
 }

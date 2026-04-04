@@ -8,9 +8,9 @@ import (
 
 // LogEntry mirrors the JSON shape returned by GET /api/logs.
 type LogEntry struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Path  string `json:"path"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // TestGetLogs_StatusOK verifies GET /api/logs returns HTTP 200.
@@ -33,16 +33,16 @@ func TestGetLogs_AtLeastOneEntry(t *testing.T) {
 	}
 }
 
-// TestGetLogs_AllHaveIDAndLabel verifies every log entry has id and label.
-func TestGetLogs_AllHaveIDAndLabel(t *testing.T) {
+// TestGetLogs_AllHaveIDAndName verifies every log entry has id and name.
+func TestGetLogs_AllHaveIDAndName(t *testing.T) {
 	body := httpGet(t, "/api/logs")
 	logs := decodeJSON[[]LogEntry](t, body)
 	for i, l := range logs {
 		if l.ID == "" {
 			t.Errorf("log[%d]: id is empty", i)
 		}
-		if l.Label == "" {
-			t.Errorf("log[%d] (id=%q): label is empty", i, l.ID)
+		if l.Name == "" {
+			t.Errorf("log[%d] (id=%q): name is empty", i, l.ID)
 		}
 	}
 }

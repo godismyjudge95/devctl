@@ -6,7 +6,9 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -23,6 +25,8 @@ import (
 // secure_path) for the duration of the test. The stub records its arguments
 // to a world-writable log file inside siteHome and creates the expected
 // laravel binary so the function reports success.
+// The test passes /usr/local/bin/composer as the composerBin argument to match
+// the stub location.
 func TestInstallLaravelCLI_CallsComposerGlobalRequire(t *testing.T) {
 	siteUser, siteHome := requireSiteUserT(t)
 	laravelBin := filepath.Join(siteHome, ".config", "composer", "vendor", "bin", "laravel")
@@ -34,7 +38,7 @@ func TestInstallLaravelCLI_CallsComposerGlobalRequire(t *testing.T) {
 		os.Remove(laravelBin)
 	})
 
-	if err := php.InstallLaravelCLI(context.Background(), siteUser, siteHome); err != nil {
+	if err := php.InstallLaravelCLI(context.Background(), "/usr/local/bin/composer", siteUser, siteHome); err != nil {
 		t.Fatalf("InstallLaravelCLI: %v", err)
 	}
 
@@ -60,7 +64,7 @@ func TestInstallStatamicCLI_CallsComposerGlobalRequire(t *testing.T) {
 		os.Remove(statamicBin)
 	})
 
-	if err := php.InstallStatamicCLI(context.Background(), siteUser, siteHome); err != nil {
+	if err := php.InstallStatamicCLI(context.Background(), "/usr/local/bin/composer", siteUser, siteHome); err != nil {
 		t.Fatalf("InstallStatamicCLI: %v", err)
 	}
 
@@ -102,7 +106,7 @@ func siteUserHome(t *testing.T, username string) string {
 // installComposerStub replaces /usr/local/bin/composer with a spy stub for the
 // duration of the test. The stub:
 //   - appends its arguments to logFile (world-writable, created by this func)
-//   - creates binPath (and its parent directories) as an executable file
+//   - creates binPath as an executable file (parent dir pre-created by this func)
 //   - exits 0
 //
 // Any pre-existing /usr/local/bin/composer is renamed to .bak and restored on
@@ -122,9 +126,33 @@ func installComposerStub(t *testing.T, logFile, binPath string) {
 		t.Fatalf("chmod log file %s: %v", logFile, err)
 	}
 
+	// Pre-create the target directory as root and chown it to the site user so
+	// the stub (running as siteUser via sudo) can write into it without needing
+	// to create any intermediate directories itself.  This avoids a race where
+	// the stub's own `mkdir -p` silently fails (e.g. the path chain doesn't
+	// exist yet and some intermediate directory is not world-writable).
+	binDir := filepath.Dir(binPath)
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("pre-create bin dir %s: %v", binDir, err)
+	}
+	// Look up the site user to chown the directory tree correctly.
+	siteUsername := os.Getenv("DEVCTL_SITE_USER")
+	if siteUsername != "" {
+		if u, lErr := user.Lookup(siteUsername); lErr == nil {
+			uid, _ := strconv.Atoi(u.Uid)
+			gid, _ := strconv.Atoi(u.Gid)
+			// Chown every component from binDir up to (but not including)
+			// siteHome (= filepath.Dir(logFile)), which is already owned by
+			// siteUser from the test-env setup.
+			siteHome := filepath.Dir(logFile) // logFile is {siteHome}/{name}
+			for d := binDir; d != siteHome && d != filepath.Dir(d); d = filepath.Dir(d) {
+				_ = os.Chown(d, uid, gid)
+			}
+		}
+	}
+
 	script := "#!/bin/sh\n" +
 		"echo \"$*\" >> " + logFile + "\n" +
-		"mkdir -p " + filepath.Dir(binPath) + "\n" +
 		"touch " + binPath + " && chmod 755 " + binPath + "\n" +
 		"exit 0\n"
 

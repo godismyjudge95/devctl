@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { toast } from 'vue-sonner'
 import { zipSync } from 'fflate'
-import type { RustFSBucket, RustFSObject, RustFSServerInfo } from '@/lib/api'
+import type { MaxIOBucket, MaxIOObject } from '@/lib/api'
 import {
   listBuckets,
   createBucket,
@@ -15,7 +15,6 @@ import {
   copyObject,
   createFolder as createFolderApi,
   getPresignedUrl,
-  getRustFSInfo,
 } from '@/lib/api'
 
 // ── Pure helpers ───────────────────────────────────────────────────────────────
@@ -47,12 +46,12 @@ export interface TreeNode {
   expanded: boolean
 }
 
-export const useRustFSStore = defineStore('rustfs', () => {
+export const useMaxIOStore = defineStore('maxio', () => {
   // ── State ──────────────────────────────────────────────────────────────────
 
-  const buckets = ref<RustFSBucket[]>([])
+  const buckets = ref<MaxIOBucket[]>([])
   const selectedBucket = ref<string | null>(null)
-  const objects = ref<RustFSObject[]>([])
+  const objects = ref<MaxIOObject[]>([])
   const prefixes = ref<string[]>([])
   const currentPrefix = ref('')
   const loadingBuckets = ref(false)
@@ -60,7 +59,6 @@ export const useRustFSStore = defineStore('rustfs', () => {
   const uploading = ref(false)
   const uploadProgress = ref(0)
   const uploadFileName = ref('')
-  const serverInfo = ref<RustFSServerInfo | null>(null)
 
   // Use ref<string[]> so Vue tracks membership reactively via array.includes().
   // reactive(Set) does NOT reliably make .has() reactive when accessed through a Pinia store proxy.
@@ -419,7 +417,7 @@ export const useRustFSStore = defineStore('rustfs', () => {
       }
 
       // ── Folder subtree moves ────────────────────────────────────────────
-      const allFolderObjects: RustFSObject[] = []
+      const allFolderObjects: MaxIOObject[] = []
       for (const prefix of folderPrefixes) {
         const under = await listAllObjects(bucket, prefix)
         for (const obj of under) {
@@ -507,14 +505,6 @@ export const useRustFSStore = defineStore('rustfs', () => {
     }
   }
 
-  async function loadServerInfo() {
-    try {
-      serverInfo.value = await getRustFSInfo()
-    } catch {
-      // Non-fatal
-    }
-  }
-
   function toggleSelect(key: string) {
     if (selectedKeys.value.includes(key)) {
       selectedKeys.value = selectedKeys.value.filter(k => k !== key)
@@ -545,7 +535,6 @@ export const useRustFSStore = defineStore('rustfs', () => {
     uploading,
     uploadProgress,
     uploadFileName,
-    serverInfo,
     selectedKeys,
     searchQuery,
     sortField,
@@ -573,7 +562,6 @@ export const useRustFSStore = defineStore('rustfs', () => {
     uploadFiles,
     downloadObject,
     copyObjectUrl,
-    loadServerInfo,
     toggleSelect,
     selectAll,
     clearSelection,
