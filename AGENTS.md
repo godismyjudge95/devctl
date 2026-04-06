@@ -76,21 +76,23 @@ Load these when working on specific areas:
 | `update-skills` | Creating or updating agent skills for this project |
 | `integration-testing` | Writing, running, or debugging any integration test |
 
-## NEVER run tests on the host machine
+## ⛔ NEVER run tests on the host machine — not even to verify they compile
 
-**Do not run any `go test` commands on the host.** This machine is a live development system. Even unit tests that appear safe (no build tags, use `t.TempDir()`, etc.) must not be run on the host — the rule is absolute, with no exceptions.
+**Do not execute any compiled test binary on the host. Do not run `go test`, `/tmp/*.test`, or any test binary directly on this machine.** This machine is a live development system. The rule is absolute — no exceptions, no "quick sanity checks", no "just the unit tests".
 
-All tests — including plain unit tests in Go packages — must run inside the dedicated Incus test container. Use `go test -c` to compile the test binary on the host, then push and run it inside the container:
+This includes:
+- `go test ./...` or any `go test` invocation
+- Running a compiled `.test` binary directly: `/tmp/cli.test`, `./cli.test`, etc.
+- `go vet` with test files if it executes test code
+
+The **only** permitted local step is compiling: `go test -c` (produces a binary but does not run it). Everything else runs inside the Incus container.
 
 ```sh
-# Unit tests (e.g. cli/ package)
-make build
-make test-env          # in one terminal — starts container, blocks until Ctrl+C
-# in another terminal:
-go test -c -o mypackage.test ./cli/
-incus file push mypackage.test $DEVCTL_CONTAINER/tmp/mypackage.test
-incus exec $DEVCTL_CONTAINER -- chmod 755 /tmp/mypackage.test
-incus exec $DEVCTL_CONTAINER -- /tmp/mypackage.test -test.v
+# Unit tests (e.g. cli/ package) — compile on host, run in container
+go test -c -o cli.test ./cli/
+incus file push cli.test $DEVCTL_CONTAINER/tmp/cli.test
+incus exec $DEVCTL_CONTAINER -- chmod 755 /tmp/cli.test
+incus exec $DEVCTL_CONTAINER -- /tmp/cli.test -test.v
 
 # Integration tests (tests/api/)
 make build
@@ -126,11 +128,11 @@ Load the `integration-testing` skill for the full workflow: container setup, TDD
 
 After implementing any feature, add or update the relevant tests before considering the task done:
 
-- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c`, push the binary into the Incus container, and run it there.
+- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c` on the host, push the binary into the Incus container, and run it there. **Do not run the binary on the host.**
 - **Backend API changes** → add or update Go API integration tests in `tests/api/`. Load the `integration-testing` skill for the full workflow.
 - **Frontend / UI changes** → add or update Playwright e2e tests in `tests/e2e/`. Load the `testing-dashboard` skill for conventions and tooling.
 
-Do not rely on a clean compile as a substitute for automated tests. Never skip running tests because they "look simple" — compile, push, and run in the container every time.
+Do not rely on a clean compile as a substitute for automated tests. Never skip running tests because they "look simple" — compile on the host, push, and run in the container every time.
 
 ## Networking / DNS
 

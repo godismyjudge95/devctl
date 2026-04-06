@@ -143,6 +143,9 @@ func TestServicesRestart_IsRegistered(t *testing.T) {
 func TestServicesCredentials_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "services:credentials", wantArgs: true})
 }
+func TestServicesUpdate_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "services:update", wantArgs: true})
+}
 
 // ---------------------------------------------------------------------------
 // spx

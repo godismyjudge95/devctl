@@ -199,6 +199,46 @@ func init() {
 	})
 
 	Register(&Cmd{
+		Name:        "services:update",
+		Description: "Update an installed service to the latest version",
+		Usage:       "<service-id>",
+		Args:        []ArgDef{{Name: "service-id", Description: "Service ID to update (e.g. mailpit, redis)"}},
+		Examples:    []string{"devctl services:update mailpit", "devctl services:update redis"},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			if len(args) == 0 {
+				return fmt.Errorf("usage: devctl services:update <service-id>")
+			}
+			id := args[0]
+
+			if jsonMode {
+				type outputEvent struct {
+					Type string `json:"type"`
+					Line string `json:"line,omitempty"`
+				}
+				err := c.UpdateServiceSSE(id, func(line string) {
+					PrintJSON(outputEvent{Type: "output", Line: line})
+				})
+				if err != nil {
+					PrintJSON(map[string]string{"type": "error", "error": err.Error()})
+					return err
+				}
+				PrintJSON(map[string]string{"type": "done", "service_id": id})
+				return nil
+			}
+
+			fmt.Printf("Updating %s…\n", styleBold.Render(id))
+			err := c.UpdateServiceSSE(id, func(line string) {
+				fmt.Println(styleDim.Render("  " + line))
+			})
+			if err != nil {
+				return err
+			}
+			PrintOK(id + " updated")
+			return nil
+		},
+	})
+
+	Register(&Cmd{
 		Name:        "services:credentials",
 		Description: "Show connection credentials for a service",
 		Usage:       "<service-id>",

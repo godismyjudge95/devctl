@@ -379,6 +379,70 @@ func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error 
 	return fmt.Errorf("install %s: stream ended without a done or error event", id)
 }
 
+// UpdateServiceSSE POSTs to /api/services/{id}/update and streams the SSE
+// response. For each "output" event, onOutput is called with the text payload.
+// Returns nil on a "done" event, or an error on an "error" event or unexpected
+// stream close. A long timeout is used because updates can take several minutes.
+func (c *Client) UpdateServiceSSE(id string, onOutput func(line string)) error {
+	longClient := &http.Client{Timeout: 10 * time.Minute}
+
+	req, err := http.NewRequest(http.MethodPost, c.base+"/api/services/"+id+"/update", nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := longClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST /api/services/%s/update: %w", id, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s", strings.TrimSpace(string(b)))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	var currentEvent, currentData string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+		} else if strings.HasPrefix(line, "data: ") {
+			currentData = strings.TrimPrefix(line, "data: ")
+		} else if line == "" && currentEvent != "" {
+			switch currentEvent {
+			case "output":
+				var text string
+				if err := json.Unmarshal([]byte(currentData), &text); err != nil {
+					text = currentData
+				}
+				if onOutput != nil {
+					onOutput(text)
+				}
+			case "done":
+				return nil
+			case "error":
+				var payload struct {
+					Error string `json:"error"`
+				}
+				if err := json.Unmarshal([]byte(currentData), &payload); err != nil {
+					return fmt.Errorf("update %s failed: %s", id, currentData)
+				}
+				return fmt.Errorf("update %s failed: %s", id, payload.Error)
+			}
+			currentEvent = ""
+			currentData = ""
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading SSE stream: %w", err)
+	}
+	return fmt.Errorf("update %s: stream ended without a done or error event", id)
+}
+
 func (c *Client) ListPHPVersions() ([]PHPVersion, error) {
 	var out []PHPVersion
 	return out, c.get("/api/php/versions", &out)
