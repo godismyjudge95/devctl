@@ -12,11 +12,6 @@ import (
 	"github.com/danielgormly/devctl/services"
 )
 
-const (
-	caddyVersion = "v2.10.0"
-	caddyURL     = "https://github.com/caddyserver/caddy/releases/download/" + caddyVersion + "/caddy_2.10.0_linux_amd64.tar.gz"
-)
-
 // CaddyInstaller downloads the Caddy binary to {serverRoot}/caddy/
 // and runs it as a supervised child process.
 type CaddyInstaller struct {
@@ -46,6 +41,13 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
+	latest, err := c.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("caddy: resolve latest version: %w", err)
+	}
+	ver := strings.TrimPrefix(latest, "v")
+	dlURL := fmt.Sprintf("https://github.com/caddyserver/caddy/releases/download/%s/caddy_%s_linux_amd64.tar.gz", latest, ver)
+
 	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
 	binPath := filepath.Join(caddyDir, "caddy")
 	tmpTar := filepath.Join(os.TempDir(), "caddy-linux-amd64.tar.gz")
@@ -58,8 +60,8 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 2. Download tarball.
-	fmt.Fprintf(w, "caddy: downloading %s...\n", caddyVersion)
-	if err := curlDownloadW(ctx, w, caddyURL, tmpTar); err != nil {
+	fmt.Fprintf(w, "caddy: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
 		return fmt.Errorf("caddy: download: %w", err)
 	}
 

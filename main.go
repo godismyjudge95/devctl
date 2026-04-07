@@ -25,6 +25,7 @@ import (
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/selfinstall"
+	"github.com/danielgormly/devctl/selfupdate"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
@@ -99,6 +100,14 @@ func run() error {
 	if os.Getuid() != 0 {
 		fmt.Fprintln(os.Stderr, "devctl: must be run as root. Re-run with: sudo devctl")
 		os.Exit(1)
+	}
+
+	// --- Self-update backup cleanup ---
+	// If the binary was just updated, a .bak file from the previous version
+	// exists next to the current binary. Remove it now that we've successfully
+	// started, proving the update was good.
+	if exe, err := os.Executable(); err == nil {
+		selfupdate.CleanupBackup(exe)
 	}
 
 	// --- Config ---
@@ -277,7 +286,7 @@ func run() error {
 	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
 	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, installHooks, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, installHooks, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr, version)
 
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {
@@ -323,6 +332,10 @@ func run() error {
 	// --- Update checker ---
 	// Runs once on startup, then again every day at 3am.
 	go runUpdateChecker(runCtx, srv, installRegistry)
+
+	// --- Self-update checker ---
+	// Checks GitHub for a newer devctl release once on startup, then daily.
+	go runSelfUpdateChecker(runCtx, srv)
 
 	// --- Skill auto-update ---
 	// If the user has the devctl CLI skill installed, regenerate it silently.
@@ -411,6 +424,33 @@ func runUpdateChecker(ctx context.Context, srv *api.Server, installers map[strin
 	check()
 
 	// Then run again every day at 3am.
+	for {
+		now := time.Now()
+		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(next3am)):
+			check()
+		}
+	}
+}
+
+// runSelfUpdateChecker checks GitHub for a newer devctl release on startup
+// and again every day at 3am. When a newer version is found it stores the
+// result in srv so the API can surface it to the frontend.
+func runSelfUpdateChecker(ctx context.Context, srv *api.Server) {
+	check := func() {
+		latest, err := selfupdate.LatestVersion(ctx)
+		if err != nil {
+			log.Printf("self-update-checker: %v", err)
+			return
+		}
+		srv.SetSelfLatestVersion(latest)
+	}
+
+	check()
+
 	for {
 		now := time.Now()
 		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())

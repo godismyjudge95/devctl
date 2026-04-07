@@ -62,6 +62,16 @@ download() {
   fi
 }
 
+# ─── devctl self-update binary ──────────────────────────────────────────────
+# Used by the self-update tests. The curl shim serves this when the update
+# handler downloads the binary to a temp file named "devctl".
+# Always download the current binary so tests can exercise the full update
+# flow even without a real new release.
+DEVCTL_VERSION="v0.3.0"
+download "devctl ${DEVCTL_VERSION} (self-update artifact)" \
+  "https://github.com/godismyjudge95/devctl/releases/download/${DEVCTL_VERSION}/devctl" \
+  "devctl"
+
 # ─── Caddy ────────────────────────────────────────────────────────────────────
 CADDY_VERSION="v2.10.0"
 download "Caddy ${CADDY_VERSION}" \

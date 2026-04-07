@@ -88,8 +88,8 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 6. Write config.env with credentials and configuration.
 	fmt.Fprintln(w, "maxio: writing config.env...")
 	envContent := fmt.Sprintf(
-		"MAXIO_ACCESS_KEY=devctl\n"+
-			"MAXIO_SECRET_KEY=devctlsecret\n"+
+		"MAXIO_ACCESS_KEY=DEVCTL\n"+
+			"MAXIO_SECRET_KEY=DEVCTL\n"+
 			"MAXIO_PORT=9000\n"+
 			"MAXIO_ADDRESS=127.0.0.1\n"+
 			"MAXIO_DATA_DIR=%s\n"+
@@ -103,7 +103,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	// 7. Write connection.env with Laravel-compatible AWS keys for easy copy-paste into .env.
 	connPath := filepath.Join(maxioDir, "connection.env")
-	connContent := "AWS_ACCESS_KEY_ID=devctl\nAWS_SECRET_ACCESS_KEY=devctlsecret\nAWS_DEFAULT_REGION=us-east-1\nAWS_ENDPOINT=https://s3.maxio.test\nAWS_USE_PATH_STYLE_ENDPOINT=true\n"
+	connContent := "AWS_ACCESS_KEY_ID=DEVCTL\nAWS_SECRET_ACCESS_KEY=DEVCTL\nAWS_DEFAULT_REGION=us-east-1\nAWS_ENDPOINT=https://s3.maxio.test\nAWS_USE_PATH_STYLE_ENDPOINT=true\n"
 	if err := os.WriteFile(connPath, []byte(connContent), 0600); err != nil {
 		return fmt.Errorf("maxio: write connection.env: %w", err)
 	}
@@ -111,10 +111,11 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 8. Register Caddy reverse-proxy vhosts.
 	fmt.Fprintln(w, "maxio: creating maxio.test Caddy vhost...")
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
-		Domain:     "maxio.test",
-		SiteType:   "ws",
-		WSUpstream: "127.0.0.1:9000",
-		HTTPS:      true,
+		Domain:       "maxio.test",
+		SiteType:     "ws",
+		WSUpstream:   "127.0.0.1:9000",
+		HTTPS:        true,
+		ServiceVhost: true,
 	})
 	if err != nil {
 		// Best-effort: vhost may already exist.
@@ -123,10 +124,11 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	fmt.Fprintln(w, "maxio: creating s3.maxio.test Caddy vhost (S3 API)...")
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
-		Domain:     "s3.maxio.test",
-		SiteType:   "ws",
-		WSUpstream: "127.0.0.1:9000",
-		HTTPS:      true,
+		Domain:       "s3.maxio.test",
+		SiteType:     "ws",
+		WSUpstream:   "127.0.0.1:9000",
+		HTTPS:        true,
+		ServiceVhost: true,
 	})
 	if err != nil {
 		fmt.Fprintf(w, "maxio: warning: create site s3.maxio.test: %v\n", err)

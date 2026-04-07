@@ -691,3 +691,23 @@ export async function getPresignedUrl(bucket: string, key: string): Promise<stri
   const data = await request<{ url: string }>('GET', `/api/maxio/presign?${q}`)
   return data.url
 }
+
+// --- Self-update ---
+
+export interface SelfUpdateStatus {
+  current_version: string
+  latest_version: string
+  update_available: boolean
+}
+
+export const getSelfUpdateStatus = () =>
+  request<SelfUpdateStatus>('GET', '/api/self/update/status')
+
+/**
+ * Streams self-update progress via SSE-over-fetch.
+ * Calls onOutput for each progress line, onDone on success, onError on failure.
+ * Returns an AbortController so the caller can cancel.
+ */
+export function applySelfUpdateStream(callbacks: StreamCallbacks): AbortController {
+  return runServiceStream('POST', '/api/self/update/apply', callbacks)
+}

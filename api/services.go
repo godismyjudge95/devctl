@@ -76,7 +76,7 @@ func (s *Server) runServiceAction(w http.ResponseWriter, r *http.Request, action
 			if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
 				log.Printf("caddy start: ensure http server: %v", err)
 			}
-			if err := s.siteManager.SyncAll(r.Context()); err != nil {
+			if err := s.siteManager.SyncAll(context.Background()); err != nil {
 				log.Printf("caddy start: sync sites: %v", err)
 			}
 		}()
@@ -280,7 +280,7 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 				if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
 					log.Printf("install: caddy ensure http server: %v", err)
 				}
-				if err := s.siteManager.SyncAll(r.Context()); err != nil {
+				if err := s.siteManager.SyncAll(context.Background()); err != nil {
 					log.Printf("install: caddy sync sites: %v", err)
 				}
 			}()
@@ -650,7 +650,7 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 				if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
 					log.Printf("update: caddy ensure http server: %v", err)
 				}
-				if err := s.siteManager.SyncAll(r.Context()); err != nil {
+				if err := s.siteManager.SyncAll(context.Background()); err != nil {
 					log.Printf("update: caddy sync sites: %v", err)
 				}
 			}()

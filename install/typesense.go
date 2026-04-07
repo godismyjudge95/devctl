@@ -13,11 +13,6 @@ import (
 	"github.com/danielgormly/devctl/sites"
 )
 
-const (
-	typesenseVersion = "30.1"
-	typesenseTarURL  = "https://dl.typesense.org/releases/" + typesenseVersion + "/typesense-server-" + typesenseVersion + "-linux-amd64.tar.gz"
-)
-
 // TypesenseInstaller downloads the Typesense binary to
 // {serverRoot}/typesense/, generates an API key, writes config.env,
 // and registers a Caddy reverse-proxy vhost at typesense.test.
@@ -44,10 +39,16 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
+	latest, err := t.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("typesense: resolve latest version: %w", err)
+	}
+	dlURL := fmt.Sprintf("https://dl.typesense.org/releases/%s/typesense-server-%s-linux-amd64.tar.gz", latest, latest)
+
 	tsDir := paths.ServiceDir(t.serverRoot, "typesense")
 	binPath := filepath.Join(tsDir, "typesense-server")
 	envPath := filepath.Join(tsDir, "config.env")
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("typesense-%s.tar.gz", typesenseVersion))
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("typesense-%s.tar.gz", latest))
 	defer os.Remove(tmpTar)
 
 	// 1. Create directories.
@@ -60,8 +61,8 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 2. Download tarball.
-	fmt.Fprintf(w, "typesense: downloading %s...\n", typesenseVersion)
-	if err := curlDownloadW(ctx, w, typesenseTarURL, tmpTar); err != nil {
+	fmt.Fprintf(w, "typesense: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
 		return fmt.Errorf("typesense: download: %w", err)
 	}
 
@@ -79,11 +80,8 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "typesense: warning: %v\n", err)
 	}
 
-	// 5. Generate a random 32-byte hex API key.
-	key, err := generateRandomHex(32)
-	if err != nil {
-		return fmt.Errorf("typesense: generate api key: %w", err)
-	}
+	// 5. Use a fixed, easily-typeable API key (mirrors Laravel Herd's approach).
+	key := "DEVCTL"
 
 	// 6. Write config.env with Laravel Scout connection info.
 	fmt.Fprintln(w, "typesense: writing config.env...")
@@ -101,10 +99,11 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 8. Register Caddy reverse-proxy vhost at typesense.test.
 	fmt.Fprintln(w, "typesense: creating typesense.test Caddy vhost...")
 	_, err = t.siteManager.Create(ctx, sites.CreateSiteInput{
-		Domain:     "typesense.test",
-		SiteType:   "ws", // reverse_proxy handler — works for plain HTTP too
-		WSUpstream: "127.0.0.1:8108",
-		HTTPS:      true,
+		Domain:       "typesense.test",
+		SiteType:     "ws", // reverse_proxy handler — works for plain HTTP too
+		WSUpstream:   "127.0.0.1:8108",
+		HTTPS:        true,
+		ServiceVhost: true,
 	})
 	if err != nil {
 		// Best-effort: vhost may already exist.

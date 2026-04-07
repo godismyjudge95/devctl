@@ -11,11 +11,6 @@ import (
 	"github.com/danielgormly/devctl/services"
 )
 
-const (
-	mailpitVersion = "v1.29.2"
-	mailpitURL     = "https://github.com/axllent/mailpit/releases/download/" + mailpitVersion + "/mailpit-linux-amd64.tar.gz"
-)
-
 // MailpitInstaller downloads the Mailpit binary to
 // {serverRoot}/mailpit/ and writes config.env with Laravel .env keys.
 type MailpitInstaller struct {
@@ -40,6 +35,12 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
+	latest, err := m.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("mailpit: resolve latest version: %w", err)
+	}
+	dlURL := fmt.Sprintf("https://github.com/axllent/mailpit/releases/download/%s/mailpit-linux-amd64.tar.gz", latest)
+
 	mailpitDir := paths.ServiceDir(m.serverRoot, "mailpit")
 	binPath := filepath.Join(mailpitDir, "mailpit")
 	dataDir := filepath.Join(mailpitDir, "data")
@@ -54,8 +55,8 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 2. Download tarball.
-	fmt.Fprintf(w, "mailpit: downloading %s...\n", mailpitVersion)
-	if err := curlDownloadW(ctx, w, mailpitURL, tmpTar); err != nil {
+	fmt.Fprintf(w, "mailpit: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
 		return fmt.Errorf("mailpit: download: %w", err)
 	}
 

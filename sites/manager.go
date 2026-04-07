@@ -402,6 +402,9 @@ func (m *Manager) PruneStale(ctx context.Context) {
 		if site.ServiceVhost != 0 {
 			continue // never remove managed service vhosts
 		}
+		if site.RootPath == "" {
+			continue // no filesystem root — treat as a service vhost, never prune
+		}
 		if _, err := os.Stat(site.RootPath); os.IsNotExist(err) {
 			if delErr := m.Delete(ctx, site.ID); delErr != nil {
 				fmt.Printf("sites: prune stale: remove %s: %v\n", site.Domain, delErr)

@@ -16,11 +16,6 @@ import (
 	"github.com/danielgormly/devctl/sites"
 )
 
-const (
-	whodbVersion = "0.100.0"
-	whodbURL     = "https://github.com/clidey/whodb/releases/download/" + whodbVersion + "/whodb-" + whodbVersion + "-linux-amd64"
-)
-
 // WhoDBConnection represents a single pre-configured connection entry for WhoDB.
 // WhoDB reads these from WHODB_POSTGRESQL / WHODB_MYSQL / WHODB_REDIS env vars
 // as JSON arrays. Field names must match WhoDB's DatabaseCredentials struct
@@ -83,6 +78,12 @@ func (w *WhoDBInstaller) InstallW(ctx context.Context, out io.Writer) error {
 		return nil
 	}
 
+	latest, err := w.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("whodb: resolve latest version: %w", err)
+	}
+	dlURL := fmt.Sprintf("https://github.com/clidey/whodb/releases/download/%s/whodb-%s-linux-amd64", latest, latest)
+
 	whodbDir := paths.ServiceDir(w.serverRoot, "whodb")
 	binPath := filepath.Join(whodbDir, "whodb")
 
@@ -93,8 +94,8 @@ func (w *WhoDBInstaller) InstallW(ctx context.Context, out io.Writer) error {
 	}
 
 	// 2. Download binary.
-	fmt.Fprintf(out, "whodb: downloading v%s...\n", whodbVersion)
-	if err := curlDownloadW(ctx, out, whodbURL, binPath); err != nil {
+	fmt.Fprintf(out, "whodb: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, out, dlURL, binPath); err != nil {
 		return fmt.Errorf("whodb: download: %w", err)
 	}
 	if err := os.Chmod(binPath, 0755); err != nil {
@@ -114,11 +115,12 @@ func (w *WhoDBInstaller) InstallW(ctx context.Context, out io.Writer) error {
 
 	// 5. Register Caddy reverse-proxy vhost at whodb.test.
 	fmt.Fprintln(out, "whodb: creating whodb.test Caddy vhost...")
-	_, err := w.siteManager.Create(ctx, sites.CreateSiteInput{
-		Domain:     "whodb.test",
-		SiteType:   "ws",
-		WSUpstream: "127.0.0.1:8161",
-		HTTPS:      true,
+	_, err = w.siteManager.Create(ctx, sites.CreateSiteInput{
+		Domain:       "whodb.test",
+		SiteType:     "ws",
+		WSUpstream:   "127.0.0.1:8161",
+		HTTPS:        true,
+		ServiceVhost: true,
 	})
 	if err != nil {
 		fmt.Fprintf(out, "whodb: warning: create site: %v\n", err)

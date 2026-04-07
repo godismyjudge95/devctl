@@ -23,11 +23,6 @@ import (
 //go:embed meilisearch-config.toml
 var meilisearchConfigTemplate []byte
 
-const (
-	meilisearchVersion = "v1.37.0"
-	meilisearchURL     = "https://github.com/meilisearch/meilisearch/releases/download/" + meilisearchVersion + "/meilisearch-linux-amd64"
-)
-
 // MeilisearchInstaller downloads the Meilisearch binary to
 // {serverRoot}/meilisearch/, generates a master key, writes
 // config.env, and registers a Caddy reverse-proxy vhost at meilisearch.test.
@@ -54,6 +49,12 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		return nil
 	}
 
+	latest, err := m.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("meilisearch: resolve latest version: %w", err)
+	}
+	dlURL := fmt.Sprintf("https://github.com/meilisearch/meilisearch/releases/download/%s/meilisearch-linux-amd64", latest)
+
 	meiliDir := paths.ServiceDir(m.serverRoot, "meilisearch")
 	binPath := filepath.Join(meiliDir, "meilisearch")
 	envPath := filepath.Join(meiliDir, "config.env")
@@ -65,8 +66,8 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 	}
 
 	// 2. Download binary.
-	fmt.Fprintf(w, "meilisearch: downloading %s...\n", meilisearchVersion)
-	if err := curlDownloadW(ctx, w, meilisearchURL, binPath); err != nil {
+	fmt.Fprintf(w, "meilisearch: downloading %s...\n", latest)
+	if err := curlDownloadW(ctx, w, dlURL, binPath); err != nil {
 		return fmt.Errorf("meilisearch: download: %w", err)
 	}
 	if err := os.Chmod(binPath, 0755); err != nil {
@@ -78,11 +79,8 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 		fmt.Fprintf(w, "meilisearch: warning: %v\n", err)
 	}
 
-	// 4. Generate a random 32-byte hex master key.
-	key, err := generateRandomHex(32)
-	if err != nil {
-		return fmt.Errorf("meilisearch: generate master key: %w", err)
-	}
+	// 4. Use a fixed, easily-typeable master key (mirrors Laravel Herd's approach).
+	key := "DEVCTL"
 
 	// 5. Write config.env with Laravel Scout connection info.
 	fmt.Fprintln(w, "meilisearch: writing config.env...")
@@ -100,10 +98,11 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 	// 7. Register Caddy reverse-proxy vhost at meilisearch.test.
 	fmt.Fprintln(w, "meilisearch: creating meilisearch.test Caddy vhost...")
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
-		Domain:     "meilisearch.test",
-		SiteType:   "ws", // reverse_proxy handler — works for plain HTTP too
-		WSUpstream: "127.0.0.1:7700",
-		HTTPS:      true,
+		Domain:       "meilisearch.test",
+		SiteType:     "ws", // reverse_proxy handler — works for plain HTTP too
+		WSUpstream:   "127.0.0.1:7700",
+		HTTPS:        true,
+		ServiceVhost: true,
 	})
 	if err != nil {
 		// Best-effort: vhost may already exist.
@@ -163,12 +162,13 @@ func (m *MeilisearchInstaller) LatestVersion(ctx context.Context) (string, error
 	return fetchGitHubLatestVersion(ctx, "meilisearch/meilisearch")
 }
 
-// UpdateW performs an autonomous Meilisearch update:
-//  1. Trigger a dump via the Meilisearch API and wait for it to complete.
-//  2. Stop the running process.
-//  3. Replace the binary with the latest version.
-//  4. Start with --import-dump to import the dump, blocking until import is done.
-//  5. Stop the import-mode process; the caller (API handler) restarts normally.
+// UpdateW performs a Meilisearch dumpless upgrade (available from v1.12+ → v1.13+):
+//  1. Take a snapshot as a safety backup (recommended for experimental features).
+//  2. Download the new binary.
+//  3. Stop the running process.
+//  4. Replace the binary.
+//  5. Start with --experimental-dumpless-upgrade; poll until UpgradeDatabase task succeeds.
+//  6. Stop the upgrade-mode process; the caller (API handler) restarts normally via supervisor.
 func (m *MeilisearchInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	latest, err := m.LatestVersion(ctx)
 	if err != nil {
@@ -178,22 +178,14 @@ func (m *MeilisearchInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 
 	meiliDir := paths.ServiceDir(m.serverRoot, "meilisearch")
 	binPath := filepath.Join(meiliDir, "meilisearch")
-
-	// Read the master key from config.env so we can authenticate API calls.
 	masterKey := readEnvKey(filepath.Join(meiliDir, "config.env"), "MEILISEARCH_KEY")
 
-	// ---------- Step 1: create a dump ----------
-	fmt.Fprintln(w, "meilisearch: creating dump...")
-	dumpUID, err := meilisearchTriggerDump(ctx, masterKey)
-	if err != nil {
-		return fmt.Errorf("meilisearch: trigger dump: %w", err)
+	// ---------- Step 1: snapshot as safety backup ----------
+	// Dumpless upgrade is experimental; a snapshot lets us roll back if it goes wrong.
+	fmt.Fprintln(w, "meilisearch: creating snapshot backup...")
+	if snapErr := meilisearchTriggerSnapshot(ctx, w, masterKey); snapErr != nil {
+		fmt.Fprintf(w, "meilisearch: warning: snapshot failed (%v), continuing\n", snapErr)
 	}
-	fmt.Fprintf(w, "meilisearch: dump task %s started, waiting for completion...\n", dumpUID)
-	dumpFile, err := meilisearchWaitForDump(ctx, w, masterKey, dumpUID, meiliDir)
-	if err != nil {
-		return fmt.Errorf("meilisearch: wait for dump: %w", err)
-	}
-	fmt.Fprintf(w, "meilisearch: dump complete: %s\n", dumpFile)
 
 	// ---------- Step 2: download new binary ----------
 	fmt.Fprintf(w, "meilisearch: downloading %s...\n", latest)
@@ -224,29 +216,134 @@ func (m *MeilisearchInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
-	// ---------- Step 5: run with --import-dump, wait for completion ----------
-	fmt.Fprintf(w, "meilisearch: importing dump from %s...\n", dumpFile)
-	importCmd := exec.CommandContext(ctx, binPath,
+	// ---------- Step 5: run with --experimental-dumpless-upgrade ----------
+	fmt.Fprintln(w, "meilisearch: launching dumpless upgrade...")
+	upgradeCmd := exec.CommandContext(ctx, binPath,
 		"--config-file-path", filepath.Join(meiliDir, "config.toml"),
-		"--import-dump", dumpFile,
+		"--experimental-dumpless-upgrade",
 	)
-	importCmd.Dir = meiliDir
-	importCmd.Stdout = w
-	importCmd.Stderr = w
-	// The import-dump flag makes Meilisearch import and exit, so we just wait.
-	if err := importCmd.Run(); err != nil {
-		// Meilisearch may not exit cleanly after import (it starts listening).
-		// If it has been running for a while and was killed by context, that's fine.
-		fmt.Fprintf(w, "meilisearch: import-dump process ended: %v\n", err)
+	upgradeCmd.Dir = meiliDir
+	upgradeCmd.Stdout = w
+	upgradeCmd.Stderr = w
+	if err := upgradeCmd.Start(); err != nil {
+		return fmt.Errorf("meilisearch: start upgrade process: %w", err)
 	}
 
-	fmt.Fprintf(w, "meilisearch: binary replaced with %s, dump imported\n", latest)
+	// Wait for the UpgradeDatabase task to complete, then stop the process.
+	upgradeErr := meilisearchWaitForUpgrade(ctx, w, masterKey)
+	_ = upgradeCmd.Process.Kill()
+	_ = upgradeCmd.Wait()
+
+	if upgradeErr != nil {
+		return fmt.Errorf("meilisearch: dumpless upgrade failed: %w", upgradeErr)
+	}
+
+	fmt.Fprintf(w, "meilisearch: upgraded to %s successfully\n", latest)
 	return nil
 }
 
-// meilisearchTriggerDump calls POST /dumps and returns the task UID.
-func meilisearchTriggerDump(ctx context.Context, masterKey string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:7700/dumps", nil)
+// meilisearchTriggerSnapshot calls POST /snapshots as a safety backup before
+// a dumpless upgrade. Non-fatal if it fails.
+func meilisearchTriggerSnapshot(ctx context.Context, w io.Writer, masterKey string) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:7700/snapshots", nil)
+	if err != nil {
+		return err
+	}
+	if masterKey != "" {
+		req.Header.Set("Authorization", "Bearer "+masterKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf("POST /snapshots returned HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		TaskUID int `json:"taskUid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode snapshot response: %w", err)
+	}
+	fmt.Fprintf(w, "meilisearch: snapshot task %d enqueued\n", result.TaskUID)
+	return nil
+}
+
+// meilisearchWaitForUpgrade waits for Meilisearch to start after being launched
+// with --experimental-dumpless-upgrade, then polls until the UpgradeDatabase
+// task succeeds or fails.
+func meilisearchWaitForUpgrade(ctx context.Context, w io.Writer, masterKey string) error {
+	if err := meilisearchWaitReady(ctx, w, masterKey, 60*time.Second); err != nil {
+		return fmt.Errorf("meilisearch did not become ready: %w", err)
+	}
+
+	taskUID, err := meilisearchFindUpgradeTask(ctx, masterKey)
+	if err != nil {
+		return fmt.Errorf("find UpgradeDatabase task: %w", err)
+	}
+	fmt.Fprintf(w, "meilisearch: UpgradeDatabase task %d found, waiting for completion...\n", taskUID)
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(10 * time.Minute)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case t := <-ticker.C:
+			if t.After(deadline) {
+				return fmt.Errorf("UpgradeDatabase task timed out")
+			}
+			status, err := meilisearchTaskStatus(ctx, masterKey, taskUID)
+			if err != nil {
+				fmt.Fprintf(w, "meilisearch: poll error: %v\n", err)
+				continue
+			}
+			fmt.Fprintf(w, "meilisearch: upgrade status: %s\n", status)
+			switch status {
+			case "succeeded":
+				return nil
+			case "failed", "canceled":
+				return fmt.Errorf("UpgradeDatabase task %d %s", taskUID, status)
+			}
+		}
+	}
+}
+
+// meilisearchFindUpgradeTask queries GET /tasks?types=upgradeDatabase and
+// returns the UID of the most recent UpgradeDatabase task.
+func meilisearchFindUpgradeTask(ctx context.Context, masterKey string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://127.0.0.1:7700/tasks?types=upgradeDatabase", nil)
+	if err != nil {
+		return 0, err
+	}
+	if masterKey != "" {
+		req.Header.Set("Authorization", "Bearer "+masterKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Results []struct {
+			UID int `json:"uid"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode tasks response: %w", err)
+	}
+	if len(result.Results) == 0 {
+		return 0, fmt.Errorf("no upgradeDatabase task found")
+	}
+	return result.Results[0].UID, nil
+}
+
+// meilisearchTaskStatus returns the status string for a given task UID.
+func meilisearchTaskStatus(ctx context.Context, masterKey string, taskUID int) (string, error) {
+	url := fmt.Sprintf("http://127.0.0.1:7700/tasks/%d", taskUID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", err
 	}
@@ -258,66 +355,13 @@ func meilisearchTriggerDump(ctx context.Context, masterKey string) (string, erro
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		return "", fmt.Errorf("POST /dumps returned HTTP %d", resp.StatusCode)
+	var task struct {
+		Status string `json:"status"`
 	}
-	var result struct {
-		TaskUID int `json:"taskUid"`
+	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+		return "", err
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode dump response: %w", err)
-	}
-	return fmt.Sprintf("%d", result.TaskUID), nil
-}
-
-// meilisearchWaitForDump polls GET /tasks/{uid} until the dump task succeeds,
-// then returns the absolute path to the created dump file.
-func meilisearchWaitForDump(ctx context.Context, w io.Writer, masterKey, taskUID, meiliDir string) (string, error) {
-	url := fmt.Sprintf("http://127.0.0.1:7700/tasks/%s", taskUID)
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	deadline := time.Now().Add(10 * time.Minute)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case t := <-ticker.C:
-			if t.After(deadline) {
-				return "", fmt.Errorf("dump task %s timed out", taskUID)
-			}
-			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-			if err != nil {
-				return "", err
-			}
-			if masterKey != "" {
-				req.Header.Set("Authorization", "Bearer "+masterKey)
-			}
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				fmt.Fprintf(w, "meilisearch: dump poll error: %v\n", err)
-				continue
-			}
-			var task struct {
-				Status  string `json:"status"`
-				Details struct {
-					DumpUID string `json:"dumpUid"`
-				} `json:"details"`
-			}
-			_ = json.NewDecoder(resp.Body).Decode(&task)
-			resp.Body.Close()
-
-			switch task.Status {
-			case "succeeded":
-				dumpPath := filepath.Join(meiliDir, "dumps", task.Details.DumpUID+".dump")
-				return dumpPath, nil
-			case "failed":
-				return "", fmt.Errorf("dump task %s failed", taskUID)
-			default:
-				fmt.Fprintf(w, "meilisearch: dump status: %s\n", task.Status)
-			}
-		}
-	}
+	return task.Status, nil
 }
 
 // meilisearchWaitReady polls GET /health until Meilisearch reports available status.
@@ -414,11 +458,12 @@ func writeMeilisearchConf(dir, masterKey string) error {
 	applied := map[string]bool{}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		// Skip blank lines and pure comment lines.
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		// Skip blank lines.
+		if trimmed == "" {
 			continue
 		}
 		// Match both active and commented-out keys: `key = ...` or `# key = ...`
+		// TrimLeft strips leading '#' and space chars so both forms reduce to `key = value`.
 		active := strings.TrimLeft(trimmed, "# ")
 		parts := strings.SplitN(active, "=", 2)
 		if len(parts) < 2 {

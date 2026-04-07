@@ -8,12 +8,26 @@ import { useSpxStore } from '@/stores/spx'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
+import { useUpdateStore } from '@/stores/update'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
@@ -29,8 +43,10 @@ const servicesStore = useServicesStore()
 const mailStore = useMailStore()
 const sitesStore = useSitesStore()
 const spxStore = useSpxStore()
+const updateStore = useUpdateStore()
 
 const mobileNavOpen = ref(false)
+const updateDialogOpen = ref(false)
 
 onMounted(() => {
   servicesStore.connectSSE()
@@ -39,6 +55,8 @@ onMounted(() => {
   requestMailPermission()
   // Load sites so spxAvailable computed is populated.
   sitesStore.load()
+  // Check for a newer devctl release.
+  updateStore.checkForUpdate()
   // Mail WS is connected reactively once Mailpit is known to be installed.
 
   // Handle navigation messages posted by the service worker (e.g. notification click).
@@ -128,6 +146,17 @@ watch(() => route.path, (path) => {
 
 const spxAvailable = computed(() => sitesStore.sites.some(s => s.spx_enabled === 1))
 
+async function triggerSelfUpdate() {
+  try {
+    updateDialogOpen.value = true
+    await updateStore.applyUpdate()
+    // Service will restart shortly — the page will reload when it comes back.
+  } catch (e: any) {
+    // Error is shown in the dialog output. Keep dialog open so the user can see it.
+    console.error('self-update failed:', e)
+  }
+}
+
 const allNavItems = [
   { path: '/services',  label: 'Services',  icon: Server },
   { path: '/sites',     label: 'Sites',     icon: Globe },
@@ -156,9 +185,31 @@ const navItems = computed(() =>
     <!-- Sidebar: hidden on mobile, always visible md+ -->
     <nav class="hidden md:flex w-56 shrink-0 border-r border-border flex-col bg-card">
       <!-- Logo -->
-      <div class="flex items-center gap-2 px-5 h-14 border-b border-border">
-        <img src="/logo-transparent.png" class="w-6 h-6" alt="devctl" />
-        <span class="font-semibold text-sm tracking-tight">devctl</span>
+      <div class="flex items-center gap-2 px-4 h-14 border-b border-border">
+        <img src="/logo-transparent.png" class="w-6 h-6 shrink-0" alt="devctl" />
+        <div class="min-w-0">
+          <div class="font-semibold text-sm tracking-tight leading-tight">devctl</div>
+          <div class="text-xs text-muted-foreground">{{ updateStore.currentVersion || 'dev' }}</div>
+        </div>
+        <TooltipProvider v-if="updateStore.updateAvailable" :delay-duration="100">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="outline"
+                size="sm"
+                class="ml-auto shrink-0 text-amber-500 border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-400 gap-1"
+                :disabled="updateStore.updating"
+                @click="triggerSelfUpdate()"
+              >
+                <ArrowUpCircle class="w-3 h-3" />
+                Update
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              Update to {{ updateStore.latestVersion }}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       <!-- Nav items -->
@@ -223,10 +274,30 @@ const navItems = computed(() =>
             <Menu class="w-5 h-5" />
           </Button>
           <SheetContent side="left" class="w-64 p-0 flex flex-col">
-            <SheetHeader class="px-5 h-14 border-b border-border flex flex-row items-center space-y-0">
-              <div class="flex items-center gap-2">
-                <img src="/logo-transparent.png" class="w-6 h-6" alt="devctl" />
-                <SheetTitle class="font-semibold text-sm tracking-tight">devctl</SheetTitle>
+            <SheetHeader class="px-4 h-14 border-b border-border flex flex-row items-center space-y-0">
+              <div class="flex items-center gap-2 w-full">
+                <img src="/logo-transparent.png" class="w-6 h-6 shrink-0" alt="devctl" />
+                <div class="min-w-0">
+                  <SheetTitle class="font-semibold text-sm tracking-tight leading-tight">devctl</SheetTitle>
+                  <div class="text-xs text-muted-foreground">{{ updateStore.currentVersion || 'dev' }}</div>
+                </div>
+                <TooltipProvider v-if="updateStore.updateAvailable" :delay-duration="100">
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        class="ml-auto shrink-0 text-amber-500 border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-400 gap-1"
+                        :disabled="updateStore.updating"
+                        @click="triggerSelfUpdate(); mobileNavOpen = false"
+                      >
+                        <ArrowUpCircle class="w-3 h-3" />
+                        Update
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">Update to {{ updateStore.latestVersion }}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </SheetHeader>
 
@@ -285,8 +356,11 @@ const navItems = computed(() =>
 
         <!-- Logo (center) -->
         <div class="flex items-center gap-2">
-          <img src="/logo-transparent.png" class="w-6 h-6" alt="devctl" />
-          <span class="font-semibold text-sm tracking-tight">devctl</span>
+          <img src="/logo-transparent.png" class="w-6 h-6 shrink-0" alt="devctl" />
+          <div>
+            <div class="font-semibold text-sm tracking-tight leading-tight">devctl</div>
+            <div class="text-xs text-muted-foreground">{{ updateStore.currentVersion || 'dev' }}</div>
+          </div>
         </div>
 
         <!-- Dark mode toggle -->
@@ -304,5 +378,28 @@ const navItems = computed(() =>
       </div>
     </main>
   </div>
+
+  <!-- Self-update progress dialog -->
+  <Dialog v-model:open="updateDialogOpen">
+    <DialogContent class="max-w-lg">
+      <DialogHeader>
+        <DialogTitle class="flex items-center gap-2">
+          <ArrowUpCircle class="w-5 h-5 text-amber-500" />
+          Updating devctl to {{ updateStore.latestVersion }}
+        </DialogTitle>
+        <DialogDescription>devctl will restart automatically when the update completes.</DialogDescription>
+      </DialogHeader>
+      <div class="bg-muted rounded-md p-3 max-h-64 overflow-y-auto font-mono text-xs space-y-0.5">
+        <div v-if="updateStore.updateOutput.length === 0" class="text-muted-foreground">
+          Starting update...
+        </div>
+        <div v-for="(line, i) in updateStore.updateOutput" :key="i">{{ line }}</div>
+        <div v-if="!updateStore.updating && updateStore.updateOutput.length > 0" class="text-green-500 mt-1">
+          Restarting service — page will reload shortly...
+        </div>
+      </div>
+    </DialogContent>
+  </Dialog>
+
   <Toaster position="bottom-right" rich-colors close-button />
 </template>

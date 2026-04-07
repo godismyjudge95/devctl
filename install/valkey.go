@@ -19,19 +19,17 @@ import (
 //go:embed valkey.conf
 var valkeyConfTemplate []byte
 
-const valkeyVersion = "9.0.3"
-
-// valkeyTarURL returns the download URL for the Valkey tarball.
+// valkeyTarURL returns the download URL for the given Valkey version.
 // Valkey ships distro-specific builds; we prefer noble (Ubuntu 24.04 / glibc
 // 2.39) on noble systems and fall back to jammy (Ubuntu 22.04 / glibc 2.35)
 // everywhere else — including Debian bookworm (glibc 2.36).
-func valkeyTarURL(ctx context.Context) string {
+func valkeyTarURL(ctx context.Context, version string) string {
 	codename, _ := lsbReleaseName(ctx)
 	distro := "jammy"
 	if codename == "noble" {
 		distro = "noble"
 	}
-	return fmt.Sprintf("https://download.valkey.io/releases/valkey-%s-%s-x86_64.tar.gz", valkeyVersion, distro)
+	return fmt.Sprintf("https://download.valkey.io/releases/valkey-%s-%s-x86_64.tar.gz", version, distro)
 }
 
 // ValkeyInstaller downloads the Valkey binary to
@@ -60,9 +58,14 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return nil
 	}
 
+	latest, err := v.LatestVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("valkey: resolve latest version: %w", err)
+	}
+
 	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")
 	binPath := filepath.Join(valkeyDir, "valkey-server")
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s.tar.gz", valkeyVersion))
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s.tar.gz", latest))
 	defer os.Remove(tmpTar)
 
 	// 1. Create directory.
@@ -72,10 +75,10 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 2. Determine the correct tarball URL for this system.
-	url := valkeyTarURL(ctx)
+	url := valkeyTarURL(ctx, latest)
 
 	// 3. Download tarball.
-	fmt.Fprintf(w, "valkey: downloading %s...\n", valkeyVersion)
+	fmt.Fprintf(w, "valkey: downloading %s...\n", latest)
 	if err := curlDownloadW(ctx, w, url, tmpTar); err != nil {
 		return fmt.Errorf("valkey: download: %w", err)
 	}
@@ -96,13 +99,20 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 6. Symlink server (and cli if present) into the shared bin dir.
+	// Both valkey-{server,cli} and redis-{server,cli} aliases are created so
+	// that muscle-memory commands and scripts that reference the Redis names
+	// continue to work out of the box.
 	binDir := paths.BinDir(v.serverRoot)
-	if err := LinkIntoBinDir(binDir, "valkey-server", binPath); err != nil {
-		fmt.Fprintf(w, "valkey: warning: %v\n", err)
+	for _, link := range []string{"valkey-server", "redis-server"} {
+		if err := LinkIntoBinDir(binDir, link, binPath); err != nil {
+			fmt.Fprintf(w, "valkey: warning: %v\n", err)
+		}
 	}
 	if fileExists(cliBinPath) {
-		if err := LinkIntoBinDir(binDir, "valkey-cli", cliBinPath); err != nil {
-			fmt.Fprintf(w, "valkey: warning: %v\n", err)
+		for _, link := range []string{"valkey-cli", "redis-cli"} {
+			if err := LinkIntoBinDir(binDir, link, cliBinPath); err != nil {
+				fmt.Fprintf(w, "valkey: warning: %v\n", err)
+			}
 		}
 	}
 
@@ -199,10 +209,11 @@ func (v *ValkeyInstaller) PurgeW(ctx context.Context, w io.Writer, _ bool) error
 		fmt.Fprintf(w, "valkey: warning: stop process: %v\n", err)
 	}
 
-	// Remove bin dir symlinks.
+	// Remove bin dir symlinks (both valkey-* and redis-* aliases).
 	binDir := paths.BinDir(v.serverRoot)
-	UnlinkFromBinDir(binDir, "valkey-server")
-	UnlinkFromBinDir(binDir, "valkey-cli")
+	for _, link := range []string{"valkey-server", "redis-server", "valkey-cli", "redis-cli"} {
+		UnlinkFromBinDir(binDir, link)
+	}
 
 	// Remove the directory.
 	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")

@@ -111,6 +111,24 @@ sudo systemctl enable --now devctl
 
 ---
 
+## Auto-update
+
+devctl checks GitHub for a newer release on startup and again daily at 3 am.
+
+When a newer version is available an amber **↑** button appears next to the **devctl** logo in the sidebar. Hovering over it shows a tooltip with the target version (e.g. *Update devctl to v0.4.0*). Clicking the button opens a progress dialog that streams the download and install steps live, then automatically restarts the service.
+
+**How it works:**
+
+1. The current binary is downloaded from the GitHub release page and verified by running `--version`.
+2. The running binary is backed up as `devctl.bak` next to the installed binary.
+3. The new binary replaces the current one atomically.
+4. `systemctl restart devctl` is triggered — the service comes back up on the new version within seconds.
+5. On the next clean startup, the `devctl.bak` backup is removed automatically.
+
+If the download or verification step fails the current binary is not replaced and an error is shown in the dialog.
+
+---
+
 ## Uninstall
 
 ```sh

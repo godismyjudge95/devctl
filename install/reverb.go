@@ -78,9 +78,13 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("install:broadcasting: %w", err)
 	}
 
-	// 4. Patch .env with correct server/host settings.
+	// 4. Patch .env with correct server/host settings and fixed credentials
+	// so developers can copy-paste them without looking up generated values.
 	fmt.Fprintln(w, "reverb: patching .env...")
 	envPatches := map[string]string{
+		"REVERB_APP_ID":     "devctl",
+		"REVERB_APP_KEY":    "DEVCTL",
+		"REVERB_APP_SECRET": "DEVCTL",
 		"REVERB_SERVER_HOST": "127.0.0.1",
 		"REVERB_SERVER_PORT": "7383",
 		"REVERB_HOST":        "reverb.test",

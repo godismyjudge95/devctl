@@ -10,10 +10,11 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Backlog
 
-- create a demo mode with dummy data that does not save anything to sqlite on disk (it can create it in memory if needed) and mock anything else that would be needed to see the whole dashboard and all of its features.  Ideas for things to mock: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled with different statuses shown.  Etc.
-- an auto updater that updates from github's latest release binary
+- create a demo run with incus with dummy data that would be needed to see the whole dashboard and all of its features.  Ideas for things to prefill: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled.  Etc.  I basically want to be able to create a demo of the devctl system so we can screenshot everything for the README
 
 # Completed
+
+- an auto updater that updates from github's latest release binary *(completed 2026-04-06)*
 
 - mysql service keeps going into a warning state on restart or something *(completed 2026-03-26)*
 - mail doesn't render text emails in the html view like it should *(completed 2026-03-26)*

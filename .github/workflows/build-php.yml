@@ -1,7 +1,9 @@
 name: Build PHP Binaries
 
-# Triggered when a devctl release is published so PHP binaries are attached to
-# the same release. Also supports manual dispatch for testing.
+# Triggered only when a release whose tag starts with "php-binaries" is
+# published (e.g. php-binaries-v1, php-binaries-20260406). This keeps the
+# expensive PHP compilation separate from regular devctl releases.
+# Also supports manual dispatch for testing.
 on:
   release:
     types: [published]
@@ -11,6 +13,9 @@ jobs:
   build:
     name: Build PHP ${{ matrix.php }} (linux-x86_64)
     runs-on: ubuntu-latest
+    # Only run when the release tag is a php-binaries tag; always run for
+    # manual workflow_dispatch.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'php-binaries')
 
     permissions:
       contents: write  # required to upload release assets

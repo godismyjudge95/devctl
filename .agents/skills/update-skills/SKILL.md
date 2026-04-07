@@ -82,3 +82,4 @@ When updating:
 | `add-service` | ServiceDefinition fields, config/defaults.go, PHP-FPM auto-generation |
 | `install-package` | Installer interface, APT/systemctl helpers, idempotency, Registry registration |
 | `update-skills` | This file — how to create/update project skills |
+| `create-release` | Workflow for tagging/publishing devctl and PHP binaries releases, versioning, release notes from TODO.md |

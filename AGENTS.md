@@ -74,6 +74,7 @@ Load these when working on specific areas:
 | `add-service` | Adding a new managed dev service (Definition + defaults.go entry) |
 | `install-package` | Implementing a new APT-based service installer |
 | `update-skills` | Creating or updating agent skills for this project |
+  | `create-release` | Tagging and publishing a devctl or PHP binaries release |
 | `integration-testing` | Writing, running, or debugging any integration test |
 
 ## ⛔ NEVER run tests on the host machine — not even to verify they compile

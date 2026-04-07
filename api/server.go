@@ -43,6 +43,14 @@ type Server struct {
 	// each installer, keyed by service ID. Protected by latestVersionsMu.
 	latestVersionsMu sync.RWMutex
 	latestVersions   map[string]string
+
+	// selfVersion is the version compiled into this binary (e.g. "v0.3.0" or "dev").
+	selfVersion string
+
+	// latestSelfVersion caches the most recently fetched latest devctl release
+	// tag from GitHub. Protected by latestSelfVersionMu.
+	latestSelfVersionMu sync.RWMutex
+	latestSelfVersion   string
 }
 
 // NewServer creates and configures the HTTP server.
@@ -62,6 +70,7 @@ func NewServer(
 	siteUser string,
 	siteHome string,
 	devctlAddr string,
+	selfVersion string,
 ) *Server {
 	s := &Server{
 		db:             db,
@@ -82,6 +91,7 @@ func NewServer(
 		mux:            http.NewServeMux(),
 		uiFS:           uiFS,
 		latestVersions: make(map[string]string),
+		selfVersion:    selfVersion,
 	}
 	s.registerRoutes()
 	return s
@@ -179,11 +189,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/maxio/presign", s.handleMaxIOPresign)
 	s.mux.HandleFunc("/api/maxio/s3/", s.handleMaxIOS3Proxy)
 
+	// Self-update
+	s.mux.HandleFunc("GET /api/self/update/status", s.handleGetSelfUpdateStatus)
+	s.mux.HandleFunc("POST /api/self/update/apply", s.handleApplySelfUpdate)
+
 	// /_testing/ — debug/test endpoints. Only registered when DEVCTL_TESTING=true.
 	// These routes are used by integration tests to inject state without hitting
 	// external services (e.g. fake a newer upstream version to trigger update_available).
 	if os.Getenv("DEVCTL_TESTING") == "true" {
 		s.mux.HandleFunc("POST /_testing/services/{id}/latest-version", s.handleTestingSetLatestVersion)
+		s.mux.HandleFunc("POST /_testing/self/latest-version", s.handleTestingSetSelfLatestVersion)
 	}
 
 	// Serve embedded Vue SPA — must be last.
