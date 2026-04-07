@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
+import { toast } from 'vue-sonner'
 import {
   Dialog,
   DialogContent,
@@ -148,9 +149,11 @@ const spxAvailable = computed(() => sitesStore.sites.some(s => s.spx_enabled ===
 
 async function triggerSelfUpdate() {
   try {
+    const targetVersion = updateStore.latestVersion
     updateDialogOpen.value = true
     await updateStore.applyUpdate()
-    // Service will restart shortly — the page will reload when it comes back.
+    updateDialogOpen.value = false
+    toast.success(`devctl updated to ${targetVersion} — restarting…`)
   } catch (e: any) {
     // Error is shown in the dialog output. Keep dialog open so the user can see it.
     console.error('self-update failed:', e)
@@ -394,9 +397,7 @@ const navItems = computed(() =>
           Starting update...
         </div>
         <div v-for="(line, i) in updateStore.updateOutput" :key="i">{{ line }}</div>
-        <div v-if="!updateStore.updating && updateStore.updateOutput.length > 0" class="text-green-500 mt-1">
-          Restarting service — page will reload shortly...
-        </div>
+
       </div>
     </DialogContent>
   </Dialog>

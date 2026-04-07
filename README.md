@@ -252,9 +252,16 @@ On each PHP version install, devctl creates:
 
 When PHP is installed, devctl also runs `composer global require laravel/installer` and `composer global require statamic/cli` as the site user. The binaries land in the Composer global bin directory (`{siteHome}/.config/composer/vendor/bin/` by default).
 
-devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.bashrc`, `.zshrc`, and `.bash_profile` (whichever exist). This means `laravel new`, `statamic new`, and other globally-installed Composer tools are available immediately in a new terminal.
+devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.bashrc`, `.zshenv`, and `.bash_profile` (whichever exist). This means `laravel new`, `statamic new`, and other globally-installed Composer tools are available immediately in a new terminal.
 
 devctl also prepends the Composer global bin directory to PATH for every command it runs internally as the site user, so framework tools are accessible in the context of site commands regardless of the shell configuration.
+
+**Dev tools in `{serverRoot}/bin/`:** During install and after a self-update, devctl automatically downloads the latest versions of useful CLI tools into the shared bin directory so they are immediately available in your terminal:
+
+| Tool | Description |
+|---|---|
+| `sqlite3` | Official SQLite CLI for inspecting `.db` files |
+| `fnm` / `nvm` | Fast Node Manager (fnm) with an `nvm` alias — manage Node.js versions |
 
 ---
 
@@ -559,7 +566,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/devctl/devctl.db` | SQLite database (sites, settings, dumps) |
 | `{serverRoot}/devctl/prepend.php` | PHP auto-prepend for `php_dd()` |
 | `{serverRoot}/devctl/devctl` | devctl binary (default install location) |
-| `{serverRoot}/bin/` | Shared symlink farm added to `PATH` via `/etc/profile.d/devctl.sh` |
+| `{serverRoot}/bin/` | Shared bin dir on `PATH` — devctl symlinks and auto-downloaded tools (sqlite3, …) |
 | `{serverRoot}/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, …) |
 | `{serverRoot}/caddy/` | Caddy binary, env file, internal CA data |
 | `{serverRoot}/valkey/` | Valkey binary, `valkey.conf`, data |

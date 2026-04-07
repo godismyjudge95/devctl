@@ -609,6 +609,81 @@ func (c *Client) TeardownDNS() error {
 	return c.delete("/api/dns/setup")
 }
 
+type SelfUpdateStatus struct {
+	CurrentVersion  string `json:"current_version"`
+	LatestVersion   string `json:"latest_version"`
+	UpdateAvailable bool   `json:"update_available"`
+}
+
+func (c *Client) GetSelfUpdateStatus() (SelfUpdateStatus, error) {
+	var out SelfUpdateStatus
+	return out, c.get("/api/self/update/status", &out)
+}
+
+// ApplySelfUpdateSSE POSTs to /api/self/update/apply and streams the SSE
+// response. For each "output" event, onOutput is called with the text payload.
+// Returns nil on a "done" event, or an error on an "error" event or unexpected
+// stream close. A long timeout is used because the download can take a while.
+func (c *Client) ApplySelfUpdateSSE(onOutput func(line string)) error {
+	longClient := &http.Client{Timeout: 10 * time.Minute}
+
+	req, err := http.NewRequest(http.MethodPost, c.base+"/api/self/update/apply", nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := longClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST /api/self/update/apply: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s", strings.TrimSpace(string(b)))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	var currentEvent, currentData string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+		} else if strings.HasPrefix(line, "data: ") {
+			currentData = strings.TrimPrefix(line, "data: ")
+		} else if line == "" && currentEvent != "" {
+			switch currentEvent {
+			case "output":
+				var text string
+				if err := json.Unmarshal([]byte(currentData), &text); err != nil {
+					text = currentData
+				}
+				if onOutput != nil {
+					onOutput(text)
+				}
+			case "done":
+				return nil
+			case "error":
+				var payload struct {
+					Error string `json:"error"`
+				}
+				if err := json.Unmarshal([]byte(currentData), &payload); err != nil {
+					return fmt.Errorf("self-update failed: %s", currentData)
+				}
+				return fmt.Errorf("self-update failed: %s", payload.Error)
+			}
+			currentEvent = ""
+			currentData = ""
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading SSE stream: %w", err)
+	}
+	return fmt.Errorf("self-update: stream ended without a done or error event")
+}
+
 func (c *Client) TrustCA() (string, error) {
 	var out struct {
 		Status string `json:"status"`

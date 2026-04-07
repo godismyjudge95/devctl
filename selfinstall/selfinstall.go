@@ -23,6 +23,7 @@ import (
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
+	"github.com/danielgormly/devctl/tools"
 )
 
 const serviceDir = "/etc/systemd/system"
@@ -111,9 +112,10 @@ func Run(args []string) error {
 		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
 		fmt.Printf("  4. Link binary      → %s/devctl\n", binDir)
 		fmt.Printf("  5. Configure shell PATH for %s\n", siteUser)
-		fmt.Println("  6. systemctl daemon-reload")
-		fmt.Println("  7. systemctl enable devctl")
-		fmt.Println("  8. systemctl start devctl")
+		fmt.Println("  6. Download dev tools (sqlite3, ...)")
+		fmt.Println("  7. systemctl daemon-reload")
+		fmt.Println("  8. systemctl enable devctl")
+		fmt.Println("  9. systemctl start devctl")
 		fmt.Println()
 		fmt.Print("Proceed? [y/N] ")
 		if !confirm(r) {
@@ -139,6 +141,10 @@ func Run(args []string) error {
 		}},
 		{"Linking binary into bin dir", func() error {
 			return install.LinkIntoBinDir(binDir, "devctl", binaryDest)
+		}},
+		{"Downloading dev tools", func() error {
+			tools.EnsureAllLatest(context.Background(), binDir, os.Stdout)
+			return nil
 		}},
 		{"Configuring shell PATH", func() error {
 			u, err := user.Lookup(siteUser)

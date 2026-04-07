@@ -32,3 +32,4 @@ home/
 *.swo
 .idea/
 .vscode/
+*.test

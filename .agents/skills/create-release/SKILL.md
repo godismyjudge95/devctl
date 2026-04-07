@@ -1,6 +1,6 @@
 ---
 name: create-release
-description: Full workflow for tagging and publishing a devctl release and/or a PHP binaries release — versioning, release note generation from TODO.md, cleaning up TODO.md before tagging, and the exact git/GitHub steps for each release type.
+description: Full workflow for tagging and publishing a devctl release and/or a PHP binaries release — versioning, release note generation from TODO.md, clearing TODO.md completed items, and the exact git/GitHub CLI steps for each release type.
 license: MIT
 compatibility: opencode
 metadata:
@@ -36,9 +36,9 @@ git tag --sort=-version:refname | head -5
 
 ### 1.2 Generate release notes from TODO.md
 
-Release notes come from the **Completed** section of `TODO.md`. Include only items completed since the last release (check the timestamps — completed items are tagged with a date like `*(completed 2026-04-06)*`).
+Release notes come from **everything currently in the Completed section** of `TODO.md`. The Completed section acts as a release buffer — items accumulate there between releases and are cleared on each release.
 
-Format them as a Markdown bullet list for the GitHub release body:
+Convert each item into a concise one-line bullet. Strip the `*(completed …)*` timestamps — they're internal. Format:
 
 ```markdown
 ## What's changed
@@ -51,14 +51,16 @@ Format them as a Markdown bullet list for the GitHub release body:
 https://github.com/godismyjudge95/devctl/compare/vPREV...vNEW
 ```
 
-Keep each bullet to one line. Strip the `*(completed …)*` timestamps — they're internal.
+### 1.3 Clear the Completed section and commit TODO.md
 
-### 1.3 Clean up TODO.md before tagging
+After drafting the release notes, **remove all items from the Completed section** of `TODO.md`, leaving the section header empty. Also remove any stale/abandoned items from the backlog if they are no longer relevant.
 
-Before creating the tag:
-1. Move any completed items that are **not yet in the Completed section** down to it.
-2. Remove any stale/abandoned items from the backlog if they are no longer relevant.
-3. Commit the updated `TODO.md` as part of the release commit (or as its own commit immediately before the tag).
+Commit the result:
+
+```sh
+git add TODO.md
+git commit -m "chore: prepare vX.Y.Z release"
+```
 
 ### 1.4 Tag and push
 
@@ -68,24 +70,40 @@ git status
 git checkout main
 git pull
 
-# Commit any last-minute TODO.md / README updates
-git add TODO.md README.md
-git commit -m "chore: prepare vX.Y.Z release"
-
-# Tag
+# Tag (after the TODO.md commit above)
 git tag vX.Y.Z
 git push origin main vX.Y.Z
 ```
 
 ### 1.5 Publish the GitHub release
 
-1. Go to **GitHub → Releases → Draft a new release**.
-2. Choose tag `vX.Y.Z`.
-3. Set the title to `vX.Y.Z`.
-4. Paste the release notes generated in step 1.2.
-5. Click **Publish release**.
+Use the `gh` CLI to create the release in one step. Write the release notes to a temp file first, then pass it to `gh`:
+
+```sh
+cat > /tmp/release-notes.md << 'EOF'
+## What's changed
+
+- Short description of change one
+- Short description of change two
+- Bug fix: brief description
+
+## Full changelog
+https://github.com/godismyjudge95/devctl/compare/vPREV...vNEW
+EOF
+
+gh release create vX.Y.Z \
+  --title "vX.Y.Z" \
+  --notes-file /tmp/release-notes.md
+```
 
 `release.yml` will fire automatically and attach the `devctl` binary.
+
+> **Note:** If you need to move the tag after creation (e.g. because a commit was made after tagging), delete and re-create the tag, then re-publish the release — moving a tag puts the GitHub release back into draft:
+> ```sh
+> git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z
+> git tag vX.Y.Z && git push origin vX.Y.Z
+> gh release edit vX.Y.Z --draft=false
+> ```
 
 ---
 
@@ -100,15 +118,17 @@ There is **no version number** for PHP binaries — the installer always pulls f
 
 ### 2.1 Delete the old `php-binaries-latest` release and tag
 
-The fixed tag must be re-created to point at the new commit. Do this on GitHub first to avoid ref conflicts:
+The fixed tag must be re-created to point at the new commit. Delete the release and tag via `gh` CLI, then clean up locally:
 
-1. Go to **GitHub → Releases**, find the release titled `php-binaries-latest`, click **Delete release** (trash icon). This removes the release but not the tag.
-2. Go to **GitHub → Tags**, find `php-binaries-latest`, click the `…` menu → **Delete tag**.
-
-Then delete locally and on the remote:
 ```sh
-git tag -d php-binaries-latest
+# Delete the GitHub release (this does NOT delete the tag)
+gh release delete php-binaries-latest --yes
+
+# Delete the remote tag
 git push origin :refs/tags/php-binaries-latest
+
+# Delete the local tag
+git tag -d php-binaries-latest
 ```
 
 ### 2.2 Create the new tag
@@ -121,11 +141,13 @@ git push origin php-binaries-latest
 
 ### 2.3 Publish the GitHub release
 
-1. Go to **GitHub → Releases → Draft a new release**.
-2. Choose tag `php-binaries-latest`.
-3. Set the title to `PHP Binaries — <date>` (e.g. `PHP Binaries — 2026-04-06`).
-4. Write a short description of what changed (e.g. "Updated to static-php-cli main as of 2026-04-06; added zstd extension").
-5. Click **Publish release**.
+Use the `gh` CLI:
+
+```sh
+gh release create php-binaries-latest \
+  --title "PHP Binaries — $(date +%Y-%m-%d)" \
+  --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
+```
 
 `build-php.yml` fires automatically (the tag starts with `php-binaries`), builds all four PHP versions in parallel, and attaches the eight binaries to this release.
 
@@ -153,18 +175,18 @@ curl -sIL https://github.com/godismyjudge95/devctl/releases/download/php-binarie
 ## Checklist — devctl release
 
 - [ ] Determine semver version
-- [ ] Draft release notes from `TODO.md` Completed section (items since last release)
-- [ ] Move any un-moved completed items into the Completed section of `TODO.md`
+- [ ] Read the full Completed section of `TODO.md` and draft release notes from it
+- [ ] Clear all items from the Completed section of `TODO.md`
 - [ ] Remove stale backlog items if needed
-- [ ] Commit `TODO.md` (and `README.md` if updated)
+- [ ] `git add TODO.md && git commit -m "chore: prepare vX.Y.Z release"`
 - [ ] `git tag vX.Y.Z && git push origin main vX.Y.Z`
-- [ ] Publish GitHub release — `release.yml` attaches binary automatically
+- [ ] `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-notes.md` — `release.yml` attaches binary automatically
 
 ## Checklist — PHP binaries release
 
-- [ ] Delete old `php-binaries-latest` GitHub release (UI)
-- [ ] Delete old `php-binaries-latest` tag (UI + `git tag -d` + `git push origin :refs/tags/php-binaries-latest`)
+- [ ] `gh release delete php-binaries-latest --yes`
+- [ ] `git push origin :refs/tags/php-binaries-latest && git tag -d php-binaries-latest`
 - [ ] `git tag php-binaries-latest && git push origin php-binaries-latest`
-- [ ] Publish GitHub release titled `PHP Binaries — <date>`
+- [ ] `gh release create php-binaries-latest --title "PHP Binaries — <date>" --notes "<what changed>"`
 - [ ] Wait for `build-php.yml` to complete
 - [ ] Verify all 8 binary assets are attached to the release
