@@ -71,9 +71,11 @@ Load these when working on specific areas:
 | `go-backend` | Adding API endpoints, handlers, SSE/WebSocket, or touching any Go backend code |
 | `vue-frontend` | Working on the Vue SPA — stores, components, API wrappers, Vite pipeline |
 | `db-migrations` | Adding or modifying the SQLite schema or sqlc queries |
+| `add-cli-command` | Adding a new CLI command (Cmd struct, Client method, README update) |
 | `add-service` | Adding a new managed dev service (Definition + defaults.go entry) |
 | `install-package` | Implementing a new APT-based service installer |
 | `update-skills` | Creating or updating agent skills for this project |
+| `add-screenshot` | Adding a new dashboard screenshot — wiring screenshots.js, seeding demo data, updating README |
   | `create-release` | Tagging and publishing a devctl or PHP binaries release |
 | `integration-testing` | Writing, running, or debugging any integration test |
 

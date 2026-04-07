@@ -83,3 +83,5 @@ When updating:
 | `install-package` | Installer interface, APT/systemctl helpers, idempotency, Registry registration |
 | `update-skills` | This file — how to create/update project skills |
 | `create-release` | Workflow for tagging/publishing devctl and PHP binaries releases, versioning, release notes from TODO.md |
+| `add-cli-command` | How to add a new CLI command — Cmd struct, init() registration, Client methods, output helpers, JSON mode, and mandatory README updates |
+| `add-screenshot` | How to add a new dashboard screenshot for a new feature — wiring screenshots.js, seeding data in demo.sh, and updating the README |

@@ -205,7 +205,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ID:              "maxio",
 			Label:           "MaxIO",
 			Description:     "High-performance S3-compatible object storage",
-			InstallVersion:  "latest",
+			InstallVersion:  "0.3.2",
 			Installable:     true,
 			Managed:         true,
 			ManagedCmd:      maxioDir + "/maxio",

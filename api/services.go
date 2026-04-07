@@ -254,7 +254,11 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
-	if err := inst.InstallW(r.Context(), pw); err != nil {
+	instCtx := r.Context()
+	if ver := r.URL.Query().Get("version"); ver != "" {
+		instCtx = install.WithPreResolvedVersion(instCtx, ver)
+	}
+	if err := inst.InstallW(instCtx, pw); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
 	}

@@ -72,17 +72,36 @@ download "devctl ${DEVCTL_VERSION} (self-update artifact)" \
   "https://github.com/godismyjudge95/devctl/releases/download/${DEVCTL_VERSION}/devctl" \
   "devctl"
 
+# ─── PHP static binaries ──────────────────────────────────────────────────────
+# The PHP installer saves these as {phpDir}/php-fpm and {phpDir}/php.
+# The curl shim matches on the basename of the -o destination, so the cache
+# filenames must match exactly. This means only one FPM and one CLI binary can
+# be cached at a time — use the version most commonly installed in tests.
+# Binaries are currently published under the v0.3.0 release until a dedicated
+# php-binaries-latest tag is cut.
+PHP_VERSION="8.3"
+PHP_BASE="https://github.com/godismyjudge95/devctl/releases/download/v0.3.0"
+download "PHP ${PHP_VERSION} FPM" \
+  "${PHP_BASE}/php-${PHP_VERSION}-fpm-linux-x86_64" \
+  "php-fpm"
+download "PHP ${PHP_VERSION} CLI" \
+  "${PHP_BASE}/php-${PHP_VERSION}-cli-linux-x86_64" \
+  "php"
+
 # ─── Caddy ────────────────────────────────────────────────────────────────────
 CADDY_VERSION="v2.10.0"
 download "Caddy ${CADDY_VERSION}" \
   "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_2.10.0_linux_amd64.tar.gz" \
-  "caddy_2.10.0_linux_amd64.tar.gz"
+  "caddy-linux-amd64.tar.gz"
 
 # ─── Valkey (noble + jammy) ───────────────────────────────────────────────────
 VALKEY_VERSION="9.0.3"
+# Noble (Ubuntu 24.04) — cached with the shim-interceptable name the installer uses.
+# The installer downloads to /tmp/valkey-{version}.tar.gz so the basename must match.
 download "Valkey ${VALKEY_VERSION} (noble/Ubuntu 24.04)" \
   "https://download.valkey.io/releases/valkey-${VALKEY_VERSION}-noble-x86_64.tar.gz" \
-  "valkey-${VALKEY_VERSION}-noble-x86_64.tar.gz"
+  "valkey-${VALKEY_VERSION}.tar.gz"
+# Also keep the full distro-named copy so test_env_setup humans can identify it.
 download "Valkey ${VALKEY_VERSION} (jammy/Ubuntu 22.04)" \
   "https://download.valkey.io/releases/valkey-${VALKEY_VERSION}-jammy-x86_64.tar.gz" \
   "valkey-${VALKEY_VERSION}-jammy-x86_64.tar.gz"
@@ -99,9 +118,10 @@ download "Mailpit ${MAILPIT_VERSION} (update artifact)" \
 
 # ─── Meilisearch ──────────────────────────────────────────────────────────────
 MEILISEARCH_VERSION="v1.37.0"
+# Installer downloads directly to {meiliDir}/meilisearch (basename: meilisearch).
 download "Meilisearch ${MEILISEARCH_VERSION}" \
   "https://github.com/meilisearch/meilisearch/releases/download/${MEILISEARCH_VERSION}/meilisearch-linux-amd64" \
-  "meilisearch-linux-amd64"
+  "meilisearch"
 
 # ─── Typesense ────────────────────────────────────────────────────────────────
 TYPESENSE_VERSION="30.1"
@@ -111,18 +131,19 @@ download "Typesense ${TYPESENSE_VERSION}" \
 
 # ─── WhoDB ────────────────────────────────────────────────────────────────────
 WHODB_VERSION="0.100.0"
+# Installer downloads directly to {whodbDir}/whodb (basename: whodb).
 download "WhoDB ${WHODB_VERSION}" \
   "https://github.com/clidey/whodb/releases/download/${WHODB_VERSION}/whodb-${WHODB_VERSION}-linux-amd64" \
-  "whodb-${WHODB_VERSION}-linux-amd64"
+  "whodb"
 
 # ─── MaxIO ────────────────────────────────────────────────────────────────────
-# MaxIO releases a versioned tar.gz; the installer queries the GitHub API to
-# find the latest release URL.  Cache the latest known release here and update
-# this URL whenever the version changes.
-MAXIO_VERSION="v0.0.10"
+# The GitHub asset is named maxio-linux-amd64-{version}.tar.gz but the installer
+# downloads to /tmp/maxio-{version}-linux-amd64.tar.gz, so the cached filename
+# must match the installer temp file (the shim matches on basename of -o dest).
+MAXIO_VERSION="0.3.2"
 download "MaxIO ${MAXIO_VERSION}" \
-  "https://github.com/coollabsio/maxio/releases/download/${MAXIO_VERSION}/maxio-linux-amd64.tar.gz" \
-  "maxio-linux-amd64.tar.gz"
+  "https://github.com/coollabsio/maxio/releases/download/v${MAXIO_VERSION}/maxio-linux-amd64-${MAXIO_VERSION}.tar.gz" \
+  "maxio-${MAXIO_VERSION}-linux-amd64.tar.gz"
 
 # ─── PostgreSQL (Percona) ─────────────────────────────────────────────────────
 POSTGRES_VERSION="18.3"
@@ -132,13 +153,28 @@ download "PostgreSQL ${POSTGRES_VERSION} (Percona tarball)" \
   "percona-postgresql-${POSTGRES_VERSION}-ssl3-linux-x86_64.tar.gz"
 
 # ─── MySQL 8.4 (.deb packages) ────────────────────────────────────────────────
+# The MySQL installer downloads to /tmp/mysql-{pkg}-{version}.deb (e.g.
+# mysql-mysql-community-server-core-8.4.8.deb), so the cache filenames must
+# match that pattern.
 MYSQL_VERSION="8.4.8"
 MYSQL_BASE="https://repo.mysql.com/apt/ubuntu/pool/mysql-8.4-lts/m/mysql-community"
 for pkg in "mysql-community-server-core" "mysql-community-client-core" "mysql-community-client"; do
   download "MySQL ${pkg} ${MYSQL_VERSION}" \
     "${MYSQL_BASE}/${pkg}_${MYSQL_VERSION}-1ubuntu24.04_amd64.deb" \
-    "${pkg}_${MYSQL_VERSION}-1ubuntu24.04_amd64.deb"
+    "mysql-${pkg}-${MYSQL_VERSION}.deb"
 done
+
+# ─── Composer ─────────────────────────────────────────────────────────────────
+# Installer saves to {binDir}/composer (basename: composer).
+download "Composer (stable)" \
+  "https://getcomposer.org/composer-stable.phar" \
+  "composer"
+
+# ─── WP-CLI ───────────────────────────────────────────────────────────────────
+# Installer saves to {binDir}/wp (basename: wp).
+download "WP-CLI" \
+  "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" \
+  "wp"
 
 echo ""
 success "All artifacts downloaded to ${CACHE_DIR}"

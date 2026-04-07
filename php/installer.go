@@ -19,8 +19,9 @@ const (
 	// ghReleaseBase is the prefix for PHP binary assets.
 	// Binaries are published under the fixed "php-binaries-latest" GitHub release tag
 	// so that PHP installs/updates are decoupled from regular devctl releases.
+	// TODO: switch back to php-binaries-latest once that tag is cut.
 	// Binaries are named php-{ver}-{sapi}-linux-x86_64 (raw executable, no archive).
-	ghReleaseBase   = "https://github.com/godismyjudge95/devctl/releases/download/php-binaries-latest/"
+	ghReleaseBase   = "https://github.com/godismyjudge95/devctl/releases/download/v0.3.0/"
 	downloadTimeout = 10 * time.Minute
 )
 

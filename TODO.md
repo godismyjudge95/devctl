@@ -10,6 +10,9 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Backlog
 
-- create a demo run with incus with dummy data that would be needed to see the whole dashboard and all of its features.  Ideas for things to prefill: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled.  Etc.  I basically want to be able to create a demo of the devctl system so we can screenshot everything for the README
+- set up a devctl.test proxy domain in caddy to the devctl dashboard so we can have https - still allow access on the raw 4000 port though
+
 
 # Completed
+
+- create a demo run with incus with dummy data that would be needed to see the whole dashboard and all of its features.  Ideas for things to prefill: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled.  Etc.  I basically want to be able to create a demo of the devctl system so we can screenshot everything for the README *(completed 2026-04-07)*

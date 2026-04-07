@@ -254,7 +254,18 @@ func (m *MaxIOInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 // maxioLatestRelease queries the GitHub Releases API for coollabsio/maxio and
 // returns the latest version string (without "v" prefix) and the browser
 // download URL for the linux-amd64 tar.gz asset.
+// If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
+// the GitHub API call is skipped and the URL is constructed from that version.
 func maxioLatestRelease(ctx context.Context) (version, downloadURL string, err error) {
+	if v := preResolvedVersionFromCtx(ctx); v != "" {
+		tag := v
+		if !strings.HasPrefix(tag, "v") {
+			tag = "v" + tag
+		}
+		ver := strings.TrimPrefix(tag, "v")
+		dlURL := fmt.Sprintf("https://github.com/coollabsio/maxio/releases/download/%s/maxio-linux-amd64-%s.tar.gz", tag, ver)
+		return ver, dlURL, nil
+	}
 	apiURL := "https://api.github.com/repos/coollabsio/maxio/releases/latest"
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

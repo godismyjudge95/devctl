@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added `make demo` / `make demo-screenshots` targets and `scripts/demo.sh` to spin up a fresh Incus demo container with seeded sites, PHP dumps, mail, SPX profiles, and MaxIO files, then take full-dashboard screenshots automatically
+- Updated `scripts/screenshots.js` to capture all dashboard pages (Services, Sites, Dumps, Mail, SPX, Logs, Settings, MaxIO, WhoDB) at both desktop and mobile viewports; `BASE_URL` is now configurable via env var
+- Added Logs section to README documenting the real-time log viewer tab
+- Added screenshots to Mail, SPX Profiler, Logs, MaxIO, and WhoDB README sections
+- Added all mobile screenshots to the Contributing → Screenshots section of the README
+
 ## v0.5.0 — 2026-04-07
 
 - Added **dev tools auto-download**: the `sqlite3` CLI and `fnm` (Fast Node Manager, aliased as `nvm`) are now automatically downloaded to `{serverRoot}/bin/` (which is on `$PATH`) during `devctl install` and after each self-update. The latest version is fetched from the upstream source (sqlite.org / GitHub) and the download is skipped when the installed binary is already up-to-date. New tools can be added to `tools/tools.go` without changes to the install flow.

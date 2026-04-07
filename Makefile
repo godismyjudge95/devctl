@@ -1,6 +1,7 @@
 .PHONY: dev dev-ui build build-ui install deploy sqlc db-migrate \
         test-env-setup test-env test-run test-bats test-api test-e2e test \
-        test-artifacts-download test-artifacts-clean test-push
+        test-artifacts-download test-artifacts-clean test-push \
+        demo
 
 BINARY     := devctl
 # Install into the site user's devctl directory.
@@ -66,6 +67,13 @@ sqlc:
 # Run goose migrations against dev DB
 db-migrate:
 	$(shell go env GOPATH)/bin/goose -dir db/migrations sqlite3 $(SITE_HOME)/sites/server/devctl/devctl.db up
+
+# ─── Demo environment ──────────────────────────────────────────────────────────
+
+# Create a fresh devctl-demo container with seed data and take all screenshots.
+# Requires Incus + devctl-ubuntu-base image (make test-env-setup).
+demo: build
+	@bash scripts/demo.sh
 
 # ─── Test environment ──────────────────────────────────────────────────────────
 

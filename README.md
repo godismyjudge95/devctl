@@ -29,6 +29,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [SPX Profiler](#spx-profiler)
 - [Mail](#mail)
 - [Config Editor](#config-editor)
+- [Logs](#logs)
 - [Browser Notifications](#browser-notifications)
 - [CLI](#cli)
 - [Ports](#ports)
@@ -187,6 +188,8 @@ devctl checks for newer versions on startup and again daily at 3 am. When an upd
 
 ### WhoDB
 
+![WhoDB database explorer](docs/screenshot-whodb.png)
+
 [WhoDB](https://github.com/clidey/whodb) is a lightweight database explorer with a web UI, embedded in the devctl sidebar. Install it from the Services tab. devctl automatically configures pre-populated connection profiles for any installed database service (MySQL, PostgreSQL, Valkey/Redis).
 
 A **WhoDB** section in Settings lets you:
@@ -197,6 +200,8 @@ A **WhoDB** section in Settings lets you:
 Connections are stored in the devctl SQLite database and applied immediately.
 
 ### MaxIO
+
+![MaxIO file browser showing bucket contents](docs/screenshot-maxio.png)
 
 [MaxIO](https://github.com/coollabsio/maxio) is a high-performance S3-compatible object storage server (single binary from coollabsio/maxio). Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/maxio/config.env` to change them. Data is stored at `{serverRoot}/maxio/data`. The `maxio.test` vhost proxies to the console UI at port `9001`.
 
@@ -399,6 +404,8 @@ The profile is saved to `{serverRoot}/php/{version}/spx-data/` and appears in th
 
 Profiles can be cleared from the UI at any time.
 
+![SPX Profiler showing profile list and flat profile detail](docs/screenshot-spx.png)
+
 ---
 
 ## Mail
@@ -418,6 +425,8 @@ MAIL_PORT=1025
 ```
 
 Mailpit is configured via `MP_*` environment variables in `{serverRoot}/mailpit/config.env`. Click the file icon on the Mailpit row in the Services tab to edit this file directly.
+
+![Mail page showing inbox and message detail](docs/screenshot-mail.png)
 
 ---
 
@@ -445,6 +454,19 @@ Every config-enabled service has a file icon in the Services tab that opens a fu
 
 ---
 
+## Logs
+
+The **Logs** tab streams the tail of any service log file directly in the browser. Select a log from the left-hand list to open it in the viewer pane.
+
+- All service logs are stored under `{serverRoot}/logs/` and listed automatically.
+- The viewer streams new lines in real time via SSE — no manual refresh needed.
+- **Clear** truncates the selected log file to zero bytes.
+- On mobile, the list and viewer are separate panes with a back button.
+
+![Logs page showing log file list and viewer](docs/screenshot-logs.png)
+
+---
+
 ## Browser Notifications
 
 devctl fires native desktop notifications when events occur while you are on another tab.
@@ -465,10 +487,11 @@ The devctl binary doubles as a CLI that talks to the running daemon at `127.0.0.
 
 ```sh
 devctl services:list              # list all services and status
+devctl services:install mailpit   # install an available service
 devctl services:restart caddy     # restart a service
 devctl sites:list                 # list all sites
 devctl sites:php myapp.test 8.4   # switch PHP version for a site
-devctl logs:tail caddy            # stream the tail of a log
+devctl logs:tail caddy --follow   # stream the tail of a log live
 devctl mail:list                  # list captured emails
 devctl settings:get               # show all settings
 devctl settings:set devctl_port=4001  # change a setting (key=value)
@@ -478,6 +501,7 @@ devctl dns:status                 # check systemd-resolved DNS setup
 devctl dumps:list                 # list recent php_dd() dumps
 devctl spx:profiles               # list recent SPX profiler captures
 devctl tls:trust                  # trust Caddy's internal CA
+devctl devctl:update              # check for devctl updates and apply
 devctl devctl:skill               # generate an OpenCode CLI skill file
 ```
 
@@ -493,36 +517,40 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 
 | Namespace | Command | Description |
 |---|---|---|
-| `services` | `services:list` | List all services and current status |
+| `services` | `services:list` | List all managed services and their status |
+| | `services:available` | List services that can be installed |
+| | `services:install <id>` | Install an available service |
 | | `services:start <id>` | Start a stopped service |
-| | `services:stop <id>` | Stop a service |
+| | `services:stop <id>` | Stop a running service |
 | | `services:restart <id>` | Restart a service |
-| | `services:credentials <id>` | Show connection credentials |
-| `sites` | `sites:list` | List all sites |
+| | `services:update <id>` | Update an installed service to the latest version |
+| | `services:credentials <id>` | Show connection credentials for a service |
+| `sites` | `sites:list` | List all managed sites |
 | | `sites:get <domain>` | Show full details for a site |
-| | `sites:php <domain> <version>` | Switch PHP version |
-| | `sites:spx <domain> on\|off` | Enable/disable SPX profiler |
-| `php` | `php:versions` | List installed PHP versions |
-| | `php:settings` | Show PHP ini settings |
+| | `sites:php <domain> <version>` | Switch the PHP version for a site |
+| | `sites:spx <domain> enable\|disable` | Enable or disable the SPX profiler for a site |
+| `php` | `php:versions` | List installed PHP versions and their FPM status |
+| | `php:settings` | Show current PHP ini settings (applies to all versions) |
 | | `php:set <key=value>...` | Update PHP ini settings |
 | `logs` | `logs:list` | List available log files |
-| | `logs:tail <id>` | Read the tail of a log |
-| | `logs:clear <id>` | Truncate a log file |
-| `dumps` | `dumps:list` | List recent `php_dd()` dumps |
-| | `dumps:clear` | Delete all dumps |
-| `spx` | `spx:profiles` | List recent SPX profiler captures |
-| | `spx:profile <key>` | Show CPU hotspot detail for a capture |
-| `mail` | `mail:list` | List captured emails |
-| | `mail:get <id>` | Show a single email |
-| | `mail:delete <id>` | Delete a single email |
-| | `mail:clear` | Delete all emails |
-| `dns` | `dns:status` | Check `systemd-resolved` DNS setup |
-| | `dns:setup` | Configure `systemd-resolved` for `*.test` |
-| | `dns:teardown` | Remove `systemd-resolved` DNS config |
-| `tls` | `tls:trust` | Trust Caddy's internal CA |
-| `settings` | `settings:get` | Show all settings |
-| | `settings:set <key=value>...` | Update settings |
-| `devctl` | `devctl:skill` | Generate an OpenCode agent skill file |
+| | `logs:tail <id> [--bytes=N] [--follow]` | Show the tail of a log file; `--follow` streams live |
+| | `logs:clear <id>` | Clear (truncate) a log file |
+| `dumps` | `dumps:list [--domain=]` | List recent php_dd() variable dumps |
+| | `dumps:clear` | Delete all php_dd() dumps |
+| `spx` | `spx:profiles [--domain=]` | List recent SPX profiler captures |
+| | `spx:profile <key>` | Show CPU hotspot functions for an SPX profile |
+| `mail` | `mail:list [--limit=N]` | List recent emails captured by Mailpit |
+| | `mail:get <id>` | Show the full content of an email |
+| | `mail:delete <id>[,<id>...]` | Delete one or more emails by ID |
+| | `mail:clear` | Delete all emails from Mailpit |
+| `dns` | `dns:status` | Check whether systemd-resolved is configured for `*.test` |
+| | `dns:setup` | Configure systemd-resolved to route `*.test` queries to devctl |
+| | `dns:teardown` | Remove the systemd-resolved `*.test` DNS configuration |
+| `tls` | `tls:trust` | Trust Caddy's internal CA in the system and browser certificate stores |
+| `settings` | `settings:get` | Show all devctl settings |
+| | `settings:set <key=value>...` | Update devctl settings |
+| `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |
+| | `devctl:skill` | Generate an OpenCode agent skill describing all CLI commands |
 
 ### OpenCode integration
 
@@ -640,9 +668,15 @@ make db-migrate   # apply goose migrations to {serverRoot}/devctl/devctl.db
 The dashboard is fully responsive. On narrow viewports the sidebar collapses into a slide-in drawer and service lists switch to a card layout.
 
 <p align="center">
-  <img src="docs/screenshot-mobile-services.png" width="260" alt="Services page on mobile">
-  <img src="docs/screenshot-mobile-sites.png" width="260" alt="Sites page on mobile">
-  <img src="docs/screenshot-mobile-mail.png" width="260" alt="Mail page on mobile">
+  <img src="docs/screenshot-mobile-services.png" width="200" alt="Services page on mobile">
+  <img src="docs/screenshot-mobile-sites.png" width="200" alt="Sites page on mobile">
+  <img src="docs/screenshot-mobile-mail.png" width="200" alt="Mail page on mobile">
+  <img src="docs/screenshot-mobile-dumps.png" width="200" alt="Dumps page on mobile">
+  <img src="docs/screenshot-mobile-spx.png" width="200" alt="SPX Profiler on mobile">
+  <img src="docs/screenshot-mobile-logs.png" width="200" alt="Logs page on mobile">
+  <img src="docs/screenshot-mobile-settings.png" width="200" alt="Settings page on mobile">
+  <img src="docs/screenshot-mobile-maxio.png" width="200" alt="MaxIO on mobile">
+  <img src="docs/screenshot-mobile-whodb.png" width="200" alt="WhoDB on mobile">
 </p>
 
 Additional screenshots:
