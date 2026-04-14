@@ -114,7 +114,7 @@ sudo systemctl enable --now devctl
 
 ## Auto-update
 
-devctl checks GitHub for a newer release on startup and again daily at 3 am.
+devctl checks GitHub for a newer release once per day at 3 am.
 
 When a newer version is available an amber **↑** button appears next to the **devctl** logo in the sidebar. Hovering over it shows a tooltip with the target version (e.g. *Update devctl to v0.4.0*). Clicking the button opens a progress dialog that streams the download and install steps live, then automatically restarts the service.
 
@@ -160,7 +160,7 @@ Each installed service can be started, stopped, and restarted from the dashboard
 
 ### Update checker
 
-devctl checks for newer versions on startup and again daily at 3 am. When an update is available, an amber **"update"** badge appears next to the version string and an **Update** button is shown. Hovering shows the exact from/to version. Updates stream their output live via SSE.
+devctl checks for newer versions once per day at 3 am. When an update is available, an amber **"update"** badge appears next to the version string and an **Update** button is shown. Hovering shows the exact from/to version. Updates stream their output live via SSE.
 
 | Service | Port(s) | `.test` vhost | Download source | Config file |
 |---|---|---|---|---|
@@ -475,7 +475,7 @@ devctl fires native desktop notifications when events occur while you are on ano
 |---|---|
 | New `php_dd()` dump | Fires when you are not on the Dumps page. Multiple dumps within 1.5 s are collapsed into one count notification. Clicking navigates to that dump. |
 | New email | Fires when you are not on the Mail page. Bursts are collapsed. Clicking navigates to the Mail page. |
-| Service updates available | Fires when the update checker (runs on startup and daily at 3 am) finds a newer version for any installed service. |
+| Service updates available | Fires when the update checker (runs once per day at 3 am) finds a newer version for any installed service. |
 
 Notification permission is requested automatically on first load. devctl uses the **Service Worker Notification API** when supported, with a direct `Notification` API fallback for browsers without service worker support.
 

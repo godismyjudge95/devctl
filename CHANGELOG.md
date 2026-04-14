@@ -14,7 +14,7 @@
 
 ## v0.4.0 — 2026-04-07
 
-- Added **auto-updater**: devctl now checks GitHub for a newer release on startup and daily at 3 am. When an update is available, an amber upgrade button appears next to the devctl logo in the sidebar. Clicking it opens a live progress dialog, downloads and verifies the new binary, backs up the current binary, swaps it, and restarts the service via systemd. The backup is cleaned up automatically on next successful startup.
+- Added **auto-updater**: devctl now checks GitHub for a newer release once per day at 3 am. When an update is available, an amber upgrade button appears next to the devctl logo in the sidebar. Clicking it opens a live progress dialog, downloads and verifies the new binary, backs up the current binary, swaps it, and restarts the service via systemd. The backup is cleaned up automatically on next successful startup.
 - Replaced RustFS with MaxIO — S3-compatible object storage now uses the MaxIO binary from coollabsio/maxio; vhosts renamed to maxio.test / s3.maxio.test; Laravel connection.env keys unchanged (AWS_*)
 - Added **CLI** (`devctl <namespace>:<command>`): the devctl binary now doubles as a CLI that communicates with the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`) without requiring root. All 30+ operations from the old MCP server are available as colon-namespaced commands: `services:list`, `services:restart <id>`, `sites:list`, `sites:php <domain> <ver>`, `logs:tail <id>`, `mail:list`, `settings:set key=val`, `php:set memory_limit=512M`, `dns:status`, `dumps:list`, `spx:profiles`, `tls:trust`, etc. Every command supports `--json` for machine-readable output.
 - Added **OpenCode skill auto-generation**: run `devctl devctl:skill` to write `~/.agents/skills/devctl-cli/SKILL.md`. The daemon silently regenerates the file on each startup if it already exists.
@@ -54,7 +54,7 @@
 ### Service updater system
 
 - Each managed service now reports a **latest available version** by querying its upstream: GitHub Releases API for Caddy, Valkey, Meilisearch, Typesense, Mailpit, RustFS, WhoDB; Packagist for Laravel Reverb; no-op for MySQL, PostgreSQL, and DNS.
-- devctl runs an **update checker on startup and daily at 3 am**. Results are cached in memory and pushed into every `ServiceState` response as `latest_version` and `update_available`.
+- devctl runs an **update checker once per day at 3 am**. Results are cached in memory and pushed into every `ServiceState` response as `latest_version` and `update_available`.
 - The **Services page** shows an amber **"Update"** button in the action bar and a `update_available` badge on mobile cards whenever a newer version is detected. Hovering shows a tooltip with the exact from/to version.
 - A **browser notification** fires once per service when an update is first detected (notification permission is requested on first visit to the Services page).
 - Updates stream output in real time over SSE (same pattern as install/purge).
