@@ -330,11 +330,11 @@ func run() error {
 	}()
 
 	// --- Update checker ---
-	// Runs once on startup, then again every day at 3am.
+	// Runs once per day at 3am.
 	go runUpdateChecker(runCtx, srv, installRegistry)
 
 	// --- Self-update checker ---
-	// Checks GitHub for a newer devctl release once on startup, then daily.
+	// Checks GitHub for a newer devctl release once per day at 3am.
 	go runSelfUpdateChecker(runCtx, srv)
 
 	// --- Skill auto-update ---
@@ -397,9 +397,9 @@ func isPHPFPMDef(def services.Definition) bool {
 	return strings.HasPrefix(def.ID, "php-fpm-")
 }
 
-// runUpdateChecker checks for updates for all installed services on startup
-// and then again every day at 3am. When a newer version is found it stores the
-// result in srv so the API can surface it to the frontend.
+// runUpdateChecker checks for updates for all installed services once per day
+// at 3am. When a newer version is found it stores the result in srv so the API
+// can surface it to the frontend.
 func runUpdateChecker(ctx context.Context, srv *api.Server, installers map[string]install.Installer) {
 	check := func() {
 		log.Printf("update-checker: checking for updates...")
@@ -420,10 +420,6 @@ func runUpdateChecker(ctx context.Context, srv *api.Server, installers map[strin
 		log.Printf("update-checker: done")
 	}
 
-	// Run immediately on startup.
-	check()
-
-	// Then run again every day at 3am.
 	for {
 		now := time.Now()
 		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
@@ -436,9 +432,9 @@ func runUpdateChecker(ctx context.Context, srv *api.Server, installers map[strin
 	}
 }
 
-// runSelfUpdateChecker checks GitHub for a newer devctl release on startup
-// and again every day at 3am. When a newer version is found it stores the
-// result in srv so the API can surface it to the frontend.
+// runSelfUpdateChecker checks GitHub for a newer devctl release once per day
+// at 3am. When a newer version is found it stores the result in srv so the API
+// can surface it to the frontend.
 func runSelfUpdateChecker(ctx context.Context, srv *api.Server) {
 	check := func() {
 		latest, err := selfupdate.LatestVersion(ctx)
@@ -448,8 +444,6 @@ func runSelfUpdateChecker(ctx context.Context, srv *api.Server) {
 		}
 		srv.SetSelfLatestVersion(latest)
 	}
-
-	check()
 
 	for {
 		now := time.Now()
