@@ -89,10 +89,17 @@ body {
   margin: 0;
   background-color: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'ss01', 'ss02';
+}
+
+code, kbd, samp, pre, .font-mono {
+  font-family: 'Geist Mono', ui-monospace, monospace;
 }
 
 @theme inline {
+  --font-sans: 'Geist', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
