@@ -5,7 +5,7 @@ import { getPHPVersions, getSiteBranches, getWorktreeConfig, putWorktreeConfig, 
 import type { Site, Branch, WorktreeConfig } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import {
-  Plus, ExternalLink, Trash2, Zap, Bot, Loader2,
+  Plus, ExternalLink, Trash2, Zap, Loader2,
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
@@ -60,6 +60,29 @@ const filteredSites = computed(() => {
     (s.framework ?? '').toLowerCase().includes(q),
   )
 })
+
+// Strip the common path prefix shared by all sites so the path column
+// only shows the differentiating tail (e.g. "portraitsinc/public" instead
+// of the full absolute path).
+const sitePathPrefix = computed(() => {
+  const paths = store.sites.map(s => s.root_path)
+  if (paths.length < 2) return ''
+  let prefix = paths[0]
+  for (const p of paths.slice(1)) {
+    while (prefix && !p.startsWith(prefix)) {
+      const slash = prefix.lastIndexOf('/')
+      prefix = slash > 0 ? prefix.slice(0, slash) : ''
+    }
+  }
+  return prefix ? prefix + '/' : ''
+})
+
+function shortPath(site: { root_path: string; public_dir?: string }): string {
+  const tail = sitePathPrefix.value
+    ? site.root_path.slice(sitePathPrefix.value.length)
+    : site.root_path
+  return site.public_dir ? `${tail}/${site.public_dir}` : tail
+}
 
 // ─── Add Site dialog ─────────────────────────────────────────────────────────
 const dialogOpen = ref(false)
@@ -273,16 +296,13 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-6">
     <!-- Header -->
     <div class="flex flex-wrap items-center justify-between gap-y-2">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Sites</h1>
-        <p class="text-sm text-muted-foreground mt-1">Manage local PHP virtual hosts.</p>
-      </div>
+      <h1 class="text-2xl font-semibold tracking-tight">Sites</h1>
       <div class="flex items-center gap-2 shrink-0">
         <ButtonGroup>
-          <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata">
+          <Button variant="outline" :disabled="refreshingMetadata" @click="doRefreshMetadata" title="Re-scan all sites for framework detection, git status, and branch info">
             <Loader2 v-if="refreshingMetadata" class="w-4 h-4 animate-spin" />
             <RefreshCw v-else class="w-4 h-4" />
             <span class="hidden sm:inline">Refresh Metadata</span>
@@ -324,7 +344,7 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
             <template v-if="filteredSites.length === 0">
               <TableRow>
                 <TableCell colspan="5" class="text-center text-muted-foreground py-10 text-sm">
-                  {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site or drop a folder in your watch directory.' }}
+                  {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site — or drop a project folder into your watch directory for auto-detection.' }}
                 </TableCell>
               </TableRow>
             </template>
@@ -365,9 +385,6 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
                     <Badge v-if="site.spx_enabled" variant="secondary" class="text-xs h-4 px-1">
                       <Zap class="w-2.5 h-2.5 mr-0.5" />SPX
                     </Badge>
-                    <Badge v-if="site.auto_discovered" variant="outline" class="text-xs h-4 px-1">
-                      <Bot class="w-2.5 h-2.5 mr-0.5" />Auto
-                    </Badge>
                     <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono text-xs h-4 px-1">
                       <GitBranch class="w-2.5 h-2.5 mr-0.5" />{{ site.worktree_branch }}
                     </Badge>
@@ -384,12 +401,11 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
                 >
                   {{ frameworkLabel(site.framework) }}
                 </Badge>
-                <span v-else class="text-muted-foreground text-xs">—</span>
               </TableCell>
 
               <!-- Root path -->
-              <TableCell class="py-2 font-mono text-xs text-muted-foreground max-w-48 truncate">
-                {{ site.root_path }}<span v-if="site.public_dir" class="text-muted-foreground/60">/{{ site.public_dir }}</span>
+              <TableCell class="py-2 font-mono text-xs text-muted-foreground max-w-48 truncate" :title="site.root_path + (site.public_dir ? '/' + site.public_dir : '')">
+                {{ shortPath(site) }}
               </TableCell>
 
               <!-- PHP -->
@@ -422,26 +438,26 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
                   <Button
                     v-if="site.parent_site_id"
                     variant="ghost" size="sm"
-                    class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    class="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
                     :disabled="removingWorktreeId === site.id"
                     @click="removeWorktree(site)"
-                    title="Remove worktree"
                   >
                     <Loader2 v-if="removingWorktreeId === site.id" class="w-3.5 h-3.5 animate-spin" />
                     <Trash2 v-else class="w-3.5 h-3.5" />
+                    Remove
                   </Button>
 
                   <!-- Delete site -->
                   <Button
                     v-if="!site.parent_site_id"
                     variant="ghost" size="sm"
-                    class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    class="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5"
                     :disabled="removingId === site.id"
                     @click="removeSite(site.id, site.domain)"
-                    title="Delete site"
                   >
                     <Loader2 v-if="removingId === site.id" class="w-3.5 h-3.5 animate-spin" />
                     <Trash2 v-else class="w-3.5 h-3.5" />
+                    Delete
                   </Button>
                 </div>
               </TableCell>
@@ -453,7 +469,7 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
       <!-- ── Mobile cards (< md) ── -->
       <div class="md:hidden grid grid-cols-1 gap-3">
         <div v-if="filteredSites.length === 0" class="rounded-lg border border-dashed border-border py-16 text-center text-muted-foreground text-sm">
-          {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site or drop a folder in your watch directory.' }}
+          {{ searchQuery ? 'No sites match your search.' : 'No sites configured. Click Add Site — or drop a project folder into your watch directory for auto-detection.' }}
         </div>
 
         <Card
@@ -462,28 +478,39 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
           :class="site.parent_site_id ? 'border-dashed' : ''"
         >
           <CardContent class="p-4 space-y-2">
-          <div v-if="site.parent_site_id" class="flex items-center gap-1 text-xs text-muted-foreground">
-            <CornerDownRight class="w-3 h-3 shrink-0" />
-            <span>worktree of {{ parentDomain(site.parent_site_id) }}</span>
-          </div>
-
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <a
-                :href="(site.https ? 'https' : 'http') + '://' + site.domain"
-                target="_blank"
-                class="font-medium hover:underline inline-flex items-center gap-1 max-w-full truncate"
-              >
-                <span class="truncate">{{ site.domain }}</span>
-                <ExternalLink class="w-3 h-3 text-muted-foreground shrink-0" />
-              </a>
-              <p class="font-mono text-xs text-muted-foreground truncate">
-                {{ site.root_path }}<span v-if="site.public_dir">/{{ site.public_dir }}</span>
-              </p>
+            <!-- Worktree indicator -->
+            <div v-if="site.parent_site_id" class="flex items-center gap-1 text-xs text-muted-foreground">
+              <CornerDownRight class="w-3 h-3 shrink-0" />
+              <span>worktree of {{ parentDomain(site.parent_site_id) }}</span>
             </div>
 
-            <div class="flex items-center gap-1 shrink-0">
-              <!-- Git link -->
+            <!-- Domain — full width, no competing actions -->
+            <a
+              :href="(site.https ? 'https' : 'http') + '://' + site.domain"
+              target="_blank"
+              class="font-medium hover:underline inline-flex items-center gap-1 max-w-full"
+            >
+              <span class="truncate">{{ site.domain }}</span>
+              <ExternalLink class="w-3 h-3 text-muted-foreground shrink-0" />
+            </a>
+
+            <!-- Path + meta badges + PHP version -->
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-mono text-xs text-muted-foreground truncate">{{ shortPath(site) }}</span>
+              <Badge v-if="site.framework" :variant="frameworkVariant(site.framework)" class="text-xs">
+                {{ frameworkLabel(site.framework) }}
+              </Badge>
+              <Badge v-if="site.spx_enabled" variant="secondary" class="text-xs">
+                <Zap class="w-2.5 h-2.5 mr-0.5" />SPX
+              </Badge>
+              <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono text-xs">
+                <GitBranch class="w-2.5 h-2.5 mr-0.5" />{{ site.worktree_branch }}
+              </Badge>
+              <span class="text-xs text-muted-foreground font-mono ml-auto">PHP {{ site.php_version }}</span>
+            </div>
+
+            <!-- Actions row (full width, no truncation pressure) -->
+            <div class="flex items-center gap-1 pt-1 border-t border-border">
               <a
                 v-if="site.is_git_repo && site.git_remote_url"
                 :href="site.git_remote_url.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '')"
@@ -493,54 +520,34 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
               >
                 <Github class="w-3.5 h-3.5" />
               </a>
-
               <SiteSettingsDialog
                 :site="site"
                 :php-versions="phpVersions"
                 @open-worktree="openWorktreeDialog"
               />
-
               <Button
                 v-if="site.parent_site_id"
                 variant="ghost" size="sm"
-                class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                class="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5 ml-auto"
                 :disabled="removingWorktreeId === site.id"
                 @click="removeWorktree(site)"
-                title="Remove worktree"
               >
                 <Loader2 v-if="removingWorktreeId === site.id" class="w-3.5 h-3.5 animate-spin" />
                 <Trash2 v-else class="w-3.5 h-3.5" />
+                Remove
               </Button>
-
               <Button
                 v-if="!site.parent_site_id"
                 variant="ghost" size="sm"
-                class="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                class="text-destructive hover:text-destructive hover:bg-destructive/10 gap-1.5 ml-auto"
                 :disabled="removingId === site.id"
                 @click="removeSite(site.id, site.domain)"
-                title="Delete site"
               >
                 <Loader2 v-if="removingId === site.id" class="w-3.5 h-3.5 animate-spin" />
                 <Trash2 v-else class="w-3.5 h-3.5" />
+                Delete
               </Button>
             </div>
-          </div>
-
-          <div class="flex items-center gap-2 flex-wrap">
-            <Badge v-if="site.framework" :variant="frameworkVariant(site.framework)" class="text-xs">
-              {{ frameworkLabel(site.framework) }}
-            </Badge>
-            <Badge v-if="site.spx_enabled" variant="secondary" class="text-xs">
-              <Zap class="w-2.5 h-2.5 mr-0.5" />SPX
-            </Badge>
-            <Badge v-if="site.auto_discovered" variant="outline" class="text-xs">
-              <Bot class="w-2.5 h-2.5 mr-0.5" />Auto
-            </Badge>
-            <Badge v-if="site.worktree_branch" variant="secondary" class="font-mono text-xs">
-              <GitBranch class="w-2.5 h-2.5 mr-0.5" />{{ site.worktree_branch }}
-            </Badge>
-            <span class="text-xs text-muted-foreground font-mono ml-auto">PHP {{ site.php_version }}</span>
-          </div>
           </CardContent>
         </Card>
       </div>
@@ -664,16 +671,17 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
           <div class="grid gap-2 border rounded-md p-3">
             <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Shared resources</p>
             <div class="grid gap-1.5">
-              <Label for="wt_symlinks" class="text-xs">Symlink from parent <span class="text-muted-foreground">(comma-separated paths)</span></Label>
+              <Label for="wt_symlinks" class="text-xs">Symlinks from parent</Label>
               <Input id="wt_symlinks" v-model="worktreeForm.symlinksInput" placeholder="vendor, node_modules" class="font-mono text-xs h-8" />
             </div>
             <div class="grid gap-1.5">
-              <Label for="wt_copies" class="text-xs">Copy from parent <span class="text-muted-foreground">(comma-separated paths)</span></Label>
+              <Label for="wt_copies" class="text-xs">Copies from parent</Label>
               <Input id="wt_copies" v-model="worktreeForm.copiesInput" placeholder=".env" class="font-mono text-xs h-8" />
             </div>
+            <p class="text-xs text-muted-foreground">Comma-separated paths relative to the project root.</p>
             <div class="flex items-center gap-2 mt-1">
               <Checkbox id="save_config" v-model:checked="worktreeForm.saveConfig" />
-              <Label for="save_config" class="cursor-pointer text-xs text-muted-foreground">Save as default for this site</Label>
+              <Label for="save_config" class="cursor-pointer text-xs text-muted-foreground">Save as defaults for future worktrees</Label>
             </div>
           </div>
         </div>

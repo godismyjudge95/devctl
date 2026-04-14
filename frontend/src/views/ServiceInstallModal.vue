@@ -180,7 +180,7 @@ function handleInstall(row: InstallRow) {
       <DialogHeader>
         <DialogTitle>Add Service</DialogTitle>
         <DialogDescription>
-          Select a service to install. Caddy is required and installed automatically on first run.
+          Select a service or PHP version to install.
         </DialogDescription>
       </DialogHeader>
 
@@ -257,7 +257,7 @@ function handleInstall(row: InstallRow) {
       <DialogHeader>
         <DialogTitle>Install output — {{ outputDialogLabel }}</DialogTitle>
         <DialogDescription>
-          The following output was captured during the failed installation.
+          Something went wrong. Check the output below for details.
         </DialogDescription>
       </DialogHeader>
       <pre class="flex-1 overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre-wrap break-words">{{ outputDialogContent }}</pre>

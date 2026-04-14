@@ -13,6 +13,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Search, Trash2, Mail, MailOpen, Paperclip, ChevronLeft, ChevronRight,
   Inbox, Download, ArrowLeft
 } from 'lucide-vue-next'
@@ -82,16 +87,15 @@ function nextPage() {
   if (store.page < store.totalPages) { store.page++; store.loadMessages() }
 }
 
-async function handleDeleteSelected() {
-  if (confirm(`Delete ${store.selectedIds.size} message(s)?`)) {
-    await store.deleteSelected()
-  }
+const deleteSelectedOpen = ref(false)
+const deleteAllOpen = ref(false)
+
+function handleDeleteSelected() {
+  deleteSelectedOpen.value = true
 }
 
-async function handleDeleteAll() {
-  if (confirm('Delete all messages?')) {
-    await store.deleteAll()
-  }
+function handleDeleteAll() {
+  deleteAllOpen.value = true
 }
 
 async function handleDeleteCurrent() {
@@ -191,6 +195,12 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
         : 'flex-1 md:flex-initial md:w-96 md:shrink-0'"
     >
 
+      <!-- Panel header -->
+      <div class="flex items-center justify-between px-3 py-3 border-b border-border shrink-0">
+        <span class="text-sm font-medium">Inbox</span>
+        <span v-if="store.unread > 0" class="text-xs text-muted-foreground">{{ store.unread }} unread</span>
+      </div>
+
       <!-- Search -->
       <div class="p-3 border-b border-border">
         <div class="relative">
@@ -240,9 +250,6 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
           </Button>
         </ButtonGroup>
         <div class="flex-1" />
-        <span class="text-xs text-muted-foreground">
-          {{ store.unread > 0 ? `${store.unread} unread` : '' }}
-        </span>
         <Button
           variant="ghost"
           size="icon-xs"
@@ -359,15 +366,13 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
               {{ store.selectedMessage.Subject || '(no subject)' }}
             </h2>
             <div class="flex items-center gap-1.5 shrink-0">
-            <div class="flex items-center gap-1.5">
-                  <Button variant="outline" size="sm" class="h-7 text-xs" @click="handleMarkUnread">
-                    Mark unread
-                  </Button>
-                  <Button variant="destructive" size="sm" class="h-7 text-xs" @click="handleDeleteCurrent">
-                    <Trash2 class="w-3.5 h-3.5 mr-1" />
-                    Delete
-                  </Button>
-            </div>
+              <Button variant="outline" size="sm" class="h-7 text-xs" @click="handleMarkUnread">
+                Mark unread
+              </Button>
+              <Button variant="destructive" size="sm" class="h-7 text-xs" @click="handleDeleteCurrent">
+                <Trash2 class="w-3.5 h-3.5 mr-1" />
+                Delete
+              </Button>
             </div>
           </div>
 
@@ -485,4 +490,46 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
       </template>
     </div>
   </div>
+
+  <!-- Delete selected confirmation -->
+  <AlertDialog v-model:open="deleteSelectedOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete {{ store.selectedIds.size }} {{ store.selectedIds.size === 1 ? 'message' : 'messages' }}?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This cannot be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          @click="store.deleteSelected()"
+        >
+          Delete
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
+  <!-- Delete all confirmation -->
+  <AlertDialog v-model:open="deleteAllOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete all messages?</AlertDialogTitle>
+        <AlertDialogDescription>
+          All {{ store.total }} {{ store.total === 1 ? 'message' : 'messages' }} will be permanently deleted. This cannot be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          @click="store.deleteAll()"
+        >
+          Delete all
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>

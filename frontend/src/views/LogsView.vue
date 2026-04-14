@@ -23,6 +23,36 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+// Format a log file name for display.
+// Rotated logs look like "20260322000000.160932-0.rustfs" — convert to
+// "rustfs  Mar 22 00:00". Named logs like "caddy" stay as-is.
+function formatLogName(id: string): string {
+  // Match goose-style rotation timestamps: YYYYMMDDHHMMSS.microseconds-seq.name
+  const rotated = id.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.\d+-\d+\.(.+)$/)
+  if (rotated) {
+    const year = rotated[1]!, month = rotated[2]!, day = rotated[3]!
+    const hour = rotated[4]!, min = rotated[5]!, name = rotated[7]!
+    const date = new Date(+year, +month - 1, +day, +hour, +min)
+    const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return `${name}  ${label}`
+  }
+  return id
+}
+
+// Try to pretty-print a line if it looks like JSON.
+// Returns the original string on parse failure.
+function formatLogLine(line: string): string {
+  const trimmed = line.trimStart()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return line
+  try {
+    const parsed = JSON.parse(trimmed)
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return line
+  }
+}
+
 async function loadLogList() {
   loading.value = true
   try {
@@ -161,7 +191,7 @@ onUnmounted(() => {
             : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
           @click="selectFile(f.id)"
         >
-          <span class="truncate font-mono min-w-0">{{ f.name }}</span>
+          <span class="truncate min-w-0">{{ formatLogName(f.id) }}</span>
           <Badge variant="secondary" class="text-xs px-1.5 py-0 shrink-0">{{ formatSize(f.size) }}</Badge>
         </button>
       </div>
@@ -192,10 +222,11 @@ onUnmounted(() => {
           variant="ghost"
           size="sm"
           class="shrink-0"
+          title="Clear log file"
           @click="doClearLog"
         >
           <Eraser class="w-3.5 h-3.5" />
-          <span class="hidden sm:inline">Clear</span>
+          <span class="hidden sm:inline">Clear log</span>
         </Button>
       </div>
 
@@ -217,7 +248,7 @@ onUnmounted(() => {
           :key="i"
           class="whitespace-pre-wrap break-all"
           :class="line.startsWith('[error]') ? 'text-red-400' : ''"
-        >{{ line }}</div>
+        >{{ formatLogLine(line) }}</div>
       </div>
     </div>
 

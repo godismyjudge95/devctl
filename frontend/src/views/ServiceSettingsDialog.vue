@@ -194,7 +194,7 @@ watch(() => props.open, (val) => {
               <Label for="svc_mailpit_smtp">SMTP Port</Label>
               <Input id="svc_mailpit_smtp" v-model="mailpitSmtpPort" class="font-mono" />
             </div>
-            <p class="text-xs text-muted-foreground">Mailpit will be restarted automatically when you save.</p>
+            <p class="text-xs text-muted-foreground">Mailpit restarts when saved.</p>
           </div>
           <DialogFooter class="gap-2">
             <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
@@ -226,7 +226,7 @@ watch(() => props.open, (val) => {
                 <Input id="php_max_exec" v-model="phpMaxExecutionTime" class="font-mono" placeholder="120" />
               </div>
             </div>
-            <p class="text-xs text-muted-foreground">PHP-FPM will be restarted automatically when you save.</p>
+            <p class="text-xs text-muted-foreground">PHP-FPM restarts when saved.</p>
           </div>
           <DialogFooter class="gap-2">
             <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
@@ -250,7 +250,7 @@ watch(() => props.open, (val) => {
                 <Input id="mysql_bind" v-model="mysqlBindAddress" class="font-mono" placeholder="127.0.0.1" />
               </div>
             </div>
-            <p class="text-xs text-muted-foreground">MySQL will be restarted automatically when you save.</p>
+            <p class="text-xs text-muted-foreground">MySQL restarts when saved.</p>
           </div>
           <DialogFooter class="gap-2">
             <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
@@ -270,7 +270,7 @@ watch(() => props.open, (val) => {
                 <Input id="dns_port" v-model="dnsPort" class="font-mono" placeholder="5354" />
               </div>
               <div class="grid gap-1.5">
-                <Label for="dns_tld">TLD(s)</Label>
+                <Label for="dns_tld">TLDs</Label>
                 <Input id="dns_tld" v-model="dnsTLD" class="font-mono" placeholder=".test" />
               </div>
             </div>
@@ -310,7 +310,7 @@ watch(() => props.open, (val) => {
                 </Button>
               </div>
             </div>
-            <p class="text-xs text-muted-foreground">DNS server will be restarted automatically when you save.</p>
+            <p class="text-xs text-muted-foreground">The DNS server restarts when saved.</p>
           </div>
           <DialogFooter class="gap-2">
             <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>

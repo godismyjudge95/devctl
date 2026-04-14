@@ -8,7 +8,6 @@ import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -18,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { restartDevctl, trustTLS, getWhoDBSettings, putWhoDBSettings } from '@/lib/api'
+import { toast } from 'vue-sonner'
 import type { WhoDBManualConnection, WhoDBAutoConnection } from '@/lib/api'
 
 const store = useSettingsStore()
@@ -34,8 +34,13 @@ watch(() => servicesStore.whodbInstalled, (installed) => {
   }
 })
 
-function save(key: string, value: string) {
-  store.save({ [key]: value })
+async function save(key: string, value: string) {
+  try {
+    await store.save({ [key]: value })
+    toast.success('Setting saved')
+  } catch (e: any) {
+    toast.error('Failed to save setting', { description: e.message })
+  }
 }
 
 const restarting = ref(false)
@@ -219,18 +224,17 @@ function onConnTypeChange(type: string) {
   <div class="space-y-6">
     <div>
       <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-      <p class="text-sm text-muted-foreground mt-1">Configure devctl. All settings take effect after restarting devctl.</p>
     </div>
 
     <div v-if="store.loading" class="text-muted-foreground text-sm py-8 text-center">Loading…</div>
 
-    <div v-else class="space-y-4">
+    <div v-else class="space-y-6">
 
       <!-- Dashboard -->
       <Card>
         <CardHeader>
           <CardTitle>Dashboard</CardTitle>
-          <CardDescription>Network binding for the devctl web UI.</CardDescription>
+          <CardDescription>Address and port the devctl UI listens on.</CardDescription>
         </CardHeader>
         <CardContent class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="grid gap-1.5">
@@ -254,8 +258,6 @@ function onConnTypeChange(type: string) {
         </CardContent>
       </Card>
 
-      <Separator />
-
       <!-- Sites -->
       <Card>
         <CardHeader>
@@ -276,8 +278,6 @@ function onConnTypeChange(type: string) {
         </CardContent>
       </Card>
 
-      <Separator />
-
       <!-- TLS -->
       <Card>
         <CardHeader>
@@ -286,24 +286,20 @@ function onConnTypeChange(type: string) {
         </CardHeader>
         <CardContent class="space-y-3">
           <div class="flex flex-wrap gap-2">
-            <ButtonGroup>
-              <Button variant="outline" @click="downloadCert">
-                <Download class="w-4 h-4" />
-                Download Root Certificate
-              </Button>
-              <Button variant="outline" :disabled="trusting" @click="trustCert">
-                <ShieldCheck class="w-4 h-4" :class="trusting ? 'animate-pulse' : ''" />
-                {{ trusting ? 'Trusting…' : 'Trust Certificate' }}
-              </Button>
-            </ButtonGroup>
+            <Button variant="outline" @click="downloadCert">
+              <Download class="w-4 h-4" />
+              Download Root Certificate
+            </Button>
+            <Button variant="outline" :disabled="trusting" @click="trustCert">
+              <ShieldCheck class="w-4 h-4" :class="trusting ? 'animate-pulse' : ''" />
+              {{ trusting ? 'Trusting…' : 'Trust Certificate' }}
+            </Button>
           </div>
           <p v-if="trustStatus === 'done'" class="text-sm text-success whitespace-pre-wrap">{{ trustMessage }}</p>
           <p v-else-if="trustStatus === 'error'" class="text-sm text-destructive whitespace-pre-wrap">{{ trustMessage }}</p>
           <p v-else-if="trustStatus === 'working'" class="text-sm text-muted-foreground">Installing certificate into system and browser trust stores…</p>
         </CardContent>
       </Card>
-
-      <Separator />
 
       <!-- Dump Server -->
       <Card>
@@ -326,8 +322,6 @@ function onConnTypeChange(type: string) {
 
       <!-- WhoDB (only shown when installed) -->
       <template v-if="servicesStore.whodbInstalled">
-        <Separator />
-
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center gap-2">
@@ -385,7 +379,7 @@ function onConnTypeChange(type: string) {
                   <p class="text-sm font-medium">Manual connections</p>
                   <Button variant="outline" size="sm" @click="openAddConn">
                     <Plus class="w-3.5 h-3.5" />
-                    Add connection
+                    Add Connection
                   </Button>
                 </div>
                 <div v-if="whodbManualConns.length === 0" class="text-sm text-muted-foreground">
@@ -422,15 +416,14 @@ function onConnTypeChange(type: string) {
         </Card>
       </template>
 
-      <Separator />
-
       <!-- Save & Restart -->
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-4 pt-2">
         <Button :disabled="restarting" @click="saveAndRestart">
           <RotateCw class="w-4 h-4" :class="restarting ? 'animate-spin' : ''" />
           Save &amp; Restart
         </Button>
-        <span v-if="restartStatus === 'restarting'" class="text-sm text-muted-foreground">Restarting…</span>
+        <span v-if="restartStatus === 'idle'" class="text-xs text-muted-foreground">All settings take effect after restarting.</span>
+        <span v-else-if="restartStatus === 'restarting'" class="text-sm text-muted-foreground">Restarting…</span>
         <span v-else-if="restartStatus === 'reconnecting'" class="text-sm text-muted-foreground">Waiting for server…</span>
         <span v-else-if="restartStatus === 'done'" class="text-sm text-success">Restarted successfully.</span>
         <span v-else-if="restartStatus === 'error'" class="text-sm text-destructive">Server did not come back in time. Check journalctl.</span>
@@ -443,7 +436,7 @@ function onConnTypeChange(type: string) {
   <Dialog v-model:open="connDialogOpen">
     <DialogContent class="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>{{ connDialogMode === 'add' ? 'Add' : 'Edit' }} connection</DialogTitle>
+        <DialogTitle>{{ connDialogMode === 'add' ? 'Add Connection' : 'Edit Connection' }}</DialogTitle>
       </DialogHeader>
 
       <div class="space-y-4 py-2">

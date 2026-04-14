@@ -151,7 +151,7 @@ function onKeydown(e: KeyboardEvent) {
       </Tabs>
 
       <div class="ml-auto flex items-center gap-2 shrink-0">
-        <span class="text-xs text-muted-foreground hidden sm:block">Ctrl+S to save</span>
+        <span class="text-xs text-muted-foreground hidden sm:block">Ctrl+S to save &amp; restart</span>
         <Button size="sm" :disabled="saving || loading" @click="save">
           <Save class="w-3.5 h-3.5 mr-2" />
           {{ saving ? 'Saving…' : 'Save & Restart' }}

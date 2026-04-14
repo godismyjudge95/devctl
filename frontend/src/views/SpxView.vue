@@ -9,6 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Trash2, ArrowLeft, Activity } from 'lucide-vue-next'
 
 // Row height for the virtual flat-profile table (py-1.5 + text-xs ≈ 32px)
@@ -57,11 +62,10 @@ async function handleDeleteProfile(key: string, e: MouseEvent) {
   if (store.selectedProfile?.key === key) showDetail.value = false
 }
 
-async function handleClearAll() {
-  if (confirm('Delete all SPX profiles?')) {
-    await store.clearAll()
-    showDetail.value = false
-  }
+const clearAllOpen = ref(false)
+
+function handleClearAll() {
+  clearAllOpen.value = true
 }
 
 // Virtual list for the flat profile table
@@ -388,4 +392,25 @@ function formatDate(ts: number): string {
       </template>
     </div>
   </div>
+
+  <!-- Clear all profiles confirmation -->
+  <AlertDialog v-model:open="clearAllOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete all SPX profiles?</AlertDialogTitle>
+        <AlertDialogDescription>
+          {{ store.profiles.length }} {{ store.profiles.length === 1 ? 'profile' : 'profiles' }} will be permanently deleted.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          @click="store.clearAll(); showDetail = false"
+        >
+          Delete all
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>

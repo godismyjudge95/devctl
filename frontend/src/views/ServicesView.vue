@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useServicesStore } from '@/stores/services'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  Play, Square, RotateCcw, Loader2,
+  Play, CircleStop, RotateCcw, Loader2,
   Trash2, Settings2, Plus, ChevronDown, ChevronRight, Copy, FileText,
   ArrowUpCircle, MoreHorizontal,
 } from 'lucide-vue-next'
@@ -282,12 +282,9 @@ async function doPHPUninstall() {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-y-2">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Services</h1>
-        <p class="text-sm text-muted-foreground mt-1">Manage local development services.</p>
-      </div>
+      <h1 class="text-2xl font-semibold tracking-tight">Services</h1>
       <Button variant="outline" size="sm" @click="addServiceOpen = true">
         <Plus class="w-3.5 h-3.5" />
         Add Service
@@ -311,7 +308,7 @@ async function doPHPUninstall() {
                       <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
                         :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
                       />
-                      {{ store.installing[svc.id] ? 'working…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
+                      {{ store.installing[svc.id] ? 'installing…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
                     </span>
                   </Badge>
                 </div>
@@ -345,7 +342,7 @@ async function doPHPUninstall() {
                   @click="stop(svc.id, svc.label)"
                 >
                   <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
-                  <Square v-else class="w-3.5 h-3.5" />
+                  <CircleStop v-else class="w-3.5 h-3.5" />
                 </Button>
                 <!-- Sep + Restart only when running -->
                 <ButtonGroupSeparator v-if="svc.status === 'running'" />
@@ -427,7 +424,7 @@ async function doPHPUninstall() {
               v-if="hasExpandable(svc.id) && expandedCredentials.has(svc.id)"
               class="mt-3 pt-3 border-t border-border space-y-2"
             >
-              <p class="text-xs font-medium text-muted-foreground">Connection Info</p>
+              <p class="text-xs font-medium text-muted-foreground">Credentials</p>
               <template v-if="hasCredentials(svc.id)">
                 <div
                   v-for="(value, key) in store.credentials[svc.id]"
@@ -467,9 +464,9 @@ async function doPHPUninstall() {
 
       <div
         v-if="installedServices.length === 0"
-        class="rounded-lg border border-dashed border-border py-12 text-center text-muted-foreground text-sm"
+        class="rounded-lg border border-dashed border-border py-16 text-center text-muted-foreground text-sm"
       >
-        No services installed yet — tap "Add Service" to get started.
+        No services installed. Tap "Add Service" to install one.
       </div>
     </div>
 
@@ -513,7 +510,7 @@ async function doPHPUninstall() {
                     <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
                       :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
                     />
-                    {{ store.installing[svc.id] ? 'working…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
+                    {{ store.installing[svc.id] ? 'installing…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
                   </span>
                 </Badge>
               </TableCell>
@@ -548,7 +545,7 @@ async function doPHPUninstall() {
                       @click="stop(svc.id, svc.label)"
                     >
                       <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
-                      <Square v-else class="w-3.5 h-3.5" />
+                      <CircleStop v-else class="w-3.5 h-3.5" />
                       Stop
                     </Button>
                     <!-- Sep + Restart only when running -->
@@ -637,7 +634,7 @@ async function doPHPUninstall() {
               <TableCell></TableCell>
               <TableCell colspan="4" class="py-3 px-4">
                 <div class="space-y-1.5">
-                  <p class="text-xs font-medium text-muted-foreground mb-2">Connection Info</p>
+                  <p class="text-xs font-medium text-muted-foreground mb-2">Credentials</p>
                   <template v-if="hasCredentials(svc.id)">
                     <div
                       v-for="(value, key) in store.credentials[svc.id]"
@@ -670,7 +667,7 @@ async function doPHPUninstall() {
           </template>
 
           <TableEmpty v-if="installedServices.length === 0" :columns="5">
-            No services installed yet — click "Add Service" to get started.
+            No services installed. Click "Add Service" to install one.
           </TableEmpty>
         </TableBody>
       </Table>

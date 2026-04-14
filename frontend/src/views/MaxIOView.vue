@@ -916,10 +916,10 @@ onMounted(() => {
           >
             <span>
               <template v-if="store.searchQuery">
-                {{ store.sortedPrefixes.length + store.sortedObjects.length }} result(s)
+                {{ store.sortedPrefixes.length + store.sortedObjects.length }} {{ (store.sortedPrefixes.length + store.sortedObjects.length) === 1 ? 'result' : 'results' }}
               </template>
               <template v-else>
-                {{ store.sortedPrefixes.length > 0 ? `${store.sortedPrefixes.length} folder(s), ` : '' }}{{ store.sortedObjects.length }} object(s)
+                {{ store.sortedPrefixes.length > 0 ? `${store.sortedPrefixes.length} ${store.sortedPrefixes.length === 1 ? 'folder' : 'folders'}, ` : '' }}{{ store.sortedObjects.length }} {{ store.sortedObjects.length === 1 ? 'object' : 'objects' }}
               </template>
             </span>
             <span>{{ formatSize(store.totalSize) }} total</span>
@@ -1032,9 +1032,9 @@ onMounted(() => {
     <AlertDialog v-model:open="showDeleteBucket">
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete bucket?</AlertDialogTitle>
+          <AlertDialogTitle>Delete '{{ bucketToDelete }}'?</AlertDialogTitle>
           <AlertDialogDescription>
-            <span class="font-mono font-medium">{{ bucketToDelete }}</span> will be permanently deleted. The bucket must be empty.
+            This bucket will be permanently deleted. The bucket must be empty before it can be deleted.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -1048,9 +1048,9 @@ onMounted(() => {
     <AlertDialog v-model:open="showDeleteSelected">
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete selected objects?</AlertDialogTitle>
+          <AlertDialogTitle>Delete {{ store.selectedKeys.length }} {{ store.selectedKeys.length === 1 ? 'item' : 'items' }}?</AlertDialogTitle>
           <AlertDialogDescription>
-            {{ store.selectedKeys.length }} item(s) will be permanently deleted.
+            These objects will be permanently deleted. This cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

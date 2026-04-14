@@ -24,12 +24,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-y-2">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Dumps</h1>
-        <p class="text-sm text-muted-foreground mt-1">Live variable dumps from your PHP apps.</p>
-      </div>
+      <h1 class="text-2xl font-semibold tracking-tight">Dumps</h1>
       <div class="flex items-center gap-2">
         <Badge :variant="store.connected ? 'success' : 'secondary'">
           {{ store.wsStatus }}

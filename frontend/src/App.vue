@@ -49,6 +49,10 @@ const updateStore = useUpdateStore()
 const mobileNavOpen = ref(false)
 const updateDialogOpen = ref(false)
 
+const currentPageLabel = computed(() =>
+  navItems.value.find(item => route.path.startsWith(item.path))?.label ?? 'devctl'
+)
+
 onMounted(() => {
   servicesStore.connectSSE()
   dumpsStore.connectWS()
@@ -357,14 +361,8 @@ const navItems = computed(() =>
           </SheetContent>
         </Sheet>
 
-        <!-- Logo (center) -->
-        <div class="flex items-center gap-2">
-          <img src="/logo-transparent.png" class="w-6 h-6 shrink-0" alt="devctl" />
-          <div>
-            <div class="font-semibold text-sm tracking-tight leading-tight">devctl</div>
-            <div class="text-xs text-muted-foreground">{{ updateStore.currentVersion || 'dev' }}</div>
-          </div>
-        </div>
+        <!-- Current page label -->
+        <span class="text-sm font-semibold tracking-tight">{{ currentPageLabel }}</span>
 
         <!-- Dark mode toggle -->
         <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleDark()">
@@ -394,7 +392,7 @@ const navItems = computed(() =>
       </DialogHeader>
       <div class="bg-muted rounded-md p-3 max-h-64 overflow-y-auto font-mono text-xs space-y-0.5">
         <div v-if="updateStore.updateOutput.length === 0" class="text-muted-foreground">
-          Starting update...
+          Starting update…
         </div>
         <div v-for="(line, i) in updateStore.updateOutput" :key="i">{{ line }}</div>
 
