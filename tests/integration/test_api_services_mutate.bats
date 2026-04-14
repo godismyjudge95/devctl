@@ -436,6 +436,31 @@ load setup
   [ "$status" -eq 0 ]
 }
 
+@test "maxio: internal certs are issued for both maxio.test and s3.maxio.test" {
+  run container_exec bash -lc '
+    set -euo pipefail
+
+    poll_cert() {
+      local host="$1"
+      local attempts=0
+      while [ "$attempts" -lt 20 ]; do
+        cert="$(echo | openssl s_client -connect 127.0.0.1:443 -servername "${host}" 2>/dev/null \
+          | openssl x509 -noout -ext subjectAltName 2>/dev/null || true)"
+        if printf "%s" "$cert" | grep -q "DNS:${host}"; then
+          return 0
+        fi
+        attempts=$((attempts + 1))
+        sleep 1
+      done
+      return 1
+    }
+
+    poll_cert maxio.test
+    poll_cert s3.maxio.test
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "maxio: stop returns 200" {
   status=$(api_post_status /api/services/maxio/stop "")
   [ "$status" -eq 200 ]
