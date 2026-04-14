@@ -202,7 +202,7 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 		"automation": map[string]interface{}{
 			"policies": []map[string]interface{}{
 				{
-					"subjects": []string{"*.test", "devctl.test"},
+					"subjects": []string{"*.test", "*.*.test", "devctl.test"},
 					"issuers": []map[string]interface{}{
 						{"module": "internal"},
 					},
