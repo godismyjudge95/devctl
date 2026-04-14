@@ -30,7 +30,7 @@ export const useServicesStore = defineStore('services', () => {
   let eventSource: EventSource | null = null
 
   const stoppedCount = computed(() =>
-    states.value.filter(s => s.status === 'stopped').length
+    states.value.filter(s => s.installed && s.status === 'stopped').length
   )
 
   const whodbInstalled = computed(() =>
