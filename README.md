@@ -31,6 +31,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [Config Editor](#config-editor)
 - [Logs](#logs)
 - [Browser Notifications](#browser-notifications)
+- [PWA (Install as an App)](#pwa-install-as-an-app)
 - [CLI](#cli)
 - [Ports](#ports)
 - [Data Paths](#data-paths)
@@ -475,9 +476,23 @@ devctl fires native desktop notifications when events occur while you are on ano
 |---|---|
 | New `php_dd()` dump | Fires when you are not on the Dumps page. Multiple dumps within 1.5 s are collapsed into one count notification. Clicking navigates to that dump. |
 | New email | Fires when you are not on the Mail page. Bursts are collapsed. Clicking navigates to the Mail page. |
-| Service updates available | Fires when the update checker (runs once per day at 3 am) finds a newer version for any installed service. |
 
 Notification permission is requested automatically on first load. devctl uses the **Service Worker Notification API** when supported, with a direct `Notification` API fallback for browsers without service worker support.
+
+## PWA (Install as an App)
+
+The devctl dashboard is a Progressive Web App. Chrome and Edge will show an **Install app** button at the bottom of the sidebar when the PWA criteria are met. Clicking it installs devctl as a standalone desktop app — no browser chrome, its own window and taskbar entry, and the devctl icon in your launcher.
+
+Installed assets:
+
+| Asset | Details |
+|---|---|
+| App icon | 192×192 and 512×512 PNG icons, plus maskable variants for Android adaptive icon support |
+| Apple touch icon | 180×180 PNG, used when adding to an iOS home screen |
+| Theme colour | `#2563eb` (devctl blue) — colours the Android/Chrome address bar |
+| Display mode | `standalone` — hides browser chrome when installed |
+
+The service worker registers automatically on first load. It has no caching strategy (devctl is a local-only tool — offline support is unnecessary) but satisfies the browser's PWA installability criteria with proper `install` and `activate` lifecycle events.
 
 ---
 

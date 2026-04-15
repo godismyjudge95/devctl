@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { MailMessage } from '@/lib/api'
+import { ensureSW } from '@/lib/sw'
 
 const DEBOUNCE_MS = 1500
 const ICON = '/logo.png'
@@ -16,21 +17,6 @@ const ICON = '/logo.png'
  * debounced so a burst of messages produces only one notification showing
  * the total count. Clicking navigates to /mail.
  */
-
-// Shared SW registration reference (reused by useDumpNotifications if loaded first).
-let swReg: ServiceWorkerRegistration | null = null
-
-async function ensureSW(): Promise<ServiceWorkerRegistration | null> {
-  if (swReg) return swReg
-  if (!('serviceWorker' in navigator)) return null
-  try {
-    swReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
-    swReg = await navigator.serviceWorker.ready
-    return swReg
-  } catch {
-    return null
-  }
-}
 
 /** Build a short notification body for a single mail message. */
 function mailBody(msg: MailMessage): string {

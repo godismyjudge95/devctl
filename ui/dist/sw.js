@@ -1,5 +1,22 @@
 // devctl service worker — handles notification clicks cross-platform.
-// Kept minimal: no caching, no fetch interception.
+// No caching / no fetch interception (devctl is local-only, no offline needed).
+
+const CACHE_NAME = 'devctl-v1'
+
+// Install: claim clients immediately so the SW activates without a page reload.
+self.addEventListener('install', (event) => {
+  self.skipWaiting()
+})
+
+// Activate: take control of all open clients right away.
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    // Clean up any old caches from previous SW versions (future-proofing).
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  )
+})
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()

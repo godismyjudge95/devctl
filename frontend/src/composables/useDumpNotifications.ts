@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { Dump } from '@/lib/api'
+import { ensureSW } from '@/lib/sw'
 
 const DEBOUNCE_MS = 1500
 const ICON = '/logo.png'
@@ -18,20 +19,6 @@ const ICON = '/logo.png'
  * the total count. Clicking navigates to the first dump in the batch.
  * For a single dump the body shows a short plain-text preview of the value.
  */
-
-let swReg: ServiceWorkerRegistration | null = null
-
-async function ensureSW(): Promise<ServiceWorkerRegistration | null> {
-  if (swReg) return swReg
-  if (!('serviceWorker' in navigator)) return null
-  try {
-    swReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
-    swReg = await navigator.serviceWorker.ready
-    return swReg
-  } catch {
-    return null
-  }
-}
 
 /** Render a parsed dump node tree to a short plain-text string. */
 function nodeToText(node: any, depth = 0): string {

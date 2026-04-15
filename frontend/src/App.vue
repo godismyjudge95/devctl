@@ -8,9 +8,10 @@ import { useSpxStore } from '@/stores/spx'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
+import { usePwaInstall } from '@/composables/usePwaInstall'
 import { useUpdateStore } from '@/stores/update'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Download } from 'lucide-vue-next'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,6 +37,7 @@ import {
 const { isDark, toggleDark } = useDarkMode()
 const { requestPermission, notify: notifyDump } = useDumpNotifications()
 const { requestPermission: requestMailPermission, notify: notifyMail } = useMailNotifications()
+const { isInstallable, promptInstall } = usePwaInstall()
 
 const route = useRoute()
 const router = useRouter()
@@ -261,6 +263,17 @@ const navItems = computed(() =>
       </div>
 
       <Separator />
+      <div v-if="isInstallable" class="px-3 pt-3">
+        <Button
+          variant="outline"
+          size="sm"
+          class="w-full gap-2 text-blue-500 border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
+          @click="promptInstall()"
+        >
+          <Download class="w-3.5 h-3.5" />
+          Install app
+        </Button>
+      </div>
       <div class="px-3 py-3 flex items-center justify-between">
         <span class="text-xs text-muted-foreground px-2">localhost:4000</span>
         <Button variant="ghost" size="icon-xs" @click="toggleDark()">
@@ -351,6 +364,17 @@ const navItems = computed(() =>
             </div>
 
             <Separator />
+            <div v-if="isInstallable" class="px-3 pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                class="w-full gap-2 text-blue-500 border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
+                @click="promptInstall(); mobileNavOpen = false"
+              >
+                <Download class="w-3.5 h-3.5" />
+                Install app
+              </Button>
+            </div>
             <div class="px-3 py-3 flex items-center justify-between">
               <span class="text-xs text-muted-foreground px-2">localhost:4000</span>
             <Button variant="ghost" size="icon-xs" @click="toggleDark()">
