@@ -15,5 +15,4 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Completed
 
-- create a demo run with incus with dummy data that would be needed to see the whole dashboard and all of its features.  Ideas for things to prefill: sample sites with various settings and frameworks, sample dumps from the sample sites, sample mail from the various sites, sample spx profiles from the various sites.  All the services enabled.  Etc.  I basically want to be able to create a demo of the devctl system so we can screenshot everything for the README *(completed 2026-04-07)*
-- make the dashboard a PWA with proper manifest, icons (192, 512, maskable, apple-touch-icon), theme colour `#2563eb`, install prompt button in sidebar, and service worker with install/activate lifecycle events *(completed 2026-04-15)*
+
