@@ -77,10 +77,10 @@ download "devctl ${DEVCTL_VERSION} (self-update artifact)" \
 # The curl shim matches on the basename of the -o destination, so the cache
 # filenames must match exactly. This means only one FPM and one CLI binary can
 # be cached at a time — use the version most commonly installed in tests.
-# Binaries are currently published under the v0.3.0 release until a dedicated
-# php-binaries-latest tag is cut.
+# Binaries are published under the fixed php-binaries-latest release so test
+# installs exercise the same assets as production installs.
 PHP_VERSION="8.3"
-PHP_BASE="https://github.com/godismyjudge95/devctl/releases/download/v0.3.0"
+PHP_BASE="https://github.com/godismyjudge95/devctl/releases/download/php-binaries-latest"
 download "PHP ${PHP_VERSION} FPM" \
   "${PHP_BASE}/php-${PHP_VERSION}-fpm-linux-x86_64" \
   "php-fpm"
