@@ -1,8 +1,10 @@
 package tools
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -65,8 +67,8 @@ func fetchSQLite3LatestRelease(ctx context.Context) (Release, error) {
 		return Release{}, fmt.Errorf("sqlite3: linux/x64 tools zip not found on download page")
 	}
 
-	relPath := string(match[1])       // e.g. "2024/sqlite-tools-linux-x64-3460100.zip"
-	versionStr := string(match[2])    // e.g. "3460100"
+	relPath := string(match[1])    // e.g. "2024/sqlite-tools-linux-x64-3460100.zip"
+	versionStr := string(match[2]) // e.g. "3460100"
 	versionInt, err := strconv.Atoi(versionStr)
 	if err != nil {
 		return Release{}, fmt.Errorf("sqlite3: parse version integer %q: %w", versionStr, err)
@@ -171,4 +173,53 @@ func extractBinaryFromZip(zipPath, name, destPath string) error {
 	}
 
 	return fmt.Errorf("binary %q not found in %s", name, filepath.Base(zipPath))
+}
+
+// extractBinaryFromTarGz finds a file named `name` inside the .tar.gz at
+// tarGzPath and writes it to destPath atomically. The search matches any entry
+// whose base filename equals `name` (directory components are ignored).
+func extractBinaryFromTarGz(tarGzPath, name, destPath string) error {
+	f, err := os.Open(tarGzPath)
+	if err != nil {
+		return fmt.Errorf("open tar.gz: %w", err)
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar: %w", err)
+		}
+		if filepath.Base(hdr.Name) != name {
+			continue
+		}
+
+		tmp := destPath + ".extract"
+		out, err := os.Create(tmp)
+		if err != nil {
+			return fmt.Errorf("create temp file: %w", err)
+		}
+		defer os.Remove(tmp) // no-op after successful rename
+
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return fmt.Errorf("extract %s: %w", name, err)
+		}
+		if err := out.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmp, destPath)
+	}
+
+	return fmt.Errorf("binary %q not found in %s", name, filepath.Base(tarGzPath))
 }
