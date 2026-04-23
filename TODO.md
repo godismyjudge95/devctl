@@ -11,6 +11,7 @@ Commit all files to the repo BUT DO NOT PUSH
 # Backlog
 
 - set up a devctl.test proxy domain in caddy to the devctl dashboard so we can have https - still allow access on the raw 4000 port though
+- add yq from github releases to server binaries
 
 
 # Completed
