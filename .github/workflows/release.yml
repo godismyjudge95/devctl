@@ -8,6 +8,7 @@ jobs:
   build:
     name: Build Linux binary
     runs-on: ubuntu-latest
+    if: startsWith(github.ref_name, 'v')
 
     permissions:
       contents: write  # required to upload release assets
