@@ -35,9 +35,11 @@ import {
   HardDrive, Folder, File, Upload, Trash2, Download, Link,
   MoreHorizontal, Plus, ArrowLeft, FolderOpen, Database,
   FolderPlus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
+  RefreshCw,
 } from 'lucide-vue-next'
 
 const store = useMaxIOStore()
+const refreshing = computed(() => store.loadingBuckets || store.loadingObjects)
 
 // ── TreeNodeRow — recursive inline component ──────────────────────────────
 const TreeNodeRow: ReturnType<typeof defineComponent> = defineComponent({
@@ -928,6 +930,18 @@ onMounted(() => {
 
         <!-- ── Floating Action Bar ───────────────────────────────────────── -->
         <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-2 py-1.5 rounded-full shadow-lg border border-border bg-background/95 backdrop-blur-sm">
+
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-8 text-xs gap-1.5 rounded-full px-3"
+            title="Refresh storage"
+            :disabled="refreshing"
+            @click="store.refresh()"
+          >
+            <RefreshCw class="w-3.5 h-3.5" :class="refreshing ? 'animate-spin' : ''" />
+            <span class="hidden sm:inline">Refresh</span>
+          </Button>
 
           <!-- New Folder -->
           <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="New folder" @click="showCreateFolder = true">

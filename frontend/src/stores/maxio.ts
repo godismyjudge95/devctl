@@ -253,6 +253,26 @@ export const useMaxIOStore = defineStore('maxio', () => {
     }
   }
 
+  async function refresh() {
+    await loadBuckets()
+
+    if (!selectedBucket.value) return
+
+    if (!buckets.value.some(bucket => bucket.name === selectedBucket.value)) {
+      selectedBucket.value = null
+      objects.value = []
+      prefixes.value = []
+      currentPrefix.value = ''
+      selectedKeys.value = []
+      treeRoots.value = []
+      return
+    }
+
+    selectedKeys.value = []
+    await loadObjects()
+    await buildTreeRoot()
+  }
+
   async function addBucket(name: string) {
     await createBucket(name)
     await loadBuckets()
@@ -551,6 +571,7 @@ export const useMaxIOStore = defineStore('maxio', () => {
     navigateToPrefix,
     navigateUp,
     loadObjects,
+    refresh,
     addBucket,
     removeBucket,
     removeObject,
