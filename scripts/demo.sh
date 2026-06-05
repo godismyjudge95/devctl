@@ -114,12 +114,21 @@ if incus storage volume show "$ARTIFACTS_POOL" "$ARTIFACTS_VOLUME" &>/dev/null; 
 #!/bin/bash
 CACHE_DIR="/var/cache/devctl-artifacts"
 REAL_CURL="/usr/bin/curl"
-DEST="" PREV=""
+DEST="" PREV="" URL=""
 for arg in "$@"; do
   [[ "$PREV" == "-o" ]] && DEST="$arg"
+  [[ "$arg" == http*://* ]] && URL="$arg"
   PREV="$arg"
 done
-if [[ -n "$DEST" ]]; then
+if [[ -n "$DEST" && -n "$URL" ]]; then
+  if [[ "$URL" =~ /releases/download/([^/]+)/([^/?#]+)$ ]]; then
+    CACHED="${CACHE_DIR}/${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+    if [[ -f "$CACHED" ]]; then
+      cp "$CACHED" "$DEST"
+      echo "curl-shim: served ${BASH_REMATCH[1]}-${BASH_REMATCH[2]} from cache" >&2
+      exit 0
+    fi
+  fi
   CACHED="${CACHE_DIR}/$(basename "$DEST")"
   if [[ -f "$CACHED" ]]; then
     cp "$CACHED" "$DEST"

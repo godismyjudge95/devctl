@@ -145,14 +145,27 @@ REAL_CURL="/usr/bin/curl"
 # Parse -o DEST from the argument list (devctl always uses: curl -fsSL -o <dest> <url>)
 DEST=""
 PREV=""
+URL=""
 for arg in "$@"; do
   if [[ "$PREV" == "-o" ]]; then
     DEST="$arg"
+  elif [[ "$arg" == http*://* ]]; then
+    URL="$arg"
   fi
   PREV="$arg"
 done
 
-if [[ -n "$DEST" ]]; then
+if [[ -n "$DEST" && -n "$URL" ]]; then
+  if [[ "$URL" =~ /releases/download/([^/]+)/([^/?#]+)$ ]]; then
+    TAG="${BASH_REMATCH[1]}"
+    ASSET="${BASH_REMATCH[2]}"
+    CACHED="${CACHE_DIR}/${TAG}-${ASSET}"
+    if [[ -f "$CACHED" ]]; then
+      cp "$CACHED" "$DEST"
+      echo "curl-shim: served ${TAG}-${ASSET} from cache" >&2
+      exit 0
+    fi
+  fi
   BASENAME="$(basename "$DEST")"
   CACHED="${CACHE_DIR}/${BASENAME}"
   if [[ -f "$CACHED" ]]; then
@@ -166,6 +179,100 @@ exec "$REAL_CURL" "$@"
 CURLSHIM
   incus exec "$CONTAINER" -- chmod 755 /usr/local/bin/curl
   success "curl shim installed at /usr/local/bin/curl."
+fi
+
+# ─── Step 7d: Fake GitHub releases API for PHP fixtures ──────────────────────
+if [[ -n "$ARTIFACTS_MOUNT" ]]; then
+  info "Installing fake GitHub releases API for PHP fixtures..."
+  incus exec "$CONTAINER" -- tee /usr/local/bin/devctl-fake-gh >/dev/null <<'FAKEGH'
+#!/usr/bin/env bash
+set -euo pipefail
+python3 - <<'PY'
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+CACHE_DIR = Path('/var/cache/devctl-artifacts')
+RELEASES = [
+    'php-binaries-20260421.1',
+    'php-binaries-20260422.1',
+]
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/repos/godismyjudge95/devctl/releases':
+            self._json([{'tag_name': tag} for tag in RELEASES])
+            return
+
+        prefix = '/repos/godismyjudge95/devctl/releases/tags/'
+        if self.path.startswith(prefix):
+            tag = self.path[len(prefix):]
+            manifest = CACHE_DIR / f'{tag}-php-binaries.json'
+            if not manifest.exists():
+                self.send_error(404)
+                return
+            self._json({
+                'tag_name': tag,
+                'assets': [{
+                    'name': 'php-binaries.json',
+                    'browser_download_url': f'http://127.0.0.1:7777/releases/download/{tag}/php-binaries.json',
+                }],
+            })
+            return
+
+        asset_prefix = '/releases/download/'
+        if self.path.startswith(asset_prefix):
+            rest = self.path[len(asset_prefix):]
+            parts = rest.split('/', 1)
+            if len(parts) != 2:
+                self.send_error(404)
+                return
+            tag, asset = parts
+            cached = CACHE_DIR / f'{tag}-{asset}'
+            if not cached.exists():
+                self.send_error(404)
+                return
+            body = cached.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_error(404)
+
+    def log_message(self, format, *args):
+        return
+
+    def _json(self, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+HTTPServer(('127.0.0.1', 7777), Handler).serve_forever()
+PY
+FAKEGH
+  incus exec "$CONTAINER" -- chmod 755 /usr/local/bin/devctl-fake-gh
+  incus exec "$CONTAINER" -- tee /etc/systemd/system/devctl-fake-gh.service >/dev/null <<'EOF'
+[Unit]
+Description=Fake GitHub releases API for devctl tests
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/devctl-fake-gh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  incus exec "$CONTAINER" -- systemctl daemon-reload
+  incus exec "$CONTAINER" -- systemctl enable devctl-fake-gh
+  incus exec "$CONTAINER" -- systemctl start devctl-fake-gh
+  success "Fake GitHub releases API started on 127.0.0.1:7777."
 fi
 
 # ─── Step 8: Write service unit ───────────────────────────────────────────────
@@ -184,6 +291,8 @@ Environment=HOME=/home/testuser
 Environment=DEVCTL_SITE_USER=testuser
 Environment=DEVCTL_SERVER_ROOT=/home/testuser/ddev/sites/server
 Environment=DEVCTL_TESTING=true
+Environment=DEVCTL_PHP_RELEASES_API_BASE=http://127.0.0.1:7777/repos/godismyjudge95/devctl
+Environment=DEVCTL_PHP_RELEASES_DOWNLOAD_BASE=http://127.0.0.1:7777/releases/download
 
 [Install]
 WantedBy=multi-user.target
@@ -222,9 +331,15 @@ done
 # assume caddy is pre-installed (it is a required service). Install via the API
 # and wait for it to reach running state.
 info "Installing Caddy (required service)..."
+INSTALL_URL="http://127.0.0.1:4000/api/services/caddy/install"
+CADDY_PINNED_VERSION=$(incus exec "$CONTAINER" -- \
+  sh -c "curl -sf http://127.0.0.1:4000/api/services | jq -r '.[] | select(.id==\"caddy\") | .install_version'" 2>/dev/null || true)
+if [[ -n "$CADDY_PINNED_VERSION" && "$CADDY_PINNED_VERSION" != "null" ]]; then
+  INSTALL_URL="${INSTALL_URL}?version=${CADDY_PINNED_VERSION}"
+fi
 INSTALL_RESPONSE=$(incus exec "$CONTAINER" -- \
   curl -sf -X POST --max-time 120 --no-buffer \
-  http://127.0.0.1:4000/api/services/caddy/install 2>/dev/null || true)
+  "$INSTALL_URL" 2>/dev/null || true)
 if echo "$INSTALL_RESPONSE" | grep -q "^event: done"; then
   success "Caddy installed."
 elif echo "$INSTALL_RESPONSE" | grep -q "^event: error"; then
@@ -271,15 +386,20 @@ done
 # binary downloads.
 info "Installing PHP 8.3 (required by Reverb installer)..."
 PHP_INSTALL_STATUS=$(incus exec "$CONTAINER" -- \
-  curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 600 \
+  curl -s -o /tmp/php-install-response.json -w "%{http_code}" -X POST --max-time 600 \
   http://127.0.0.1:4000/api/php/versions/8.3/install 2>/dev/null || echo "000")
+PHP_INSTALL_RESPONSE=$(incus exec "$CONTAINER" -- sh -c "cat /tmp/php-install-response.json 2>/dev/null || true")
 if [[ "$PHP_INSTALL_STATUS" == "200" ]]; then
   success "PHP 8.3 installed."
 elif [[ "$PHP_INSTALL_STATUS" == "000" ]]; then
   error "PHP 8.3 install request timed out or failed to connect."
+  echo "PHP install response: ${PHP_INSTALL_RESPONSE}" >&2
+  incus exec "$CONTAINER" -- journalctl -u devctl -n 50 --no-pager || true
   exit 1
 else
   error "PHP 8.3 install returned HTTP ${PHP_INSTALL_STATUS}."
+  echo "PHP install response: ${PHP_INSTALL_RESPONSE}" >&2
+  incus exec "$CONTAINER" -- journalctl -u devctl -n 50 --no-pager || true
   exit 1
 fi
 
