@@ -21,6 +21,7 @@ import (
 	"time"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/internal/httplog"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
@@ -356,14 +357,17 @@ func curlDownloadW(ctx context.Context, w io.Writer, url, dest string) error {
 	ctx, cancel := context.WithTimeout(ctx, curlTimeout)
 	defer cancel()
 
+	done := httplog.LogGitHubCurlDownloadStart(url)
 	cmd := exec.CommandContext(ctx, "curl", "-fsSL", "-o", dest, url)
 	var buf bytes.Buffer
 	mw := io.MultiWriter(&buf, w)
 	cmd.Stdout = mw
 	cmd.Stderr = mw
 	if err := cmd.Run(); err != nil {
+		done(err)
 		return fmt.Errorf("curl download %s: %w\n%s", url, err, buf.String())
 	}
+	done(nil)
 	return nil
 }
 
@@ -523,7 +527,9 @@ func fetchGitHubLatestVersion(ctx context.Context, ownerRepo string) (string, er
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "devctl/1")
 
+	done := httplog.LogGitHubRequestStart(req.Method, url)
 	resp, err := http.DefaultClient.Do(req)
+	done(resp, err)
 	if err != nil {
 		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
 	}

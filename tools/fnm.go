@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/internal/httplog"
 )
 
 // FNM is the Tool definition for fnm (Fast Node Manager), a fast
@@ -56,13 +58,16 @@ func downloadFNMBinary(ctx context.Context, rel Release, destPath string) error 
 	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
+	done := httplog.LogGitHubCurlDownloadStart(rel.DownloadURL)
 	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", tmpZip, rel.DownloadURL)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
+		done(err)
 		return fmt.Errorf("curl %s: %w\n%s", rel.DownloadURL, err, buf.String())
 	}
+	done(nil)
 
 	return extractBinaryFromZip(tmpZip, "fnm", destPath)
 }

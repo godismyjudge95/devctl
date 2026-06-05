@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/internal/httplog"
 )
 
 // Mago is the Tool definition for mago, a toolchain for PHP development.
@@ -52,13 +54,16 @@ func downloadMagoBinary(ctx context.Context, rel Release, destPath string) error
 	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
+	done := httplog.LogGitHubCurlDownloadStart(rel.DownloadURL)
 	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", tmpTar, rel.DownloadURL)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
+		done(err)
 		return fmt.Errorf("curl %s: %w\n%s", rel.DownloadURL, err, buf.String())
 	}
+	done(nil)
 
 	return extractBinaryFromTarGz(tmpTar, "mago", destPath)
 }

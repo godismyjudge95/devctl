@@ -17,6 +17,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/danielgormly/devctl/internal/httplog"
 )
 
 // Release describes a specific version of a downloadable tool.
@@ -80,7 +82,9 @@ func fetchGitHubTag(ctx context.Context, ownerRepo string) (string, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "devctl/1")
 
+	done := httplog.LogGitHubRequestStart(req.Method, url)
 	resp, err := http.DefaultClient.Do(req)
+	done(resp, err)
 	if err != nil {
 		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
 	}

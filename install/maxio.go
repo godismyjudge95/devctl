@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/internal/httplog"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
@@ -277,7 +278,9 @@ func maxioLatestRelease(ctx context.Context) (version, downloadURL string, err e
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "devctl/1")
 
+	done := httplog.LogGitHubRequestStart(req.Method, apiURL)
 	resp, err := http.DefaultClient.Do(req)
+	done(resp, err)
 	if err != nil {
 		return "", "", fmt.Errorf("maxio: github releases: %w", err)
 	}

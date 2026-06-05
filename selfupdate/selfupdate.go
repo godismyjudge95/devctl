@@ -16,6 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/danielgormly/devctl/internal/httplog"
 )
 
 const (
@@ -47,7 +49,9 @@ func LatestVersion(ctx context.Context) (string, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "devctl/1")
 
+	done := httplog.LogGitHubRequestStart(req.Method, url)
 	resp, err := http.DefaultClient.Do(req)
+	done(resp, err)
 	if err != nil {
 		return "", fmt.Errorf("selfupdate: github api: %w", err)
 	}
@@ -166,13 +170,16 @@ func curlDownload(ctx context.Context, url, dest string) error {
 	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
+	done := httplog.LogGitHubCurlDownloadStart(url)
 	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", dest, url)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
+		done(err)
 		return fmt.Errorf("curl %s: %w\n%s", url, err, buf.String())
 	}
+	done(nil)
 	return nil
 }
 
