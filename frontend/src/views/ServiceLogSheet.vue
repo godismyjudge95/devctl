@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Eraser } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
+import { normalizeLogChunk } from '@/lib/utils'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
@@ -19,21 +20,28 @@ const emit = defineEmits<{
 }>()
 
 const logLines = ref<string[]>([])
+const pendingLogLine = ref('')
 const logScroll = ref<HTMLElement | null>(null)
 let logEventSource: EventSource | null = null
 
+const displayedLogLines = computed(() => {
+  if (!pendingLogLine.value) return logLines.value
+  return [...logLines.value, pendingLogLine.value]
+})
+
 function openLog() {
   logLines.value = []
+  pendingLogLine.value = ''
   if (logEventSource) { logEventSource.close(); logEventSource = null }
 
   const es = new EventSource(`/api/services/${props.serviceId}/logs`)
   logEventSource = es
 
   es.addEventListener('log', (e: MessageEvent) => {
-    const text: string = JSON.parse(e.data)
+    const text = pendingLogLine.value + (JSON.parse(e.data) as string)
     const newLines = text.split('\n')
-    if (newLines[newLines.length - 1] === '') newLines.pop()
-    logLines.value.push(...newLines)
+    pendingLogLine.value = normalizeLogChunk(newLines.pop() ?? '')
+    logLines.value.push(...newLines.map(normalizeLogChunk))
     if (logLines.value.length > 2000) logLines.value = logLines.value.slice(-2000)
     setTimeout(() => {
       if (logScroll.value) logScroll.value.scrollTop = logScroll.value.scrollHeight
@@ -68,6 +76,7 @@ async function clearLog() {
   try {
     await clearServiceLogs(props.serviceId)
     logLines.value = []
+    pendingLogLine.value = ''
   } catch (e: any) {
     toast.error('Failed to clear logs', { description: e.message })
   }
@@ -97,8 +106,8 @@ watch(() => props.open, (val) => {
         ref="logScroll"
         class="flex-1 overflow-auto bg-muted text-foreground font-mono text-sm p-4 leading-5"
       >
-        <div v-if="logLines.length === 0" class="text-muted-foreground">Waiting for log output…</div>
-        <div v-for="(line, i) in logLines" :key="i"
+        <div v-if="displayedLogLines.length === 0" class="text-muted-foreground">Waiting for log output…</div>
+        <div v-for="(line, i) in displayedLogLines" :key="i"
           class="whitespace-pre-wrap break-all"
           :class="line.startsWith('[error]') ? 'text-destructive' : ''"
         >{{ line }}</div>

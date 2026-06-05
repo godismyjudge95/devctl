@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { Eraser, RefreshCw, ArrowLeft } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { getLogs, clearLog, type LogFileInfo } from '@/lib/api'
+import { normalizeLogChunk } from '@/lib/utils'
 
 const logFiles = ref<LogFileInfo[]>([])
 const selectedId = ref<string | null>(null)
 const logLines = ref<string[]>([])
+const pendingLogLine = ref('')
 const logScroll = ref<HTMLElement | null>(null)
 const loading = ref(false)
 
@@ -16,6 +18,11 @@ const loading = ref(false)
 const mobilePane = ref<'list' | 'viewer'>('list')
 
 let eventSource: EventSource | null = null
+
+const displayedLogLines = computed(() => {
+  if (!pendingLogLine.value) return logLines.value
+  return [...logLines.value, pendingLogLine.value]
+})
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -43,13 +50,14 @@ function formatLogName(id: string): string {
 // Try to pretty-print a line if it looks like JSON.
 // Returns the original string on parse failure.
 function formatLogLine(line: string): string {
-  const trimmed = line.trimStart()
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return line
+  const cleaned = normalizeLogChunk(line)
+  const trimmed = cleaned.trimStart()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return cleaned
   try {
     const parsed = JSON.parse(trimmed)
     return JSON.stringify(parsed, null, 2)
   } catch {
-    return line
+    return cleaned
   }
 }
 
@@ -83,15 +91,16 @@ function openStream(id: string) {
     eventSource = null
   }
   logLines.value = []
+  pendingLogLine.value = ''
 
   const es = new EventSource(`/api/logs/${encodeURIComponent(id)}`)
   eventSource = es
 
   es.addEventListener('log', (e: MessageEvent) => {
-    const text: string = JSON.parse(e.data)
+    const text = pendingLogLine.value + (JSON.parse(e.data) as string)
     const newLines = text.split('\n')
-    if (newLines[newLines.length - 1] === '') newLines.pop()
-    logLines.value.push(...newLines)
+    pendingLogLine.value = normalizeLogChunk(newLines.pop() ?? '')
+    logLines.value.push(...newLines.map(normalizeLogChunk))
     if (logLines.value.length > 2000) logLines.value = logLines.value.slice(-2000)
     setTimeout(() => {
       if (logScroll.value) logScroll.value.scrollTop = logScroll.value.scrollHeight
@@ -122,6 +131,7 @@ async function doClearLog() {
   try {
     await clearLog(selectedId.value)
     logLines.value = []
+    pendingLogLine.value = ''
     await loadLogList()
   } catch (e: any) {
     toast.error('Failed to clear log', { description: e.message })
@@ -242,9 +252,9 @@ onUnmounted(() => {
         ref="logScroll"
         class="flex-1 overflow-auto bg-neutral-950 text-green-400 font-mono text-xs p-4 leading-5"
       >
-        <div v-if="logLines.length === 0" class="text-neutral-500">Waiting for log output…</div>
+        <div v-if="displayedLogLines.length === 0" class="text-neutral-500">Waiting for log output…</div>
         <div
-          v-for="(line, i) in logLines"
+          v-for="(line, i) in displayedLogLines"
           :key="i"
           class="whitespace-pre-wrap break-all"
           :class="line.startsWith('[error]') ? 'text-red-400' : ''"
