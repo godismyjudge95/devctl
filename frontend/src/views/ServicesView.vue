@@ -6,8 +6,14 @@ import { useSettingsStore } from '@/stores/settings'
 import {
   Play, CircleStop, RotateCcw, Loader2,
   Trash2, Settings2, Plus, ChevronDown, ChevronRight, Copy, FileText,
-  ArrowUpCircle, MoreHorizontal,
+  ArrowUpCircle, MoreHorizontal, ExternalLink,
 } from 'lucide-vue-next'
+import {
+  buildDbClientUrl,
+  openInDbClient,
+  supportsDbClientOpen,
+  type DbClientServiceId,
+} from '@/lib/dbClientUrl'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -180,6 +186,37 @@ function hasDetails(id: string): boolean {
 
 function hasExpandable(id: string): boolean {
   return hasCredentials(id) || hasDetails(id)
+}
+
+function showDbClientAction(id: string, hasCredentialsFlag: boolean): boolean {
+  return supportsDbClientOpen(id) && hasCredentialsFlag
+}
+
+async function openDbClientForService(id: string, label: string) {
+  if (!supportsDbClientOpen(id)) return
+  if (!store.credentials[id]) {
+    await store.fetchCredentials(id)
+  }
+  const creds = store.credentials[id]
+  if (!creds || Object.keys(creds).length === 0) {
+    toast.error('No credentials available', {
+      description: 'Expand connection info or check that the service is running.',
+    })
+    return
+  }
+  const url = buildDbClientUrl(id as DbClientServiceId, creds, label)
+  if (!url) {
+    toast.error('Could not build connection URL')
+    return
+  }
+  openInDbClient(url)
+  toast.success('Opening database client', {
+    description: 'TablePlus or another app registered for this URL scheme.',
+    action: {
+      label: 'Copy URL',
+      onClick: () => copyToClipboard(url),
+    },
+  })
 }
 
 // --- Settings gear visibility ---
@@ -424,7 +461,19 @@ async function doPHPUninstall() {
               v-if="hasExpandable(svc.id) && expandedCredentials.has(svc.id)"
               class="mt-3 pt-3 border-t border-border space-y-2"
             >
-              <p class="text-xs font-medium text-muted-foreground">Credentials</p>
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-medium text-muted-foreground">Credentials</p>
+                <Button
+                  v-if="showDbClientAction(svc.id, svc.has_credentials)"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 text-xs"
+                  @click="openDbClientForService(svc.id, svc.label)"
+                >
+                  <ExternalLink class="w-3 h-3" />
+                  Open in DB client
+                </Button>
+              </div>
               <template v-if="hasCredentials(svc.id)">
                 <div
                   v-for="(value, key) in store.credentials[svc.id]"
@@ -634,7 +683,19 @@ async function doPHPUninstall() {
               <TableCell></TableCell>
               <TableCell colspan="4" class="py-3 px-4">
                 <div class="space-y-1.5">
-                  <p class="text-xs font-medium text-muted-foreground mb-2">Credentials</p>
+                  <div class="flex items-center justify-between gap-2 mb-2">
+                    <p class="text-xs font-medium text-muted-foreground">Credentials</p>
+                    <Button
+                      v-if="showDbClientAction(svc.id, svc.has_credentials)"
+                      variant="outline"
+                      size="sm"
+                      class="h-7 text-xs"
+                      @click="openDbClientForService(svc.id, svc.label)"
+                    >
+                      <ExternalLink class="w-3 h-3" />
+                      Open in DB client
+                    </Button>
+                  </div>
                   <template v-if="hasCredentials(svc.id)">
                     <div
                       v-for="(value, key) in store.credentials[svc.id]"
