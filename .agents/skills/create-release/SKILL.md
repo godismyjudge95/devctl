@@ -14,9 +14,9 @@ There are two independent release types in this repo:
 | Release type | Tag format | GitHub Actions triggered | Binary attached |
 |---|---|---|---|
 | devctl binary | `v1.2.3` | `release.yml` | `devctl` (linux-x86_64) |
-| PHP binaries | `php-binaries-latest` (fixed) | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 8.1–8.4 |
+| PHP binaries | `php-binaries-YYYYMMDD.N` | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 8.1–8.4 plus `php-binaries.json` |
 
-They are fully independent — you can do either or both. The PHP binaries release uses a **fixed tag** (`php-binaries-latest`) so the installer in `php/installer.go` always resolves to the same URL regardless of which devctl version is current.
+They are fully independent — you can do either or both. PHP binaries now use unique immutable tags, and devctl discovers the newest `php-binaries-*` release plus its `php-binaries.json` manifest at install/update time.
 
 ---
 
@@ -114,29 +114,22 @@ Release PHP binaries **separately** from the devctl binary. Do this when:
 - The extension set changes (e.g. new extension added to `build-php.yml`).
 - Upstream static-php-cli has meaningful updates worth picking up.
 
-There is **no version number** for PHP binaries — the installer always pulls from the fixed `php-binaries-latest` tag. Publishing a new PHP binaries release replaces the previous one.
+PHP binaries use unique immutable tags such as `php-binaries-20260422.1`. Publishing a new PHP binaries release does not replace older ones; devctl discovers the newest matching release automatically.
 
-### 2.1 Delete the old `php-binaries-latest` release and tag
+### 2.1 Choose the PHP binaries tag
 
-The fixed tag must be re-created to point at the new commit. Delete the release and tag via `gh` CLI, then clean up locally:
+Use a unique immutable tag for each PHP binaries release:
 
 ```sh
-# Delete the GitHub release (this does NOT delete the tag)
-gh release delete php-binaries-latest --yes
-
-# Delete the remote tag
-git push origin :refs/tags/php-binaries-latest
-
-# Delete the local tag
-git tag -d php-binaries-latest
+PHP_TAG="php-binaries-$(date +%Y%m%d).1"
 ```
 
 ### 2.2 Create the new tag
 
 ```sh
 # Point the tag at whatever commit should back the new binaries (usually HEAD of main)
-git tag php-binaries-latest
-git push origin php-binaries-latest
+git tag "$PHP_TAG"
+git push origin "$PHP_TAG"
 ```
 
 ### 2.3 Publish the GitHub release
@@ -144,16 +137,16 @@ git push origin php-binaries-latest
 Use the `gh` CLI:
 
 ```sh
-gh release create php-binaries-latest \
-  --title "PHP Binaries — $(date +%Y-%m-%d)" \
+gh release create "$PHP_TAG" \
+  --title "PHP Binaries — ${PHP_TAG}" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds all four PHP versions in parallel, and attaches the eight binaries to this release.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds all four PHP versions in parallel, and attaches the eight binaries plus `php-binaries.json` to this release.
 
 ### 2.4 Verify
 
-After the CI run completes, check the release page has all eight assets:
+After the CI run completes, check the release page has all nine assets:
 ```
 php-8.1-cli-linux-x86_64
 php-8.1-fpm-linux-x86_64
@@ -163,11 +156,12 @@ php-8.3-cli-linux-x86_64
 php-8.3-fpm-linux-x86_64
 php-8.4-cli-linux-x86_64
 php-8.4-fpm-linux-x86_64
+php-binaries.json
 ```
 
-Test that the installer URL resolves correctly:
+Test that the manifest URL resolves correctly:
 ```sh
-curl -sIL https://github.com/godismyjudge95/devctl/releases/download/php-binaries-latest/php-8.3-cli-linux-x86_64 | grep -i "content-length\|location\|HTTP/"
+curl -sIL "https://github.com/godismyjudge95/devctl/releases/download/${PHP_TAG}/php-binaries.json" | grep -i "content-length\|location\|HTTP/"
 ```
 
 ---
@@ -184,9 +178,8 @@ curl -sIL https://github.com/godismyjudge95/devctl/releases/download/php-binarie
 
 ## Checklist — PHP binaries release
 
-- [ ] `gh release delete php-binaries-latest --yes`
-- [ ] `git push origin :refs/tags/php-binaries-latest && git tag -d php-binaries-latest`
-- [ ] `git tag php-binaries-latest && git push origin php-binaries-latest`
-- [ ] `gh release create php-binaries-latest --title "PHP Binaries — <date>" --notes "<what changed>"`
+- [ ] Choose a unique `php-binaries-YYYYMMDD.N` tag
+- [ ] `git tag "$PHP_TAG" && git push origin "$PHP_TAG"`
+- [ ] `gh release create "$PHP_TAG" --title "PHP Binaries — ${PHP_TAG}" --notes "<what changed>"`
 - [ ] Wait for `build-php.yml` to complete
-- [ ] Verify all 8 binary assets are attached to the release
+- [ ] Verify all 8 binary assets plus `php-binaries.json` are attached to the release

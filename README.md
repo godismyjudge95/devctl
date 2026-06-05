@@ -186,6 +186,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 - Config files are written once on install and never overwritten on restart. User edits are preserved.
 - Mailpit is configured via `MP_*` environment variables in `config.env` rather than a native config file.
 - Meilisearch updates are handled autonomously: devctl dumps the index data, replaces the binary, then re-imports the dump automatically.
+- Reverb exposes a Laravel-ready credentials block in the Services view: `REVERB_APP_ID=1001`, `REVERB_APP_KEY=DEVCTL`, `REVERB_APP_SECRET=DEVCTL`, `REVERB_HOST=reverb.test`, `REVERB_PORT=443`, `REVERB_SCHEME=https`.
 
 ### WhoDB
 
@@ -217,6 +218,8 @@ AWS_ENDPOINT=https://s3.maxio.test
 ## PHP
 
 PHP versions are installed from the [static-php-cli](https://github.com/crazywhalecc/static-php-cli) project as self-contained static binaries. No PPA, no system PHP packages required.
+
+devctl resolves PHP downloads from the newest immutable `php-binaries-*` release and reads `php-binaries.json` metadata from that release to surface patch-level updates such as `8.4.18 -> 8.4.19` in the Services UI.
 
 Install any available version from the Services tab. Each version runs as:
 
