@@ -186,6 +186,9 @@ func run() error {
 	if err := install.EnsureMySQLPlugins(cfg.ServerRoot); err != nil {
 		log.Printf("startup: mysql plugins: %v", err)
 	}
+	if err := install.EnsurePostgresConfig(cfg.ServerRoot, cfg.SiteUser); err != nil {
+		log.Printf("startup: postgres config: %v", err)
+	}
 	done()
 
 	// --- Services ---

@@ -516,8 +516,15 @@ load setup
   container_exec test -f "${SERVER_ROOT}/postgres/bin/postgres"
 }
 
-@test "postgres: psql symlink in bin dir" {
-  container_exec test -L "${SERVER_ROOT}/bin/psql"
+@test "postgres: psql wrapper in bin dir" {
+  container_exec test -x "${SERVER_ROOT}/bin/psql"
+  container_exec grep -q "psql.bin" "${SERVER_ROOT}/bin/psql"
+}
+
+@test "postgres: config.env has root user and password" {
+  container_exec grep -q "DB_USERNAME=root" "${SERVER_ROOT}/postgres/config.env"
+  container_exec grep -q "DB_PASSWORD=devctl" "${SERVER_ROOT}/postgres/config.env"
+  container_exec bash -c "! grep -q '^DB_DATABASE=' '${SERVER_ROOT}/postgres/config.env'"
 }
 
 @test "postgres: data directory initialised by initdb" {

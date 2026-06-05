@@ -77,7 +77,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			VersionRegex:          `(?P<version>[\d.]+)`,
 			CredentialsFile:       postgresDir + "/config.env",
 			Log:                   paths.LogPath(serverRoot, "postgres"),
-			HealthCheck:           postgresDir + "/bin/pg_isready -h 127.0.0.1 -p 5432 -U " + siteUser + " -d postgres",
+			HealthCheck:           postgresDir + "/bin/pg_isready -h 127.0.0.1 -p 5432 -U root -d postgres",
 			HealthCheckRetries:    6,
 			HealthCheckRetryDelay: 500 * time.Millisecond,
 		},

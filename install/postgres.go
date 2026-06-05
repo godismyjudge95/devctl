@@ -24,7 +24,26 @@ import (
 const (
 	postgresVersion = "18.3"
 	postgresMajor   = "18"
+
+	// postgresSuperuser is the default database role for Laravel (.env DB_USERNAME=root).
+	postgresSuperuser = "root"
+	// postgresDevPassword is the local dev password (required by GUI clients like TablePlus).
+	postgresDevPassword = "devctl"
 )
+
+// postgresClientBins lists client tools exposed in the shared bin directory.
+// Percona's psql is a shell wrapper around psql.bin — it must not be symlinked
+// into bin/ because it resolves paths relative to the caller's directory.
+var postgresClientBins = []struct {
+	name   string
+	binary string // filename under postgres/bin/
+}{
+	{"psql", "psql.bin"},
+	{"pg_dump", "pg_dump"},
+	{"pg_restore", "pg_restore"},
+	{"createdb", "createdb"},
+	{"dropdb", "dropdb"},
+}
 
 // perconaTarURL constructs the download URL for the Percona PostgreSQL binary
 // tarball. The ssl3 variant targets OpenSSL 3.x (Ubuntu 22.04+, Debian
@@ -118,14 +137,20 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	}
 
 	// 6. Initialise the data directory as siteUser (idempotent: skip if already done).
+	//    Superuser role is "root" (Laravel default). Local socket uses trust;
+	//    TCP connections on 127.0.0.1 require scram-sha-256 + postgresDevPassword.
 	if !fileExists(filepath.Join(dataDir, "PG_VERSION")) {
 		fmt.Fprintln(w, "postgres: initialising data directory...")
 		initCmd := fmt.Sprintf(
-			`su -s /bin/sh -c "%s/bin/initdb -D %s/data --encoding=UTF8 --no-locale" %s`,
-			pgDir, pgDir, p.siteUser,
+			`su -s /bin/sh -c "%s/bin/initdb -D %s/data --username=%s --encoding=UTF8 --no-locale --auth-local=trust --auth-host=scram-sha-256" %s`,
+			pgDir, pgDir, postgresSuperuser, p.siteUser,
 		)
 		if out, err := runShellW(ctx, w, initCmd); err != nil {
 			return fmt.Errorf("postgres: initdb: %w\n%s", err, out)
+		}
+		fmt.Fprintln(w, "postgres: setting superuser password...")
+		if err := setPostgresPasswordSingleUser(pgDir, p.siteUser); err != nil {
+			return fmt.Errorf("postgres: set password: %w", err)
 		}
 	}
 
@@ -145,26 +170,17 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("postgres: write postgresql.conf: %w", err)
 	}
 
-	// 8. Write config.env for the credentials panel.
-	//    The default superuser is the OS user postgres was initialised as.
+	// 8. Write config.env for the credentials panel (no DB_DATABASE — app-specific).
 	fmt.Fprintln(w, "postgres: writing config.env...")
-	envContent := fmt.Sprintf(
-		"DB_CONNECTION=pgsql\nDB_HOST=127.0.0.1\nDB_PORT=5432\nDB_USERNAME=%s\nDB_PASSWORD=\nDB_DATABASE=postgres\n",
-		p.siteUser,
-	)
-	if err := os.WriteFile(filepath.Join(pgDir, "config.env"), []byte(envContent), 0600); err != nil {
+	if err := writePostgresConfigEnv(pgDir); err != nil {
 		return fmt.Errorf("postgres: write config.env: %w", err)
 	}
 
-	// 9. Symlink the most useful client tools into the shared bin dir.
-	binDir := paths.BinDir(p.serverRoot)
-	for _, name := range []string{"psql", "pg_dump", "pg_restore", "createdb", "dropdb"} {
-		target := filepath.Join(pgDir, "bin", name)
-		if fileExists(target) {
-			if err := LinkIntoBinDir(binDir, name, target); err != nil {
-				fmt.Fprintf(w, "postgres: warning: %v\n", err)
-			}
-		}
+	// 9. Write client wrappers into the shared bin dir (sets LD_LIBRARY_PATH and
+	//    default connection env vars so tools work from PATH like mysql/redis).
+	fmt.Fprintln(w, "postgres: writing client binary wrappers...")
+	if err := writePostgresClientWrappers(p.serverRoot); err != nil {
+		return fmt.Errorf("postgres: client wrappers: %w", err)
 	}
 
 	fmt.Fprintln(w, "postgres: install complete")
@@ -215,6 +231,11 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
+	fmt.Fprintln(w, "postgres: refreshing client binary wrappers...")
+	if err := writePostgresClientWrappers(p.serverRoot); err != nil {
+		return fmt.Errorf("postgres: client wrappers: %w", err)
+	}
+
 	fmt.Fprintf(w, "postgres: binary replaced with %s\n", postgresVersion)
 	return nil
 }
@@ -235,11 +256,7 @@ func (p *PostgresInstaller) PurgeW(ctx context.Context, w io.Writer, preserveDat
 		fmt.Fprintf(w, "postgres: warning: stop process: %v\n", err)
 	}
 
-	// Remove bin dir symlinks.
-	binDir := paths.BinDir(p.serverRoot)
-	for _, name := range []string{"psql", "pg_dump", "pg_restore", "createdb", "dropdb"} {
-		UnlinkFromBinDir(binDir, name)
-	}
+	removePostgresClientWrappers(p.serverRoot)
 
 	pgDir := paths.ServiceDir(p.serverRoot, "postgres")
 	if preserveData {
@@ -356,3 +373,131 @@ func (e *outputError) Error() string {
 }
 
 func (e *outputError) Unwrap() error { return e.err }
+
+// writePostgresConfigEnv writes the Laravel-ready credentials file for the
+// dashboard. DB_DATABASE is intentionally omitted — it is app-specific.
+func writePostgresConfigEnv(pgDir string) error {
+	envContent := fmt.Sprintf(
+		"DB_CONNECTION=pgsql\nDB_HOST=127.0.0.1\nDB_PORT=5432\nDB_USERNAME=%s\nDB_PASSWORD=%s\n",
+		postgresSuperuser,
+		postgresDevPassword,
+	)
+	return os.WriteFile(filepath.Join(pgDir, "config.env"), []byte(envContent), 0600)
+}
+
+// postgresClientEnv returns env vars for client wrappers.
+func postgresClientEnv(pgDir string) map[string]string {
+	return map[string]string{
+		"LD_LIBRARY_PATH": filepath.Join(pgDir, "lib"),
+		"PGHOST":          "127.0.0.1",
+		"PGPORT":          "5432",
+		"PGUSER":          postgresSuperuser,
+		"PGPASSWORD":      postgresDevPassword,
+		"PGDATABASE":      "postgres",
+	}
+}
+
+// writePostgresClientWrappers installs executable wrappers in the shared bin dir.
+func writePostgresClientWrappers(serverRoot string) error {
+	pgDir := paths.ServiceDir(serverRoot, "postgres")
+	binDir := paths.BinDir(serverRoot)
+	env := postgresClientEnv(pgDir)
+	for _, c := range postgresClientBins {
+		target := filepath.Join(pgDir, "bin", c.binary)
+		if !fileExists(target) {
+			continue
+		}
+		if err := WrapperScriptIntoBinDir(binDir, c.name, target, env); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func removePostgresClientWrappers(serverRoot string) {
+	binDir := paths.BinDir(serverRoot)
+	for _, c := range postgresClientBins {
+		UnlinkFromBinDir(binDir, c.name)
+	}
+}
+
+// setPostgresPasswordSingleUser sets the superuser password without starting the
+// server, using postgres --single mode and local trust auth.
+func setPostgresPasswordSingleUser(pgDir, siteUser string) error {
+	sql := fmt.Sprintf(`ALTER USER %s WITH PASSWORD '%s';`, postgresSuperuser, postgresDevPassword)
+	return runPostgresSingleUserSQL(pgDir, siteUser, sql)
+}
+
+// EnsurePostgresConfig migrates existing installations: refreshes config.env and
+// client wrappers, renames the legacy site-user superuser to root, and ensures
+// the dev password is set. Safe to call on every devctl startup.
+func EnsurePostgresConfig(serverRoot, siteUser string) error {
+	pgDir := paths.ServiceDir(serverRoot, "postgres")
+	if !fileExists(filepath.Join(pgDir, "bin", "postgres")) {
+		return nil
+	}
+	if err := writePostgresConfigEnv(pgDir); err != nil {
+		return err
+	}
+	if err := writePostgresClientWrappers(serverRoot); err != nil {
+		return err
+	}
+	if !fileExists(filepath.Join(pgDir, "data", "PG_VERSION")) {
+		return nil
+	}
+	return ensurePostgresRoleAndPassword(pgDir, siteUser)
+}
+
+// postgresMigrateSQL returns SQL to ensure the root superuser exists with the dev password.
+// Legacy clusters initialised as the site user cannot rename that role in --single mode
+// (session user cannot be renamed), so we create root alongside it.
+func postgresMigrateSQL(siteUser string) string {
+	_ = siteUser // reserved for future cleanup of legacy roles
+	return fmt.Sprintf(
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%s') THEN CREATE ROLE "%s" WITH LOGIN SUPERUSER PASSWORD '%s'; ELSE ALTER ROLE "%s" WITH PASSWORD '%s'; END IF; END $$;`,
+		postgresSuperuser, postgresSuperuser, postgresDevPassword, postgresSuperuser, postgresDevPassword,
+	)
+}
+
+// runPostgresSingleUserSQL runs SQL against a stopped cluster via postgres --single.
+func runPostgresSingleUserSQL(pgDir, siteUser, sql string) error {
+	cmd := fmt.Sprintf(
+		`printf '%%s\n' %q | su -s /bin/sh -c 'LD_LIBRARY_PATH=%q/lib %q/bin/postgres --single -D %q/data postgres' %q`,
+		sql, pgDir, pgDir, pgDir, siteUser,
+	)
+	if out, err := runShell(context.Background(), cmd); err != nil {
+		return fmt.Errorf("%w\n%s", err, out)
+	}
+	return nil
+}
+
+// ensurePostgresRoleAndPassword renames a legacy site-user superuser to root and
+// sets the dev password. Uses the cluster's Unix socket when running; falls back
+// to --single mode when the server is stopped (e.g. port 5432 already taken).
+func ensurePostgresRoleAndPassword(pgDir, siteUser string) error {
+	dataDir := filepath.Join(pgDir, "data")
+	migrateSQL := postgresMigrateSQL(siteUser)
+
+	readyCmd := fmt.Sprintf("LD_LIBRARY_PATH=%s/lib %s/bin/pg_isready -h %s -p 5432 -q", pgDir, pgDir, dataDir)
+	if _, err := runShell(context.Background(), readyCmd); err != nil {
+		return runPostgresSingleUserSQL(pgDir, siteUser, migrateSQL)
+	}
+
+	connectUser := postgresSuperuser
+	tryRoot := fmt.Sprintf(
+		`su -s /bin/sh -c 'LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -tAc "SELECT 1"' %q`,
+		pgDir, pgDir, dataDir, postgresSuperuser, siteUser,
+	)
+	if _, err := runShell(context.Background(), tryRoot); err != nil && siteUser != "" && siteUser != postgresSuperuser {
+		connectUser = siteUser
+	}
+
+	cmd := fmt.Sprintf(
+		`su -s /bin/sh -c 'LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -c %q' %q`,
+		pgDir, pgDir, dataDir, connectUser, migrateSQL, siteUser,
+	)
+	if out, err := runShell(context.Background(), cmd); err != nil {
+		return fmt.Errorf("postgres: migrate role/password: %w\n%s", err, out)
+	}
+	return nil
+}

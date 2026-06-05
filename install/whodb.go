@@ -247,9 +247,9 @@ func (w *WhoDBInstaller) AutoConnections() []WhoDBAutoConnection {
 				Alias:    "PostgreSQL",
 				Host:     coalesce(pgEnv["DB_HOST"], "127.0.0.1"),
 				Port:     coalesce(pgEnv["DB_PORT"], "5432"),
-				User:     coalesce(pgEnv["DB_USERNAME"], "postgres"),
+				User:     coalesce(pgEnv["DB_USERNAME"], "root"),
 				Password: pgEnv["DB_PASSWORD"],
-				Database: coalesce(pgEnv["DB_DATABASE"], "postgres"),
+				Database: "postgres",
 			},
 		})
 	}
@@ -308,9 +308,9 @@ func (w *WhoDBInstaller) regenerateConfig(ctx context.Context) error {
 			Alias:    "PostgreSQL",
 			Host:     coalesce(pgEnv["DB_HOST"], "127.0.0.1"),
 			Port:     coalesce(pgEnv["DB_PORT"], "5432"),
-			User:     coalesce(pgEnv["DB_USERNAME"], "postgres"),
+			User:     coalesce(pgEnv["DB_USERNAME"], "root"),
 			Password: pgEnv["DB_PASSWORD"],
-			Database: coalesce(pgEnv["DB_DATABASE"], "postgres"),
+			Database: "postgres",
 		})
 	}
 
