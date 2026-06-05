@@ -23,7 +23,7 @@ type siteRequest struct {
 }
 
 func (s *Server) handleGetSites(w http.ResponseWriter, r *http.Request) {
-	all, err := s.queries.GetUserSites(context.Background())
+	all, err := s.queries.GetAllSites(context.Background())
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
