@@ -184,7 +184,7 @@ function hasExpandable(id: string): boolean {
 
 // --- Settings gear visibility ---
 function hasSettingsGear(id: string) {
-  return id === 'mailpit' || id === 'mysql' || id === 'dns' || id.startsWith('php-fpm-')
+  return id === 'mailpit' || id === 'mysql' || id === 'meilisearch' || id === 'dns' || id.startsWith('php-fpm-')
 }
 
 // --- Config editor button visibility ---

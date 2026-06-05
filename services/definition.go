@@ -47,6 +47,10 @@ type Definition struct {
 	// ManagedArgs are the arguments for ManagedCmd
 	// (e.g. "artisan reverb:start --host=127.0.0.1 --port=7383").
 	ManagedArgs string
+	// ManagedExtraArgs are additional runtime arguments appended after
+	// ManagedArgs. These are typically user-configured overrides loaded from the
+	// settings store.
+	ManagedExtraArgs []string
 	// ManagedDir overrides the working directory for a Managed service.
 	// If empty, the supervisor uses $siteHome/sites/<ID> by convention.
 	ManagedDir string
@@ -54,6 +58,9 @@ type Definition struct {
 	// appended to ManagedArgs at process start (used to inject secrets
 	// that are only known after installation, e.g. a Meilisearch master key).
 	ManagedEnvFile string
+	// ManagedExtraEnv are additional runtime environment variables appended after
+	// ManagedEnvFile. Values should be in KEY=VALUE form.
+	ManagedExtraEnv []string
 	// ManagedUser is the OS username the supervisor drops privileges to before
 	// exec-ing the managed process. When set, the supervisor resolves the
 	// user's UID/GID and sets SysProcAttr.Credential so the process runs as

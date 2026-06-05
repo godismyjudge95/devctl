@@ -5,6 +5,7 @@ import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -12,7 +13,13 @@ import {
   getServiceSettings, putServiceSettings,
   detectDNSIP, setupSystemDNS, teardownSystemDNS,
 } from '@/lib/api'
-import type { MailpitServiceSettings, MySQLServiceSettings, PHPSettings, DNSServiceSettings } from '@/lib/api'
+import type {
+  MailpitServiceSettings,
+  MySQLServiceSettings,
+  MeilisearchServiceSettings,
+  PHPSettings,
+  DNSServiceSettings,
+} from '@/lib/api'
 
 const props = defineProps<{
   open: boolean
@@ -26,6 +33,7 @@ const emit = defineEmits<{
 
 function isMailpit(id: string) { return id === 'mailpit' }
 function isMySQL(id: string) { return id === 'mysql' }
+function isMeilisearch(id: string) { return id === 'meilisearch' }
 function isPHPFPM(id: string) { return id.startsWith('php-fpm-') }
 function isDNS(id: string) { return id === 'dns' }
 
@@ -45,6 +53,10 @@ const phpMemoryLimit = ref('')
 const phpUploadMaxFilesize = ref('')
 const phpPostMaxSize = ref('')
 const phpMaxExecutionTime = ref('')
+
+// Meilisearch
+const meilisearchEnv = ref('')
+const meilisearchArgs = ref('')
 
 // DNS
 const dnsPort = ref('')
@@ -66,6 +78,10 @@ async function loadSettings() {
       const my = data as MySQLServiceSettings
       mysqlPort.value = my.port
       mysqlBindAddress.value = my.bind_address
+    } else if (isMeilisearch(props.serviceId)) {
+      const meili = data as MeilisearchServiceSettings
+      meilisearchEnv.value = meili.env
+      meilisearchArgs.value = meili.args
     } else if (isPHPFPM(props.serviceId)) {
       const php = data as PHPSettings
       phpMemoryLimit.value = php.memory_limit
@@ -103,6 +119,12 @@ async function saveSettings() {
         bind_address: mysqlBindAddress.value,
       })
       toast.success('MySQL settings saved — restarting…')
+    } else if (isMeilisearch(id)) {
+      await putServiceSettings(id, {
+        env: meilisearchEnv.value,
+        args: meilisearchArgs.value,
+      })
+      toast.success('Meilisearch settings saved — restarting…')
     } else if (isPHPFPM(id)) {
       await putServiceSettings(id, {
         memory_limit: phpMemoryLimit.value,
@@ -195,6 +217,40 @@ watch(() => props.open, (val) => {
               <Input id="svc_mailpit_smtp" v-model="mailpitSmtpPort" class="font-mono" />
             </div>
             <p class="text-xs text-muted-foreground">Mailpit restarts when saved.</p>
+          </div>
+          <DialogFooter class="gap-2">
+            <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>
+            <Button size="sm" @click="saveSettings" :disabled="saving">
+              <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
+              Save &amp; Restart
+            </Button>
+          </DialogFooter>
+        </template>
+
+        <!-- Meilisearch -->
+        <template v-else-if="isMeilisearch(serviceId)">
+          <div class="grid gap-4 py-2">
+            <div class="grid gap-1.5">
+              <Label for="meilisearch_env">Environment Variables</Label>
+              <Textarea
+                id="meilisearch_env"
+                v-model="meilisearchEnv"
+                class="font-mono min-h-28"
+                placeholder="MEILI_EXPERIMENTAL_ALLOWED_IP_NETWORKS=any"
+              />
+              <p class="text-xs text-muted-foreground">One `KEY=VALUE` entry per line.</p>
+            </div>
+            <div class="grid gap-1.5">
+              <Label for="meilisearch_args">Additional Command-Line Args</Label>
+              <Textarea
+                id="meilisearch_args"
+                v-model="meilisearchArgs"
+                class="font-mono min-h-24"
+                placeholder="--experimental-allowed-ip-networks any"
+              />
+              <p class="text-xs text-muted-foreground">Appended after the built-in `--config-file-path ./config.toml` args.</p>
+            </div>
+            <p class="text-xs text-muted-foreground">Meilisearch restarts when saved.</p>
           </div>
           <DialogFooter class="gap-2">
             <Button variant="outline" size="sm" @click="emit('update:open', false)">Cancel</Button>

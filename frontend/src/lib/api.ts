@@ -255,6 +255,10 @@ export interface MySQLServiceSettings {
   port: string
   bind_address: string
 }
+export interface MeilisearchServiceSettings {
+  env: string
+  args: string
+}
 export type PHPServiceSettings = PHPSettings
 export interface DNSServiceSettings {
   port: string
@@ -264,8 +268,8 @@ export interface DNSServiceSettings {
 }
 
 export const getServiceSettings = (id: string) =>
-  request<MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings | DNSServiceSettings>('GET', `/api/services/${id}/settings`)
-export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | PHPServiceSettings | DNSServiceSettings) =>
+  request<MailpitServiceSettings | MySQLServiceSettings | MeilisearchServiceSettings | PHPServiceSettings | DNSServiceSettings>('GET', `/api/services/${id}/settings`)
+export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | MeilisearchServiceSettings | PHPServiceSettings | DNSServiceSettings) =>
   request<{ status: string }>('PUT', `/api/services/${id}/settings`, data)
 
 // --- DNS system integration ---

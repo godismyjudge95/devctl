@@ -256,7 +256,13 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 
 	pw := &sseLineWriter{w: w, flusher: flusher, event: "output"}
 	instCtx := r.Context()
-	if ver := r.URL.Query().Get("version"); ver != "" {
+	ver := r.URL.Query().Get("version")
+	if ver == "" {
+		if def, ok := s.registry.Get(id); ok {
+			ver = def.InstallVersion
+		}
+	}
+	if ver != "" {
 		instCtx = install.WithPreResolvedVersion(instCtx, ver)
 	}
 	if err := inst.InstallW(instCtx, pw); err != nil {
@@ -477,6 +483,7 @@ func (s *Server) serviceDef(ctx context.Context, def services.Definition) servic
 	def = s.mailpitDef(ctx, def)
 	def = s.mysqlDef(ctx, def)
 	def = s.dnsDef(ctx, def)
+	def = s.managedServiceDef(ctx, def)
 	return def
 }
 

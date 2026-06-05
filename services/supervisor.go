@@ -3,6 +3,7 @@ package services
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/danielgormly/devctl/paths"
 )
@@ -198,7 +200,11 @@ func (s *Supervisor) startProcess(def Definition) error {
 		managedDir = paths.ServiceDir(s.serverRoot, def.ID)
 	}
 
-	args := strings.Fields(def.ManagedArgs)
+	args, err := ParseCommandArgs(def.ManagedArgs)
+	if err != nil {
+		return fmt.Errorf("supervisor: parse args for %s: %w", def.ID, err)
+	}
+	args = append(args, def.ManagedExtraArgs...)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	cmd := exec.CommandContext(ctx, def.ManagedCmd, args...)
@@ -227,6 +233,12 @@ func (s *Supervisor) startProcess(def Definition) error {
 	if def.ManagedEnvFile != "" {
 		extra := loadEnvFile(def.ManagedEnvFile)
 		cmd.Env = append(os.Environ(), extra...)
+	}
+	if len(def.ManagedExtraEnv) > 0 {
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, def.ManagedExtraEnv...)
 	}
 
 	// Pipe stdout and stderr to the log with a service-ID prefix.
@@ -474,4 +486,71 @@ func loadEnvFile(path string) []string {
 		}
 	}
 	return pairs
+}
+
+// ParseCommandArgs splits a shell-like argument string into argv tokens.
+// Whitespace separates arguments; single quotes, double quotes, and
+// backslash-escaping are supported for simple user-entered overrides.
+func ParseCommandArgs(input string) ([]string, error) {
+	var (
+		args         []string
+		current      strings.Builder
+		quote        rune
+		escaped      bool
+		tokenStarted bool
+	)
+
+	flush := func() {
+		if !tokenStarted {
+			return
+		}
+		args = append(args, current.String())
+		current.Reset()
+		tokenStarted = false
+	}
+
+	for _, r := range input {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			tokenStarted = true
+			continue
+		}
+
+		if quote != 0 {
+			switch {
+			case r == quote:
+				quote = 0
+			case r == '\\' && quote == '"':
+				escaped = true
+			default:
+				current.WriteRune(r)
+				tokenStarted = true
+			}
+			continue
+		}
+
+		switch {
+		case unicode.IsSpace(r):
+			flush()
+		case r == '\\':
+			escaped = true
+			tokenStarted = true
+		case r == '\'' || r == '"':
+			quote = r
+			tokenStarted = true
+		default:
+			current.WriteRune(r)
+			tokenStarted = true
+		}
+	}
+
+	if escaped {
+		return nil, errors.New("unterminated escape")
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated %q quote", string(quote))
+	}
+	flush()
+	return args, nil
 }

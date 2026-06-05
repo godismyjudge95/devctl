@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
+	"github.com/danielgormly/devctl/services"
 )
 
 // handleGetServiceDetails returns connection details for a service.
@@ -33,7 +35,7 @@ func (s *Server) handleGetServiceDetails(w http.ResponseWriter, r *http.Request)
 }
 
 // handleGetServiceSettings returns configurable settings for a service.
-// Supported: mailpit, mysql, php-fpm-*. Others return 404.
+// Supported: mailpit, mysql, meilisearch, dns, php-fpm-*. Others return 404.
 func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -65,6 +67,16 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 		writeJSON(w, map[string]string{
 			"port":         port,
 			"bind_address": bindAddr,
+		})
+		return
+	}
+
+	if id == "meilisearch" {
+		env, _ := s.queries.GetSetting(r.Context(), serviceSettingKey(id, "env"))
+		args, _ := s.queries.GetSetting(r.Context(), serviceSettingKey(id, "args"))
+		writeJSON(w, map[string]string{
+			"env":  env,
+			"args": args,
 		})
 		return
 	}
@@ -201,6 +213,39 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if id == "meilisearch" {
+		var input struct {
+			Env  string `json:"env"`
+			Args string `json:"args"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if _, err := services.ParseCommandArgs(input.Args); err != nil {
+			writeError(w, "invalid args: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, err := parseManagedEnvOverrides(input.Env); err != nil {
+			writeError(w, "invalid env: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: serviceSettingKey(id, "env"), Value: input.Env}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.queries.SetSetting(ctx, dbq.SetSettingParams{Key: serviceSettingKey(id, "args"), Value: input.Args}); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if def, ok := s.registry.Get(id); ok {
+			_ = s.manager.Restart(s.serviceDef(ctx, def))
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
+		return
+	}
+
 	if strings.HasPrefix(id, "php-fpm-") {
 		ver := strings.TrimPrefix(id, "php-fpm-")
 		var settings php.GlobalSettings
@@ -297,6 +342,37 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 	}
 
 	writeError(w, fmt.Sprintf("service %q has no configurable settings", id), http.StatusNotFound)
+}
+
+func serviceSettingKey(id, suffix string) string {
+	return "service_" + strings.ReplaceAll(id, "-", "_") + "_" + suffix
+}
+
+func parseManagedEnvOverrides(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	var out []string
+	for i, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx <= 0 {
+			return nil, fmt.Errorf("line %d must be KEY=VALUE", i+1)
+		}
+		key := strings.TrimSpace(line[:idx])
+		if key == "" {
+			return nil, fmt.Errorf("line %d has empty variable name", i+1)
+		}
+		if strings.Contains(key, "=") || strings.IndexFunc(key, unicode.IsSpace) >= 0 {
+			return nil, fmt.Errorf("line %d has invalid variable name %q", i+1, key)
+		}
+		out = append(out, key+"="+line[idx+1:])
+	}
+	return out, nil
 }
 
 // serviceConfigFilePath resolves the absolute path for a service config file
@@ -418,9 +494,9 @@ func (s *Server) restartServiceAfterConfigSave(r *http.Request, id string) {
 			_ = s.manager.Restart(s.mailpitDef(ctx, def))
 		}
 	default:
-		// valkey, meilisearch, typesense — restart by plain ID
+		// valkey, meilisearch, typesense — restart with current runtime overrides.
 		if def, ok := s.registry.Get(id); ok {
-			_ = s.manager.Restart(def)
+			_ = s.manager.Restart(s.serviceDef(ctx, def))
 		}
 	}
 }
