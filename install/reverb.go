@@ -78,21 +78,56 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("install:broadcasting: %w", err)
 	}
 
-	// 4. Patch .env with correct server/host settings and fixed credentials
-	// so developers can copy-paste them without looking up generated values.
+	// 4. Patch .env with stable Laravel-facing values before requiring the
+	// runtime packages. Composer triggers Laravel scripts during install, and the
+	// broadcaster bootstrap reads PUSHER_* during package discovery.
 	fmt.Fprintln(w, "reverb: patching .env...")
 	envPatches := map[string]string{
-		"REVERB_APP_ID":     "devctl",
-		"REVERB_APP_KEY":    "DEVCTL",
-		"REVERB_APP_SECRET": "DEVCTL",
-		"REVERB_SERVER_HOST": "127.0.0.1",
-		"REVERB_SERVER_PORT": "7383",
-		"REVERB_HOST":        "reverb.test",
-		"REVERB_PORT":        "443",
-		"REVERB_SCHEME":      "https",
+		"REVERB_APP_ID":       "1001",
+		"REVERB_APP_KEY":      "DEVCTL",
+		"REVERB_APP_SECRET":   "DEVCTL",
+		"REVERB_SERVER_HOST":  "127.0.0.1",
+		"REVERB_SERVER_PORT":  "7383",
+		"REVERB_HOST":         "reverb.test",
+		"REVERB_PORT":         "443",
+		"REVERB_SCHEME":       "https",
+		"PUSHER_APP_ID":       "1001",
+		"PUSHER_APP_KEY":      "DEVCTL",
+		"PUSHER_APP_SECRET":   "DEVCTL",
+		"PUSHER_HOST":         "reverb.test",
+		"PUSHER_PORT":         "443",
+		"PUSHER_SCHEME":       "https",
+		"VITE_PUSHER_APP_KEY": "${PUSHER_APP_KEY}",
+		"VITE_PUSHER_HOST":    "${PUSHER_HOST}",
+		"VITE_PUSHER_PORT":    "${PUSHER_PORT}",
+		"VITE_PUSHER_SCHEME":  "${PUSHER_SCHEME}",
 	}
 	if err := patchEnvFile(filepath.Join(reverbDir, ".env"), envPatches); err != nil {
 		return fmt.Errorf("reverb: patch .env: %w", err)
+	}
+
+	// Laravel's broadcasting installer configures env/config, but the managed
+	// Reverb app still needs the actual Reverb package and the Pusher PHP client
+	// present for the artisan commands and broadcaster bootstrap to work.
+	fmt.Fprintln(w, "reverb: ensuring runtime packages are installed...")
+	_, err = runuser.RunAsUserW(ctx, w, r.siteUser, r.siteHome, reverbDir,
+		phpBin+" "+composerBin+" require laravel/reverb pusher/pusher-php-server --no-interaction --prefer-dist")
+	if err != nil {
+		return fmt.Errorf("reverb: install runtime packages: %w", err)
+	}
+
+	connPath := filepath.Join(reverbDir, "connection.env")
+	connContent := strings.Join([]string{
+		"REVERB_APP_ID=1001",
+		"REVERB_APP_KEY=DEVCTL",
+		"REVERB_APP_SECRET=DEVCTL",
+		"REVERB_HOST=reverb.test",
+		"REVERB_PORT=443",
+		"REVERB_SCHEME=https",
+		"",
+	}, "\n")
+	if err := os.WriteFile(connPath, []byte(connContent), 0600); err != nil {
+		return fmt.Errorf("reverb: write connection.env: %w", err)
 	}
 
 	// 5. Patch config/reverb.php — allow all origins.

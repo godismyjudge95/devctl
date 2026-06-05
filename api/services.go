@@ -379,6 +379,12 @@ func (s *Server) handleServiceCredentials(w http.ResponseWriter, r *http.Request
 		candidates = []candidate{
 			{def.CredentialsFile, ""},
 		}
+		if id == "reverb" {
+			candidates = append(candidates, candidate{
+				filepath.Join(paths.ServiceDir(s.serverRoot, id), ".env"),
+				upperID + "_",
+			})
+		}
 	} else {
 		sitesDir := filepath.Dir(s.serverRoot)
 		candidates = []candidate{
@@ -403,6 +409,20 @@ func (s *Server) handleServiceCredentials(w http.ResponseWriter, r *http.Request
 	}
 	defer f.Close()
 
+	allowedKeys := map[string]struct{}{}
+	if id == "reverb" {
+		for _, key := range []string{
+			"REVERB_APP_ID",
+			"REVERB_APP_KEY",
+			"REVERB_APP_SECRET",
+			"REVERB_HOST",
+			"REVERB_PORT",
+			"REVERB_SCHEME",
+		} {
+			allowedKeys[key] = struct{}{}
+		}
+	}
+
 	result := make(map[string]string)
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -418,6 +438,11 @@ func (s *Server) handleServiceCredentials(w http.ResponseWriter, r *http.Request
 			}
 			if filterPfx != "" && !strings.HasPrefix(key, filterPfx) {
 				continue
+			}
+			if len(allowedKeys) > 0 {
+				if _, ok := allowedKeys[key]; !ok {
+					continue
+				}
 			}
 			result[key] = val
 		}

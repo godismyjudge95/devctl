@@ -3,10 +3,134 @@
 package apitest
 
 import (
+	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
+
+func TestReverbCredentials_ExposeLaravelEnvBlock(t *testing.T) {
+	const id = "reverb"
+	const installTimeout = 10 * time.Minute
+	const purgeTimeout = 2 * time.Minute
+
+	body := httpGet(t, "/api/services")
+	services := decodeJSON[[]ServiceState](t, body)
+	alreadyInstalled := false
+	for _, svc := range services {
+		if svc.ID == id {
+			alreadyInstalled = svc.Installed
+			break
+		}
+	}
+
+	if !alreadyInstalled {
+		installResult := httpSSE(t, http.MethodPost, "/api/services/"+id+"/install", installTimeout)
+		if installResult.LastEvent != "done" {
+			t.Fatalf("install: last SSE event = %q, want \"done\"; last data: %s", installResult.LastEvent, installResult.LastData)
+		}
+		defer func() {
+			purgeResult := httpSSE(t, http.MethodDelete, "/api/services/"+id, purgeTimeout)
+			if purgeResult.LastEvent != "done" {
+				t.Logf("cleanup purge: last event = %q, last data: %s", purgeResult.LastEvent, purgeResult.LastData)
+			}
+		}()
+		pollServiceInstalled(t, id, true, 30*time.Second)
+	}
+
+	credBody := httpGet(t, "/api/services/"+id+"/credentials")
+	creds := decodeJSON[map[string]string](t, credBody)
+
+	want := map[string]string{
+		"REVERB_APP_ID":     "1001",
+		"REVERB_APP_KEY":    "DEVCTL",
+		"REVERB_APP_SECRET": "DEVCTL",
+		"REVERB_HOST":       "reverb.test",
+		"REVERB_PORT":       "443",
+		"REVERB_SCHEME":     "https",
+	}
+
+	for key, wantValue := range want {
+		if got := creds[key]; got != wantValue {
+			t.Errorf("credentials[%q] = %q, want %q", key, got, wantValue)
+		}
+	}
+
+	if len(creds) != len(want) {
+		t.Errorf("credentials count = %d, want %d", len(creds), len(want))
+	}
+
+	if _, ok := creds["REVERB_SERVER_HOST"]; ok {
+		t.Errorf("credentials unexpectedly exposed REVERB_SERVER_HOST")
+	}
+}
+
+func TestReverbInstall_WebsocketConnectsAfterInstall(t *testing.T) {
+	const id = "reverb"
+	const installTimeout = 10 * time.Minute
+	const purgeTimeout = 2 * time.Minute
+
+	body := httpGet(t, "/api/services")
+	services := decodeJSON[[]ServiceState](t, body)
+	for _, svc := range services {
+		if svc.ID == id && svc.Installed {
+			t.Logf("pre-condition: %s already installed — purging before test", id)
+			res := httpSSE(t, http.MethodDelete, "/api/services/"+id, purgeTimeout)
+			if res.LastEvent != "done" {
+				t.Fatalf("pre-condition purge: last event = %q, want \"done\"; last data: %s", res.LastEvent, res.LastData)
+			}
+			pollServiceInstalled(t, id, false, 30*time.Second)
+		}
+	}
+
+	t.Log("step 1: install reverb")
+	installResult := httpSSE(t, http.MethodPost, "/api/services/"+id+"/install", installTimeout)
+	if installResult.LastEvent != "done" {
+		t.Fatalf("install: last SSE event = %q, want \"done\"; last data: %s", installResult.LastEvent, installResult.LastData)
+	}
+	defer func() {
+		purgeResult := httpSSE(t, http.MethodDelete, "/api/services/"+id, purgeTimeout)
+		if purgeResult.LastEvent != "done" {
+			t.Logf("cleanup purge: last event = %q, last data: %s", purgeResult.LastEvent, purgeResult.LastData)
+		}
+	}()
+
+	t.Log("step 2: verify service is running")
+	pollServiceInstalled(t, id, true, 30*time.Second)
+	pollServiceStatus(t, id, "running", 30*time.Second)
+
+	t.Log("step 3: connect to websocket endpoint")
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+	headers := http.Header{}
+	headers.Set("Origin", "https://devctl.test")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, resp, err := dialer.DialContext(ctx, "ws://127.0.0.1:7383/app/DEVCTL?protocol=7&client=js&version=8.5.0&flash=false", headers)
+	if err != nil {
+		if resp != nil {
+			t.Fatalf("dial websocket: %v (status=%d)", err, resp.StatusCode)
+		}
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read websocket message: %v", err)
+	}
+	if !strings.Contains(string(msg), "pusher:connection_established") {
+		t.Fatalf("unexpected websocket payload: %s", string(msg))
+	}
+}
 
 // TestReverbInstall_InstallPurgeCycle exercises the full install → running → purge
 // lifecycle for Laravel Reverb.
