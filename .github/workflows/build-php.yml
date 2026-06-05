@@ -79,6 +79,23 @@ jobs:
           cp buildroot/bin/php     tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
           cp buildroot/bin/php-fpm tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
 
+          PHP_PATCH=$(./tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64 -v | awk 'NR==1 {print $2}')
+          mkdir -p tmp_meta
+          cat > tmp_meta/${{ matrix.php }}.json <<EOF
+          {
+            "minor": "${{ matrix.php }}",
+            "patch": "${PHP_PATCH}",
+            "cli": "php-${{ matrix.php }}-cli-linux-x86_64",
+            "fpm": "php-${{ matrix.php }}-fpm-linux-x86_64"
+          }
+          EOF
+
+      - name: Upload metadata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-meta-${{ matrix.php }}
+          path: tmp_meta/${{ matrix.php }}.json
+
       - name: Upload binaries to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
@@ -86,3 +103,52 @@ jobs:
           files: |
             tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
             tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
+
+  manifest:
+    name: Build PHP manifest
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && startsWith(github.ref_name, 'php-binaries')
+    needs: build
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download metadata artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: php-meta
+          pattern: php-meta-*
+          merge-multiple: true
+
+      - name: Assemble php-binaries.json
+        run: |
+          python3 - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          meta_dir = Path('php-meta')
+          rows = []
+          for path in sorted(meta_dir.glob('*.json')):
+              rows.append(json.loads(path.read_text()))
+
+          manifest = {
+              'release_tag': '${{ github.ref_name }}',
+              'built_at': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+              'php_versions': {row['minor']: row['patch'] for row in rows},
+              'assets': {
+                  row['minor']: {
+                      'cli': row['cli'],
+                      'fpm': row['fpm'],
+                  } for row in rows
+              },
+          }
+
+          Path('php-binaries.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+
+      - name: Upload manifest to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: php-binaries.json

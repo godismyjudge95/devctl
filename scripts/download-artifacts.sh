@@ -72,21 +72,65 @@ download "devctl ${DEVCTL_VERSION} (self-update artifact)" \
   "https://github.com/godismyjudge95/devctl/releases/download/${DEVCTL_VERSION}/devctl" \
   "devctl"
 
-# ─── PHP static binaries ──────────────────────────────────────────────────────
-# The PHP installer saves these as {phpDir}/php-fpm and {phpDir}/php.
-# The curl shim matches on the basename of the -o destination, so the cache
-# filenames must match exactly. This means only one FPM and one CLI binary can
-# be cached at a time — use the version most commonly installed in tests.
-# Binaries are published under the fixed php-binaries-latest release so test
-# installs exercise the same assets as production installs.
-PHP_VERSION="8.3"
-PHP_BASE="https://github.com/godismyjudge95/devctl/releases/download/php-binaries-latest"
-download "PHP ${PHP_VERSION} FPM" \
-  "${PHP_BASE}/php-${PHP_VERSION}-fpm-linux-x86_64" \
-  "php-fpm"
-download "PHP ${PHP_VERSION} CLI" \
-  "${PHP_BASE}/php-${PHP_VERSION}-cli-linux-x86_64" \
-  "php"
+# ─── PHP static binaries + manifest fixtures ─────────────────────────────────
+# Cache deterministic tagged PHP release fixtures so tests can verify installs
+# and upgrades against exact release tags rather than the old mutable latest tag.
+PHP_RELEASE_OLD="php-binaries-20260421.1"
+PHP_RELEASE_NEW="php-binaries-20260422.1"
+for PHP_VERSION in 8.3 8.4; do
+  for PHP_RELEASE in "$PHP_RELEASE_OLD" "$PHP_RELEASE_NEW"; do
+    PHP_BASE="https://github.com/godismyjudge95/devctl/releases/download/${PHP_RELEASE}"
+    download "PHP ${PHP_VERSION} FPM (${PHP_RELEASE})" \
+      "${PHP_BASE}/php-${PHP_VERSION}-fpm-linux-x86_64" \
+      "${PHP_RELEASE}-php-${PHP_VERSION}-fpm-linux-x86_64"
+    download "PHP ${PHP_VERSION} CLI (${PHP_RELEASE})" \
+      "${PHP_BASE}/php-${PHP_VERSION}-cli-linux-x86_64" \
+      "${PHP_RELEASE}-php-${PHP_VERSION}-cli-linux-x86_64"
+  done
+done
+
+cat > "${CACHE_DIR}/${PHP_RELEASE_OLD}-php-binaries.json" <<'EOF'
+{
+  "release_tag": "php-binaries-20260421.1",
+  "built_at": "2026-04-21T21:07:11Z",
+  "php_versions": {
+    "8.3": "8.3.21",
+    "8.4": "8.4.18"
+  },
+  "assets": {
+    "8.3": {
+      "cli": "php-8.3-cli-linux-x86_64",
+      "fpm": "php-8.3-fpm-linux-x86_64"
+    },
+    "8.4": {
+      "cli": "php-8.4-cli-linux-x86_64",
+      "fpm": "php-8.4-fpm-linux-x86_64"
+    }
+  }
+}
+EOF
+
+cat > "${CACHE_DIR}/${PHP_RELEASE_NEW}-php-binaries.json" <<'EOF'
+{
+  "release_tag": "php-binaries-20260422.1",
+  "built_at": "2026-04-22T21:07:11Z",
+  "php_versions": {
+    "8.3": "8.3.22",
+    "8.4": "8.4.19"
+  },
+  "assets": {
+    "8.3": {
+      "cli": "php-8.3-cli-linux-x86_64",
+      "fpm": "php-8.3-fpm-linux-x86_64"
+    },
+    "8.4": {
+      "cli": "php-8.4-cli-linux-x86_64",
+      "fpm": "php-8.4-fpm-linux-x86_64"
+    }
+  }
+}
+EOF
+success "PHP manifest fixtures cached."
 
 # ─── Caddy ────────────────────────────────────────────────────────────────────
 CADDY_VERSION="v2.10.0"

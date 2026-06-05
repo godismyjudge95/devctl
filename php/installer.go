@@ -11,16 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/internal/httplog"
 	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
 )
 
 const (
-	// ghReleaseBase is the prefix for PHP binary assets.
-	// Binaries are published under the fixed "php-binaries-latest" GitHub release tag
-	// so PHP installs/updates automatically pick up the newest PHP-only release.
-	// Binaries are named php-{ver}-{sapi}-linux-x86_64 (raw executable, no archive).
-	ghReleaseBase   = "https://github.com/godismyjudge95/devctl/releases/download/php-binaries-latest/"
 	downloadTimeout = 10 * time.Minute
 )
 
@@ -49,8 +45,12 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 	//    not hold the conventional socket path we're about to use.
 	disableSystemFPM(ctx, ver)
 
-	// 3. Download FPM binary directly from the devctl GitHub release.
-	fpmURL := ghReleaseBase + fmt.Sprintf("php-%s-fpm-linux-x86_64", ver)
+	cliURL, fpmURL, _, err := AssetURLsForMinor(ctx, ver)
+	if err != nil {
+		return fmt.Errorf("php %s: resolve release assets: %w", ver, err)
+	}
+
+	// 3. Download FPM binary directly from the exact PHP binaries release.
 	if err := curlDownload(ctx, fpmURL, fpmBin); err != nil {
 		return fmt.Errorf("php %s: download fpm: %w", ver, err)
 	}
@@ -58,8 +58,7 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: chmod fpm: %w", ver, err)
 	}
 
-	// 4. Download CLI binary directly from the devctl GitHub release.
-	cliURL := ghReleaseBase + fmt.Sprintf("php-%s-cli-linux-x86_64", ver)
+	// 4. Download CLI binary directly from the exact PHP binaries release.
 	if err := curlDownload(ctx, cliURL, cliBin); err != nil {
 		return fmt.Errorf("php %s: download cli: %w", ver, err)
 	}
@@ -147,13 +146,16 @@ func curlDownload(ctx context.Context, url, dest string) error {
 	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
+	done := httplog.LogGitHubCurlDownloadStart(url)
 	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", dest, url)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
+		done(err)
 		return fmt.Errorf("curl %s: %w\n%s", url, err, buf.String())
 	}
+	done(nil)
 	return nil
 }
 

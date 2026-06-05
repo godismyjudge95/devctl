@@ -12,9 +12,12 @@ import (
 
 // Version represents an installed PHP-FPM version.
 type Version struct {
-	Version   string `json:"version"`    // e.g. "8.3"
-	FPMSocket string `json:"fpm_socket"` // unix socket path
-	Status    string `json:"status"`     // "running" | "stopped" | "unknown"
+	Version       string `json:"version"`          // e.g. "8.3"
+	FPMSocket     string `json:"fpm_socket"`       // unix socket path
+	Status        string `json:"status"`           // "running" | "stopped" | "unknown"
+	PatchVersion  string `json:"patch_version"`    // e.g. "8.3.22"
+	LatestVersion string `json:"latest_version"`   // e.g. "8.3.23"
+	UpdateAvail   bool   `json:"update_available"` // true when PatchVersion != LatestVersion
 }
 
 // FPMServiceID returns the canonical service registry ID for a PHP-FPM version.
