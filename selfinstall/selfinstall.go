@@ -167,6 +167,10 @@ func Run(args []string) error {
 			return systemctl("enable", "devctl")
 		}},
 		{"Starting service", func() error {
+			// Restart when already active so a replaced binary picks up a new UI embed.
+			if serviceIsActive() {
+				return systemctl("restart", "devctl")
+			}
 			return systemctl("start", "devctl")
 		}},
 	}
