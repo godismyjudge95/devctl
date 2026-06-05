@@ -15,6 +15,7 @@ import (
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
@@ -51,6 +52,9 @@ type Server struct {
 	// tag from GitHub. Protected by latestSelfVersionMu.
 	latestSelfVersionMu sync.RWMutex
 	latestSelfVersion   string
+
+	phpManifestMu sync.RWMutex
+	phpManifest   *php.ReleaseManifest
 }
 
 // NewServer creates and configures the HTTP server.
@@ -95,6 +99,22 @@ func NewServer(
 	}
 	s.registerRoutes()
 	return s
+}
+
+func (s *Server) SetPHPLatestManifest(manifest *php.ReleaseManifest) {
+	s.phpManifestMu.Lock()
+	s.phpManifest = manifest
+	s.phpManifestMu.Unlock()
+}
+
+func (s *Server) GetPHPLatestManifest() *php.ReleaseManifest {
+	s.phpManifestMu.RLock()
+	defer s.phpManifestMu.RUnlock()
+	if s.phpManifest == nil {
+		return nil
+	}
+	clone := *s.phpManifest
+	return &clone
 }
 
 func (s *Server) registerRoutes() {

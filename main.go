@@ -332,6 +332,7 @@ func run() error {
 	// --- Update checker ---
 	// Runs once per day at 3am.
 	go runUpdateChecker(runCtx, srv, installRegistry)
+	go runPHPUpdateChecker(runCtx, srv, cfg.ServerRoot)
 
 	// --- Self-update checker ---
 	// Checks GitHub for a newer devctl release once per day at 3am.
@@ -445,6 +446,47 @@ func runSelfUpdateChecker(ctx context.Context, srv *api.Server) {
 		srv.SetSelfLatestVersion(latest)
 	}
 
+	for {
+		now := time.Now()
+		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(next3am)):
+			check()
+		}
+	}
+}
+
+func runPHPUpdateChecker(ctx context.Context, srv *api.Server, serverRoot string) {
+	check := func() {
+		manifest, err := php.LatestReleaseManifest(ctx)
+		if err != nil {
+			log.Printf("php-update-checker: %v", err)
+			return
+		}
+		srv.SetPHPLatestManifest(manifest)
+		versions, err := php.InstalledVersions(serverRoot)
+		if err != nil {
+			log.Printf("php-update-checker: installed versions: %v", err)
+			return
+		}
+		for _, v := range versions {
+			patch, err := php.InstalledPatchVersion(v.Version, serverRoot)
+			if err != nil {
+				log.Printf("php-update-checker: %s: %v", v.Version, err)
+				continue
+			}
+			if latest := manifest.PHPVersions[v.Version]; latest != "" {
+				srv.SetLatestVersion(php.FPMServiceID(v.Version), latest)
+				if latest == patch {
+					srv.DeleteLatestVersion(php.FPMServiceID(v.Version))
+				}
+			}
+		}
+	}
+
+	check()
 	for {
 		now := time.Now()
 		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())

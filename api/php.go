@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -33,15 +35,7 @@ func (s *Server) handleGetPHPVersions(w http.ResponseWriter, r *http.Request) {
 	if versions == nil {
 		versions = []php.Version{}
 	}
-	// Annotate each version with its live status from the supervisor.
-	for i, v := range versions {
-		id := php.FPMServiceID(v.Version)
-		if s.supervisor.IsRunning(id) {
-			versions[i].Status = string(services.StatusRunning)
-		} else {
-			versions[i].Status = string(services.StatusStopped)
-		}
-	}
+	s.enrichPHPVersions(versions)
 	writeJSON(w, versions)
 }
 
@@ -71,14 +65,8 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 	if versions == nil {
 		versions = []php.Version{}
 	}
-	for i, v := range versions {
-		id := php.FPMServiceID(v.Version)
-		if s.supervisor.IsRunning(id) {
-			versions[i].Status = string(services.StatusRunning)
-		} else {
-			versions[i].Status = string(services.StatusStopped)
-		}
-	}
+	s.enrichPHPVersions(versions)
+	go s.refreshPHPLatestManifest(context.Background())
 	writeJSON(w, versions)
 }
 
@@ -186,6 +174,10 @@ func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
 
 // phpFPMServiceDef builds the supervised Definition for a PHP-FPM version.
 func (s *Server) phpFPMServiceDef(ver string) services.Definition {
+	versionCmd := php.FPMBinary(ver, s.serverRoot) + " -v"
+	if patch, err := php.InstalledPatchVersion(ver, s.serverRoot); err == nil && patch != "" {
+		versionCmd = fmt.Sprintf("printf 'PHP %s\n'", patch)
+	}
 	return services.Definition{
 		ID:           php.FPMServiceID(ver),
 		Label:        "PHP " + ver + " FPM",
@@ -194,9 +186,38 @@ func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, s.serverRoot)),
 		ManagedDir:   php.PHPDir(ver, s.serverRoot),
 		Log:          php.FPMLogPath(ver, s.serverRoot),
-		Version:      php.FPMBinary(ver, s.serverRoot) + " -v",
+		Version:      versionCmd,
 		VersionRegex: `PHP (?P<version>[\d.]+)`,
 	}
+}
+
+func (s *Server) enrichPHPVersions(versions []php.Version) {
+	manifest := s.GetPHPLatestManifest()
+	for i, v := range versions {
+		id := php.FPMServiceID(v.Version)
+		if s.supervisor.IsRunning(id) {
+			versions[i].Status = string(services.StatusRunning)
+		} else {
+			versions[i].Status = string(services.StatusStopped)
+		}
+		if patch, err := php.InstalledPatchVersion(v.Version, s.serverRoot); err == nil {
+			versions[i].PatchVersion = patch
+		}
+		if manifest != nil && manifest.PHPVersions != nil {
+			versions[i].LatestVersion = manifest.PHPVersions[v.Version]
+			versions[i].UpdateAvail = versions[i].PatchVersion != "" && versions[i].LatestVersion != "" && versions[i].PatchVersion != versions[i].LatestVersion
+		}
+	}
+}
+
+func (s *Server) refreshPHPLatestManifest(ctx context.Context) {
+	manifest, err := php.LatestReleaseManifest(ctx)
+	if err != nil {
+		log.Printf("php-update-checker: %v", err)
+		return
+	}
+	s.SetPHPLatestManifest(manifest)
+	go s.poller.Poll()
 }
 
 // handleGetPHPConfig reads a PHP config file and returns its content as JSON.

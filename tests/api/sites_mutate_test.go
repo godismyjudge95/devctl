@@ -14,9 +14,12 @@ import (
 
 // PHPVersion mirrors one entry from GET /api/php/versions.
 type PHPVersion struct {
-	Version   string `json:"version"`
-	FPMSocket string `json:"fpm_socket"`
-	Status    string `json:"status"`
+	Version       string `json:"version"`
+	FPMSocket     string `json:"fpm_socket"`
+	Status        string `json:"status"`
+	PatchVersion  string `json:"patch_version"`
+	LatestVersion string `json:"latest_version"`
+	UpdateAvail   bool   `json:"update_available"`
 }
 
 // TestSitesCRUD_CreateReadUpdateDelete exercises the full create → read →

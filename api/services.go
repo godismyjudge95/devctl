@@ -16,6 +16,7 @@ import (
 	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/paths"
+	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
 )
 
@@ -528,6 +529,31 @@ func (s *Server) dnsDef(ctx context.Context, def services.Definition) services.D
 	return def
 }
 
+// managedServiceDef applies user-configured runtime env/arg overrides for
+// exec-managed services. These overrides are stored in the settings table so
+// they persist across restarts without mutating installed config files.
+func (s *Server) managedServiceDef(ctx context.Context, def services.Definition) services.Definition {
+	if !def.Managed || def.RunFunc != nil {
+		return def
+	}
+
+	argsRaw, _ := s.queries.GetSetting(ctx, serviceSettingKey(def.ID, "args"))
+	if argsRaw != "" {
+		if args, err := services.ParseCommandArgs(argsRaw); err == nil {
+			def.ManagedExtraArgs = args
+		}
+	}
+
+	envRaw, _ := s.queries.GetSetting(ctx, serviceSettingKey(def.ID, "env"))
+	if envRaw != "" {
+		if env, err := parseManagedEnvOverrides(envRaw); err == nil {
+			def.ManagedExtraEnv = env
+		}
+	}
+
+	return def
+}
+
 // stubHandler returns a 501 Not Implemented for handlers not yet built.
 func stubHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
@@ -582,6 +608,7 @@ func (s *Server) enrichStates(states []services.ServiceState) []services.Service
 	s.latestVersionsMu.RUnlock()
 
 	out := make([]services.ServiceState, len(states))
+	manifest := s.GetPHPLatestManifest()
 	for i, st := range states {
 		if latest, ok := lv[st.ID]; ok && latest != "" {
 			st.LatestVersion = latest
@@ -594,6 +621,20 @@ func (s *Server) enrichStates(states []services.ServiceState) []services.Service
 			latestNorm := strings.TrimPrefix(latest, "v")
 			if current != "" && latestNorm != "" && current != latestNorm {
 				st.UpdateAvailable = true
+			}
+		}
+		if strings.HasPrefix(st.ID, "php-fpm-") {
+			minor := strings.TrimPrefix(st.ID, "php-fpm-")
+			if patch, err := php.InstalledPatchVersion(minor, s.serverRoot); err == nil && patch != "" {
+				st.Version = patch
+			}
+			if manifest != nil && manifest.PHPVersions != nil {
+				if latest := manifest.PHPVersions[minor]; latest != "" {
+					st.LatestVersion = latest
+					if st.Version != "" && st.Version != latest {
+						st.UpdateAvailable = true
+					}
+				}
 			}
 		}
 		out[i] = st
@@ -611,6 +652,10 @@ func (s *Server) enrichStates(states []services.ServiceState) []services.Service
 //	error  — {"error":"..."} on failure
 func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if strings.HasPrefix(id, "php-fpm-") {
+		s.handlePHPServiceUpdate(w, r, strings.TrimPrefix(id, "php-fpm-"))
+		return
+	}
 	inst, ok := s.installers[id]
 	if !ok {
 		writeError(w, fmt.Sprintf("no installer registered for service %q", id), http.StatusNotFound)
@@ -675,6 +720,53 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 	// Uses context.Background() because r.Context() is already cancelled now
 	// that the SSE stream has closed.
 	go s.recheckLatestVersion(context.Background(), id)
+}
+
+func (s *Server) handlePHPServiceUpdate(w http.ResponseWriter, r *http.Request, ver string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	current, err := php.InstalledPatchVersion(ver, s.serverRoot)
+	if err != nil {
+		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
+		return
+	}
+	manifest := s.GetPHPLatestManifest()
+	if manifest == nil || manifest.PHPVersions == nil {
+		s.refreshPHPLatestManifest(r.Context())
+		manifest = s.GetPHPLatestManifest()
+	}
+	if manifest == nil || manifest.PHPVersions[ver] == "" {
+		sendSSE(w, flusher, "error", map[string]string{"error": fmt.Sprintf("no PHP release metadata for %s", ver)})
+		return
+	}
+	latest := manifest.PHPVersions[ver]
+	if current == latest {
+		sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
+		return
+	}
+
+	sendSSE(w, flusher, "output", fmt.Sprintf("Updating PHP %s from %s to %s\n", ver, current, latest))
+	if err := php.Install(r.Context(), ver, s.serverRoot, s.siteUser, s.siteHome); err != nil {
+		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
+		return
+	}
+	def := s.phpFPMServiceDef(ver)
+	s.registry.Register(def)
+	s.SetLatestVersion(php.FPMServiceID(ver), latest)
+	if err := s.supervisor.Restart(def); err != nil {
+		log.Printf("update: restart php-fpm-%s: %v", ver, err)
+	}
+	go s.poller.Poll()
+	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
 }
 
 // ---------------------------------------------------------------------------
