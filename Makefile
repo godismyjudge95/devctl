@@ -1,6 +1,7 @@
 .PHONY: dev dev-ui build build-ui install deploy sqlc db-migrate \
-        test-env-setup test-env test-run test-bats test-api test-e2e test \
-        test-artifacts-download test-artifacts-clean test-push \
+        test-env-setup test-env test-run test-cleanup test-cleanup-all \
+        test-bats _test-bats test-api _test-api test-e2e _test-e2e \
+        test test-inner test-push test-artifacts-download test-artifacts-clean \
         demo
 
 BINARY     := devctl
@@ -113,8 +114,26 @@ test-run:
 	@test -f ./devctl || (echo "Binary not found — run 'make build' first." && exit 1)
 	@bash scripts/test-env.sh --run-tests
 
+# Destroy the test container named by DEVCTL_CONTAINER.
+# Set KEEP_TEST_CONTAINER=1 to skip (used by test-push for iterative runs).
+test-cleanup:
+	@bash scripts/test-cleanup.sh
+
+# Destroy all orphaned devctl-test-* containers (e.g. after a crashed test run).
+test-cleanup-all:
+	@which incus > /dev/null 2>&1 || (echo "Incus is not installed." && exit 1)
+	@for name in $$(incus list --format csv -c n 2>/dev/null | grep '^devctl-test-' || true); do \
+	  echo "Destroying $$name..."; \
+	  incus exec "$$name" -- systemctl stop devctl 2>/dev/null || true; \
+	  incus delete --force "$$name" 2>/dev/null || true; \
+	done
+
 # Run BATS integration tests inside the container (DEVCTL_CONTAINER must be set).
+# Destroys the container when finished unless KEEP_TEST_CONTAINER=1.
 test-bats:
+	@bash scripts/with-test-cleanup.sh $(MAKE) _test-bats
+
+_test-bats:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	incus exec "$$DEVCTL_CONTAINER" -- mkdir -p /tmp/tests
 	tar -czf - -C tests integration/ | incus exec "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
@@ -122,7 +141,11 @@ test-bats:
 
 # Compile the Go API test binary on the host, push it into the container, run it.
 # No Go toolchain needed inside the container.
+# Destroys the container when finished unless KEEP_TEST_CONTAINER=1.
 test-api:
+	@bash scripts/with-test-cleanup.sh $(MAKE) _test-api
+
+_test-api:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	$(GO) test -c -tags=integration -o devctl.test ./tests/api/
 	incus exec "$$DEVCTL_CONTAINER" -- rm -f /tmp/devctl.test
@@ -133,7 +156,11 @@ test-api:
 
 # Run Playwright e2e tests inside the container.
 # Playwright and Chromium are pre-baked into the devctl-ubuntu-base image.
+# Destroys the container when finished unless KEEP_TEST_CONTAINER=1.
 test-e2e:
+	@bash scripts/with-test-cleanup.sh $(MAKE) _test-e2e
+
+_test-e2e:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	tar -czf - -C tests e2e/ | incus exec "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
 	incus exec "$$DEVCTL_CONTAINER" -- rm -f /tmp/playwright.config.ts
@@ -142,7 +169,11 @@ test-e2e:
 	  env DEVCTL_BASE_URL=http://127.0.0.1:4000 NODE_PATH=/usr/lib/node_modules npx playwright test
 
 # Run all three test layers inside the container.
-test: test-bats test-api test-e2e
+# Destroys the container when finished unless KEEP_TEST_CONTAINER=1.
+test:
+	@bash scripts/with-test-cleanup.sh $(MAKE) test-inner
+
+test-inner: _test-bats _test-api _test-e2e
 
 # Push a new devctl binary into a running test container and re-run all tests.
 # Requires: DEVCTL_CONTAINER=<name>   (or exported from 'make test-env')
@@ -158,4 +189,4 @@ test-push:
 	incus exec "$$DEVCTL_CONTAINER" -- curl -sf http://127.0.0.1:4000/api/settings/resolved > /dev/null \
 	  || (echo "devctl did not respond after restart — check: incus exec $$DEVCTL_CONTAINER -- journalctl -u devctl -n 20 --no-pager" && exit 1)
 	@echo "devctl restarted successfully. Running tests..."
-	$(MAKE) test
+	KEEP_TEST_CONTAINER=1 $(MAKE) test-inner

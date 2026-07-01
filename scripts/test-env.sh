@@ -47,8 +47,7 @@ CONTAINER="devctl-test-$(date +%s)"
 # ─── EXIT trap (set before launch so it always fires) ─────────────────────────
 cleanup() {
   echo ""
-  echo "Destroying container ${CONTAINER}..."
-  incus delete --force "$CONTAINER" 2>/dev/null || true
+  bash "$(dirname "$0")/test-cleanup.sh" "$CONTAINER"
 }
 trap cleanup EXIT
 
@@ -451,15 +450,21 @@ if [[ "$MODE" == "interactive" ]]; then
   printf '   DEVCTL_CONTAINER=%s make test\n'                            "${CONTAINER}"
   echo ""
   printf ' Press Ctrl+C to stop and destroy the container.\n'
+  printf ' Running tests destroys the container automatically when they finish.\n'
   printf '%s─────────────────────────────────────────────────────%s\n' "${BOLD}" "${RESET}"
   echo ""
-  # Block until Ctrl+C or EXIT trap fires
-  wait
+  # Block until Ctrl+C, or until a test run destroys the container.
+  while incus list --format csv -c n 2>/dev/null | grep -qx "$CONTAINER"; do
+    sleep 2
+  done
+  echo ""
+  success "Container ${CONTAINER} is gone — exiting."
+  trap - EXIT
 else
   echo ""
   info "Running tests..."
   TEST_EXIT=0
   DEVCTL_CONTAINER="$CONTAINER" make test || TEST_EXIT=$?
-  # EXIT trap will destroy the container; exit with test result
+  # make test destroys the container; EXIT trap is a safety net.
   exit $TEST_EXIT
 fi

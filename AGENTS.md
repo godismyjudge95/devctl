@@ -99,8 +99,11 @@ incus exec $DEVCTL_CONTAINER -- /tmp/cli.test -test.v
 
 # Integration tests (tests/api/)
 make build
-make test-env          # in one terminal — starts container, blocks until Ctrl+C
-DEVCTL_BASE_URL=http://127.0.0.1:4000 make test-api   # in another terminal
+make test-env          # in one terminal — starts container, blocks until tests finish or Ctrl+C
+DEVCTL_CONTAINER=devctl-test-xxx make test-api        # in another terminal (destroys container when done)
+
+# One-shot: launch container, run all tests, destroy when done
+make build && make test-run
 ```
 
 Load the `integration-testing` skill for the full workflow.
@@ -117,8 +120,26 @@ go test -tags integration ./tests/api/
 
 # RIGHT — build first, then start the container, then run tests
 make build
-make test-env          # in one terminal — starts container, blocks until Ctrl+C
-DEVCTL_BASE_URL=http://127.0.0.1:4000 make test-api   # in another terminal
+make test-env          # in one terminal — starts container, blocks until tests finish or Ctrl+C
+DEVCTL_CONTAINER=devctl-test-xxx make test-api        # in another terminal (destroys container when done)
+```
+
+### Test container cleanup
+
+**Always destroy test containers when finished.** Orphaned `devctl-test-*` containers keep devctl running and will poll the GitHub API (PHP release checks, self-update checks).
+
+`make test`, `make test-api`, `make test-bats`, `make test-e2e`, and `make test-run` all stop devctl and delete the container automatically — even on failure. The artifact cache (`devctl-test-artifacts`) is not touched.
+
+```sh
+# Destroy all orphaned test containers (e.g. after a crashed run)
+make test-cleanup-all
+
+# Destroy a specific container
+DEVCTL_CONTAINER=devctl-test-xxx make test-cleanup
+
+# Keep the container for iterative runs
+KEEP_TEST_CONTAINER=1 DEVCTL_CONTAINER=devctl-test-xxx make test-api
+make test-push   # also keeps the container (rebuild + re-test without teardown)
 ```
 
 Load the `integration-testing` skill for the full workflow: container setup, TDD procedure, where to put tests, and available helpers.

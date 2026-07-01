@@ -92,8 +92,10 @@ make test-env
 - Compile the Go API test binary and push it in
 - Push BATS tests and Playwright test files into the container
 - Wait for devctl to respond at `127.0.0.1:4000` **inside** the container
-- Export `DEVCTL_CONTAINER=devctl-test-<timestamp>` and block until Ctrl+C (then destroy it)
+- Export `DEVCTL_CONTAINER=devctl-test-<timestamp>` and block until Ctrl+C or the container is destroyed
 - **The host devctl is never touched** — its port 4000 remains yours
+
+**Container cleanup is automatic.** Every `make test`, `make test-api`, `make test-bats`, and `make test-e2e` stops devctl and destroys the container when finished (even on failure). `make test-run` does the same. Set `KEEP_TEST_CONTAINER=1` to skip cleanup — used internally by `make test-push` for iterative runs.
 
 ## Running tests against the container
 
@@ -164,6 +166,20 @@ incus list
 
 The test container is named `devctl-test-<timestamp>`. The currently running one will show STATE=RUNNING.
 
+## Cleaning up orphaned containers
+
+If a test run was interrupted and left containers behind, destroy them all:
+
+```sh
+make test-cleanup-all
+```
+
+Or destroy a specific container:
+
+```sh
+DEVCTL_CONTAINER=devctl-test-1234567890 make test-cleanup
+```
+
 ## Example: writing a failing Go API test
 
 ```go
@@ -210,7 +226,7 @@ func TestDeleteAllEmails_RemovesAllMessages(t *testing.T) {
 - [ ] Write the minimal fix
 - [ ] Run the test: confirm it **passes**
 - [ ] Run the full suite (`make test` in the second terminal) to confirm no regressions
-- [ ] Stop the container (Ctrl+C in the `make test-env` terminal)
+- [ ] Container is destroyed automatically when tests finish (or Ctrl+C in the `make test-env` terminal)
 
 ## Gotchas and known patterns
 
