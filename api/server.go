@@ -207,6 +207,9 @@ func (s *Server) registerRoutes() {
 
 	// MaxIO — presign must be registered before the catch-all proxy.
 	s.mux.HandleFunc("GET /api/maxio/presign", s.handleMaxIOPresign)
+	s.mux.HandleFunc("POST /api/maxio/cors/sync", s.handleMaxIOCORSSync)
+	s.mux.HandleFunc("GET /api/maxio/buckets/{bucket}/visibility", s.handleGetMaxIOBucketVisibility)
+	s.mux.HandleFunc("PUT /api/maxio/buckets/{bucket}/visibility", s.handlePutMaxIOBucketVisibility)
 	s.mux.HandleFunc("/api/maxio/s3/", s.handleMaxIOS3Proxy)
 
 	// Self-update

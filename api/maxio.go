@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -57,11 +58,12 @@ func (s *Server) maxioReadCredentials() (s3Credentials, error) {
 // ── Proxy helpers ─────────────────────────────────────────────────────────────
 
 // maxioProxyRequest reads the body, signs, and forwards to the given base URL.
-func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targetBase, stripPrefix string) {
+// It returns the upstream HTTP status code.
+func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targetBase, stripPrefix string) int {
 	creds, err := s.maxioReadCredentials()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return http.StatusInternalServerError
 	}
 
 	// Read body so we can sign it.
@@ -70,7 +72,7 @@ func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targe
 		bodyBytes, err = io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
-			return
+			return http.StatusBadRequest
 		}
 	}
 
@@ -82,7 +84,7 @@ func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targe
 	target, err := url.Parse(targetBase)
 	if err != nil {
 		http.Error(w, "invalid target: "+err.Error(), http.StatusInternalServerError)
-		return
+		return http.StatusInternalServerError
 	}
 	target.Path = stripped
 	target.RawQuery = r.URL.RawQuery
@@ -91,15 +93,16 @@ func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targe
 	upReq, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(bodyBytes))
 	if err != nil {
 		http.Error(w, "build request: "+err.Error(), http.StatusInternalServerError)
-		return
+		return http.StatusInternalServerError
 	}
 
 	// Copy original headers (Content-Type, Content-MD5, etc.).
 	for key, vals := range r.Header {
 		k := http.CanonicalHeaderKey(key)
-		// Skip hop-by-hop headers.
+		// Skip hop-by-hop and browser-origin headers. The proxy talks to MaxIO
+		// server-side; forwarding Origin/Referer can trigger MaxIO CORS handling.
 		if k == "Connection" || k == "Te" || k == "Trailers" || k == "Transfer-Encoding" ||
-			k == "Upgrade" || k == "X-Forwarded-For" {
+			k == "Upgrade" || k == "X-Forwarded-For" || k == "Origin" || k == "Referer" {
 			continue
 		}
 		upReq.Header[k] = vals
@@ -112,7 +115,7 @@ func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targe
 	resp, err := http.DefaultClient.Do(upReq)
 	if err != nil {
 		http.Error(w, "upstream: "+err.Error(), http.StatusBadGateway)
-		return
+		return http.StatusBadGateway
 	}
 	defer resp.Body.Close()
 
@@ -124,11 +127,18 @@ func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targe
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body) //nolint:errcheck
+	return resp.StatusCode
 }
 
 // handleMaxIOS3Proxy proxies /api/maxio/s3/* → MaxIO S3 port (9000).
 func (s *Server) handleMaxIOS3Proxy(w http.ResponseWriter, r *http.Request) {
-	s.maxioProxyRequest(w, r, "http://127.0.0.1:"+maxioS3Port, "/api/maxio/s3")
+	bucket, applyCORS := maxioBucketPutName(r)
+	status := s.maxioProxyRequest(w, r, "http://127.0.0.1:"+maxioS3Port, "/api/maxio/s3")
+	if applyCORS && (status == http.StatusOK || status == http.StatusConflict) {
+		if err := s.putBucketCORS(r.Context(), bucket); err != nil {
+			log.Printf("maxio: put bucket CORS %q: %v", bucket, err)
+		}
+	}
 }
 
 // handleMaxIOPresign generates a presigned GET URL for ?bucket=...&key=...

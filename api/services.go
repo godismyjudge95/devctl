@@ -296,6 +296,16 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 		}
+		if id == "maxio" {
+			go func() {
+				n, err := s.syncMaxioBucketCORS(context.Background())
+				if err != nil {
+					log.Printf("install: maxio CORS sync: %v", err)
+					return
+				}
+				log.Printf("install: maxio CORS synced on %d bucket(s)", n)
+			}()
+		}
 	}
 
 	go s.poller.Poll()
