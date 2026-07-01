@@ -35,7 +35,7 @@ import {
   HardDrive, Folder, File, Upload, Trash2, Download, Link,
   MoreHorizontal, Plus, ArrowLeft, FolderOpen, Database,
   FolderPlus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
-  RefreshCw,
+  RefreshCw, Globe, Lock,
 } from 'lucide-vue-next'
 
 const store = useMaxIOStore()
@@ -109,6 +109,9 @@ const newBucketName = ref('')
 const showDeleteBucket = ref(false)
 const bucketToDelete = ref('')
 const showDeleteSelected = ref(false)
+const showVisibilityConfirm = ref(false)
+const pendingVisibilityPublic = ref(false)
+const pendingVisibilityBucket = ref<string | null>(null)
 const showCreateFolder = ref(false)
 const newFolderName = ref('')
 // When set, "New folder" creates inside this prefix instead of currentPrefix
@@ -341,6 +344,30 @@ async function handleDeleteBucket() {
   }
 }
 
+// ── Visibility ───────────────────────────────────────────────────────────────
+const bucketIsPublic = computed(() => store.bucketVisibility?.publicRead ?? false)
+
+function openVisibilityConfirm(publicRead: boolean, bucket?: string) {
+  pendingVisibilityPublic.value = publicRead
+  pendingVisibilityBucket.value = bucket ?? store.selectedBucket
+  showVisibilityConfirm.value = true
+}
+
+async function handleVisibilityConfirm() {
+  const bucket = pendingVisibilityBucket.value
+  if (!bucket) return
+  try {
+    await store.setVisibility(pendingVisibilityPublic.value, bucket)
+  } catch {} finally {
+    showVisibilityConfirm.value = false
+    pendingVisibilityBucket.value = null
+  }
+}
+
+function copyUrlLabel() {
+  return bucketIsPublic.value ? 'Copy public URL' : 'Copy URL'
+}
+
 // ── Selection ────────────────────────────────────────────────────────────────
 const selectAllState = computed(() => {
   if (store.allSelected) return true
@@ -509,6 +536,31 @@ onMounted(() => {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel class="text-xs">{{ bucket.name }}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    v-if="store.selectedBucket === bucket.name && !bucketIsPublic"
+                    @click="openVisibilityConfirm(true, bucket.name)"
+                  >
+                    <Globe class="w-3.5 h-3.5 mr-2" />
+                    Make public
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    v-else-if="store.selectedBucket === bucket.name && bucketIsPublic"
+                    @click="openVisibilityConfirm(false, bucket.name)"
+                  >
+                    <Lock class="w-3.5 h-3.5 mr-2" />
+                    Make private
+                  </DropdownMenuItem>
+                  <template v-else>
+                    <DropdownMenuItem @click="openVisibilityConfirm(true, bucket.name)">
+                      <Globe class="w-3.5 h-3.5 mr-2" />
+                      Make public
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="openVisibilityConfirm(false, bucket.name)">
+                      <Lock class="w-3.5 h-3.5 mr-2" />
+                      Make private
+                    </DropdownMenuItem>
+                  </template>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem class="text-destructive focus:text-destructive" @click="confirmDeleteBucket(bucket.name)">
                     <Trash2 class="w-3.5 h-3.5 mr-2" />
                     Delete bucket
@@ -519,6 +571,31 @@ onMounted(() => {
           </ContextMenuTrigger>
           <ContextMenuContent class="w-48">
             <ContextMenuLabel class="text-xs truncate max-w-44">{{ bucket.name }}</ContextMenuLabel>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              v-if="store.selectedBucket === bucket.name && !bucketIsPublic"
+              @click="openVisibilityConfirm(true, bucket.name)"
+            >
+              <Globe class="w-3.5 h-3.5 mr-2" />
+              Make public
+            </ContextMenuItem>
+            <ContextMenuItem
+              v-else-if="store.selectedBucket === bucket.name && bucketIsPublic"
+              @click="openVisibilityConfirm(false, bucket.name)"
+            >
+              <Lock class="w-3.5 h-3.5 mr-2" />
+              Make private
+            </ContextMenuItem>
+            <template v-else>
+              <ContextMenuItem @click="openVisibilityConfirm(true, bucket.name)">
+                <Globe class="w-3.5 h-3.5 mr-2" />
+                Make public
+              </ContextMenuItem>
+              <ContextMenuItem @click="openVisibilityConfirm(false, bucket.name)">
+                <Lock class="w-3.5 h-3.5 mr-2" />
+                Make private
+              </ContextMenuItem>
+            </template>
             <ContextMenuSeparator />
             <ContextMenuItem class="text-destructive focus:text-destructive" @click="confirmDeleteBucket(bucket.name)">
               <Trash2 class="w-3.5 h-3.5 mr-2" />
@@ -651,6 +728,21 @@ onMounted(() => {
           <Button v-if="store.currentPrefix" variant="ghost" size="icon-xs" class="hidden md:inline-flex shrink-0" title="Go up" @click="store.navigateUp()">
             <ArrowLeft class="w-3.5 h-3.5" />
           </Button>
+
+          <!-- Bucket visibility badge -->
+          <Skeleton v-if="store.loadingVisibility" class="h-6 w-16 shrink-0 hidden sm:block" />
+          <Badge
+            v-else-if="bucketIsPublic"
+            variant="outline"
+            class="text-xs gap-1 shrink-0 hidden sm:flex border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+          >
+            <Globe class="w-3 h-3" />
+            Public
+          </Badge>
+          <Badge v-else variant="secondary" class="text-xs gap-1 shrink-0 hidden sm:flex">
+            <Lock class="w-3 h-3" />
+            Private
+          </Badge>
         </div>
 
         <!-- ── Search bar ─────────────────────────────────────────────────── -->
@@ -746,6 +838,7 @@ onMounted(() => {
                     <ChevronsUpDown v-else class="w-3 h-3 text-muted-foreground/50" />
                   </div>
                 </TableHead>
+                <TableHead class="w-24 hidden sm:table-cell">Visibility</TableHead>
                 <TableHead class="w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -775,6 +868,7 @@ onMounted(() => {
                     </TableCell>
                     <TableCell class="text-right text-xs text-muted-foreground hidden sm:table-cell">—</TableCell>
                     <TableCell class="text-xs text-muted-foreground hidden md:table-cell">—</TableCell>
+                    <TableCell class="hidden sm:table-cell text-xs text-muted-foreground">—</TableCell>
                     <TableCell></TableCell>
                   </TableRow>
                 </ContextMenuTrigger>
@@ -830,6 +924,21 @@ onMounted(() => {
                     <TableCell class="text-xs text-muted-foreground hidden md:table-cell">
                       {{ formatDate(obj.lastModified) }}
                     </TableCell>
+                    <TableCell class="hidden sm:table-cell">
+                      <Skeleton v-if="store.loadingVisibility" class="h-5 w-16" />
+                      <Badge
+                        v-else-if="bucketIsPublic"
+                        variant="outline"
+                        class="text-xs gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                      >
+                        <Globe class="w-3 h-3" />
+                        Public
+                      </Badge>
+                      <Badge v-else variant="secondary" class="text-xs gap-1">
+                        <Lock class="w-3 h-3" />
+                        Private
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger as-child>
@@ -844,7 +953,19 @@ onMounted(() => {
                             <Download class="w-3.5 h-3.5 mr-2" />Download
                           </DropdownMenuItem>
                           <DropdownMenuItem @click="store.copyObjectUrl(obj.key)">
-                            <Link class="w-3.5 h-3.5 mr-2" />Copy URL
+                            <Link class="w-3.5 h-3.5 mr-2" />{{ copyUrlLabel() }}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            v-if="!bucketIsPublic"
+                            @click="openVisibilityConfirm(true)"
+                          >
+                            <Globe class="w-3.5 h-3.5 mr-2" />Make public
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            v-else
+                            @click="openVisibilityConfirm(false)"
+                          >
+                            <Lock class="w-3.5 h-3.5 mr-2" />Make private
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem class="text-destructive focus:text-destructive" @click="store.removeObject(obj.key)">
@@ -885,7 +1006,21 @@ onMounted(() => {
                     @click="store.copyObjectUrl(obj.key)"
                   >
                     <Link class="w-3.5 h-3.5 mr-2" />
-                    Copy URL
+                    {{ copyUrlLabel() }}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    v-if="!bucketIsPublic"
+                    @click="openVisibilityConfirm(true)"
+                  >
+                    <Globe class="w-3.5 h-3.5 mr-2" />
+                    Make public
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    v-else
+                    @click="openVisibilityConfirm(false)"
+                  >
+                    <Lock class="w-3.5 h-3.5 mr-2" />
+                    Make private
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <!-- Single delete -->
@@ -986,6 +1121,29 @@ onMounted(() => {
             </Button>
           </Transition>
 
+          <!-- Visibility toggle (bucket-wide) -->
+          <Transition
+            enter-active-class="transition-all duration-150 ease-out"
+            enter-from-class="opacity-0 scale-75"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition-all duration-100 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-75"
+          >
+            <Button
+              v-if="store.hasSelection"
+              variant="ghost"
+              size="sm"
+              class="h-8 text-xs gap-1.5 rounded-full px-3"
+              :title="bucketIsPublic ? 'Make bucket private' : 'Make bucket public'"
+              @click="openVisibilityConfirm(!bucketIsPublic)"
+            >
+              <Globe v-if="!bucketIsPublic" class="w-3.5 h-3.5" />
+              <Lock v-else class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">{{ bucketIsPublic ? 'Make private' : 'Make public' }}</span>
+            </Button>
+          </Transition>
+
           <!-- Delete selected (selection-aware) -->
           <Transition
             enter-active-class="transition-all duration-150 ease-out"
@@ -1054,6 +1212,28 @@ onMounted(() => {
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="handleDeleteBucket">Delete</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Visibility confirmation -->
+    <AlertDialog v-model:open="showVisibilityConfirm">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {{ pendingVisibilityPublic ? 'Make bucket public?' : 'Make bucket private?' }}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            MaxIO applies visibility at the bucket level. This affects every object in
+            <span class="font-medium text-foreground">{{ pendingVisibilityBucket ?? store.selectedBucket }}</span>
+            — per-file ACLs are not supported.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction @click="handleVisibilityConfirm">
+            {{ pendingVisibilityPublic ? 'Make public' : 'Make private' }}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

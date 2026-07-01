@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { toast } from 'vue-sonner'
 import { zipSync } from 'fflate'
-import type { MaxIOBucket, MaxIOObject } from '@/lib/api'
+import type { MaxIOBucket, MaxIOBucketVisibility, MaxIOObject } from '@/lib/api'
 import {
   listBuckets,
   createBucket,
@@ -14,7 +14,11 @@ import {
   uploadObject,
   copyObject,
   createFolder as createFolderApi,
+  fetchObject,
   getPresignedUrl,
+  getBucketVisibility,
+  setBucketVisibility,
+  maxioPublicObjectUrl,
 } from '@/lib/api'
 
 // ── Pure helpers ───────────────────────────────────────────────────────────────
@@ -56,6 +60,8 @@ export const useMaxIOStore = defineStore('maxio', () => {
   const currentPrefix = ref('')
   const loadingBuckets = ref(false)
   const loadingObjects = ref(false)
+  const loadingVisibility = ref(false)
+  const bucketVisibility = ref<MaxIOBucketVisibility | null>(null)
   const uploading = ref(false)
   const uploadProgress = ref(0)
   const uploadFileName = ref('')
@@ -206,6 +212,22 @@ export const useMaxIOStore = defineStore('maxio', () => {
     }
   }
 
+  async function loadVisibility() {
+    if (!selectedBucket.value) {
+      bucketVisibility.value = null
+      return
+    }
+    loadingVisibility.value = true
+    try {
+      bucketVisibility.value = await getBucketVisibility(selectedBucket.value)
+    } catch (e: unknown) {
+      bucketVisibility.value = null
+      toast.error('Failed to load visibility', { description: String(e) })
+    } finally {
+      loadingVisibility.value = false
+    }
+  }
+
   async function selectBucket(name: string) {
     selectedBucket.value = name
     currentPrefix.value = ''
@@ -213,7 +235,7 @@ export const useMaxIOStore = defineStore('maxio', () => {
     searchQuery.value = ''
     treeRoots.value = []
     resetSort()
-    await loadObjects()
+    await Promise.all([loadObjects(), loadVisibility()])
     await buildTreeRoot()
   }
 
@@ -265,11 +287,12 @@ export const useMaxIOStore = defineStore('maxio', () => {
       currentPrefix.value = ''
       selectedKeys.value = []
       treeRoots.value = []
+      bucketVisibility.value = null
       return
     }
 
     selectedKeys.value = []
-    await loadObjects()
+    await Promise.all([loadObjects(), loadVisibility()])
     await buildTreeRoot()
   }
 
@@ -287,6 +310,7 @@ export const useMaxIOStore = defineStore('maxio', () => {
       prefixes.value = []
       currentPrefix.value = ''
       treeRoots.value = []
+      bucketVisibility.value = null
     }
     await loadBuckets()
     toast.success(`Bucket "${name}" deleted`)
@@ -387,10 +411,7 @@ export const useMaxIOStore = defineStore('maxio', () => {
       for (let i = 0; i < flatKeys.length; i++) {
         const key = flatKeys[i]!
         uploadFileName.value = `Downloading ${i + 1}/${flatKeys.length}…`
-        const url = await getPresignedUrl(bucket, key)
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`Failed to fetch ${key}: ${res.status}`)
-        const buf = await res.arrayBuffer()
+        const buf = await fetchObject(bucket, key)
         // Use relative path within zip; fall back to basename if stripping gives empty
         const zipPath = key.slice(common.length) || (key.split('/').pop() ?? key)
         files[zipPath] = new Uint8Array(buf)
@@ -504,11 +525,13 @@ export const useMaxIOStore = defineStore('maxio', () => {
   async function downloadObject(key: string) {
     if (!selectedBucket.value) return
     try {
-      const url = await getPresignedUrl(selectedBucket.value, key)
+      const buf = await fetchObject(selectedBucket.value, key)
+      const blob = new Blob([buf])
       const a = document.createElement('a')
-      a.href = url
+      a.href = URL.createObjectURL(blob)
       a.download = key.split('/').pop() ?? key
       a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
     } catch (e: unknown) {
       toast.error('Download failed', { description: String(e) })
     }
@@ -517,12 +540,31 @@ export const useMaxIOStore = defineStore('maxio', () => {
   async function copyObjectUrl(key: string) {
     if (!selectedBucket.value) return
     try {
-      const url = await getPresignedUrl(selectedBucket.value, key)
+      const url = bucketVisibility.value?.publicRead
+        ? maxioPublicObjectUrl(selectedBucket.value, key)
+        : await getPresignedUrl(selectedBucket.value, key)
       await navigator.clipboard.writeText(url)
       toast.success('URL copied to clipboard')
     } catch (e: unknown) {
       toast.error('Copy failed', { description: String(e) })
     }
+  }
+
+  async function setVisibility(publicRead: boolean, bucket?: string) {
+    const name = bucket ?? selectedBucket.value
+    if (!name) return
+    let publicList = false
+    if (name === selectedBucket.value && bucketVisibility.value) {
+      publicList = bucketVisibility.value.publicList
+    } else {
+      const current = await getBucketVisibility(name)
+      publicList = current.publicList
+    }
+    const next = await setBucketVisibility(name, { publicRead, publicList })
+    if (name === selectedBucket.value) {
+      bucketVisibility.value = next
+    }
+    toast.success(publicRead ? `Bucket "${name}" is now public` : `Bucket "${name}" is now private`)
   }
 
   function toggleSelect(key: string) {
@@ -552,6 +594,8 @@ export const useMaxIOStore = defineStore('maxio', () => {
     currentPrefix,
     loadingBuckets,
     loadingObjects,
+    loadingVisibility,
+    bucketVisibility,
     uploading,
     uploadProgress,
     uploadFileName,
@@ -583,6 +627,7 @@ export const useMaxIOStore = defineStore('maxio', () => {
     uploadFiles,
     downloadObject,
     copyObjectUrl,
+    setVisibility,
     toggleSelect,
     selectAll,
     clearSelection,

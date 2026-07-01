@@ -523,6 +523,11 @@ export interface MaxIOListResult {
   isTruncated: boolean
 }
 
+export interface MaxIOBucketVisibility {
+  publicRead: boolean
+  publicList: boolean
+}
+
 // XML parsing helpers
 function parseXML(text: string): Document {
   return new DOMParser().parseFromString(text, 'application/xml')
@@ -689,11 +694,35 @@ export async function createFolder(bucket: string, key: string): Promise<void> {
   if (!res.ok) throw new Error(`createFolder: ${res.status} ${res.statusText}`)
 }
 
-/** Get a presigned URL for downloading an object. */
+/** Same-origin S3 proxy path for a bucket object (avoids cross-origin CORS to s3.maxio.test). */
+export function maxioObjectPath(bucket: string, key: string): string {
+  return `/api/maxio/s3/${encodeURIComponent(bucket)}/${key}`
+}
+
+/** Fetch object bytes via the devctl S3 proxy (same-origin; no presigned URL / CORS). */
+export async function fetchObject(bucket: string, key: string): Promise<ArrayBuffer> {
+  const res = await fetch(maxioObjectPath(bucket, key))
+  if (!res.ok) throw new Error(`fetchObject ${key}: ${res.status} ${res.statusText}`)
+  return res.arrayBuffer()
+}
+
+/** Get a presigned URL for external sharing (points at s3.maxio.test). */
 export async function getPresignedUrl(bucket: string, key: string): Promise<string> {
   const q = new URLSearchParams({ bucket, key })
   const data = await request<{ url: string }>('GET', `/api/maxio/presign?${q}`)
   return data.url
+}
+
+export const getBucketVisibility = (bucket: string) =>
+  request<MaxIOBucketVisibility>('GET', `/api/maxio/buckets/${encodeURIComponent(bucket)}/visibility`)
+
+export const setBucketVisibility = (bucket: string, body: MaxIOBucketVisibility) =>
+  request<MaxIOBucketVisibility>('PUT', `/api/maxio/buckets/${encodeURIComponent(bucket)}/visibility`, body)
+
+/** Direct HTTPS URL for objects in a bucket with public_read enabled. */
+export function maxioPublicObjectUrl(bucket: string, key: string): string {
+  const trimmed = key.startsWith('/') ? key.slice(1) : key
+  return `https://s3.maxio.test/${encodeURIComponent(bucket)}/${trimmed}`
 }
 
 // --- Self-update ---

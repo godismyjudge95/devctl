@@ -24,6 +24,49 @@ async function deleteBucket(request: APIRequestContext, name: string): Promise<v
   expect(response.ok()).toBeTruthy()
 }
 
+async function uploadObject(request: APIRequestContext, bucket: string, key: string, body: string): Promise<void> {
+  const response = await request.put(`/api/maxio/s3/${encodeURIComponent(bucket)}/${key}`, {
+    data: body,
+    headers: { 'Content-Type': 'text/plain' },
+  })
+  expect(response.ok()).toBeTruthy()
+}
+
+test('storage page — visibility badge and bucket toggle', async ({ page, request }) => {
+  if (!await maxioInstalled(request)) {
+    test.skip()
+    return
+  }
+
+  const bucketName = `e2e-vis-${Date.now()}`
+  const objectKey = 'hello.txt'
+  await createBucket(request, bucketName)
+  await uploadObject(request, bucketName, objectKey, 'hello')
+
+  const getErrors = collectPageErrors(page)
+
+  try {
+    await page.goto('/maxio')
+    await page.getByText(bucketName, { exact: true }).click()
+    await expect(page.getByText(objectKey, { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('Private', { exact: true }).first()).toBeVisible()
+
+    const row = page.getByRole('row').filter({ hasText: objectKey })
+    await row.getByRole('button').last().click()
+    await page.getByRole('menuitem', { name: 'Make public' }).click()
+    await page.getByRole('button', { name: 'Make public' }).click()
+    await expect(page.getByText('Public', { exact: true }).first()).toBeVisible({ timeout: 10_000 })
+
+    const errors = getErrors()
+    expect(
+      errors,
+      `Uncaught JS errors on /maxio visibility toggle:\n${errors.map((e) => e.message).join('\n')}`,
+    ).toHaveLength(0)
+  } finally {
+    await deleteBucket(request, bucketName)
+  }
+})
+
 test('storage page — refresh button reloads buckets without JS errors', async ({ page, request }) => {
   if (!await maxioInstalled(request)) {
     test.skip()
