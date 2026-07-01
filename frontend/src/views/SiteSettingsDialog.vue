@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import type { Site } from '@/lib/api'
 import { getPHPVersions, detectSite } from '@/lib/api'
 import { useSitesStore } from '@/stores/sites'
@@ -32,13 +32,14 @@ const store = useSitesStore()
 const open = ref(false)
 const saving = ref(false)
 
-const form = ref({
+const form = reactive({
   domain: '',
   root_path: '',
   public_dir: '',
   php_version: '',
   aliases: '',
   spx_enabled: false,
+  https: true,
 })
 const detectedFramework = ref('')
 
@@ -47,24 +48,25 @@ function openDialog() {
     try { return (JSON.parse(props.site.aliases) as string[]).join(', ') }
     catch { return '' }
   })()
-  form.value = {
+  Object.assign(form, {
     domain: props.site.domain,
     root_path: props.site.root_path,
     public_dir: props.site.public_dir,
     php_version: props.site.php_version,
     aliases,
     spx_enabled: props.site.spx_enabled === 1,
-  }
+    https: props.site.https === 1,
+  })
   detectedFramework.value = props.site.framework ?? ''
   open.value = true
 }
 
 async function onRootPathBlur() {
-  const path = form.value.root_path.trim()
+  const path = form.root_path.trim()
   if (!path || path === props.site.root_path) return
   try {
     const result = await detectSite(path)
-    if (!form.value.public_dir) form.value.public_dir = result.public_dir
+    if (!form.public_dir) form.public_dir = result.public_dir
     detectedFramework.value = result.framework
   } catch {
     // non-fatal
@@ -74,23 +76,23 @@ async function onRootPathBlur() {
 async function save() {
   saving.value = true
   try {
-    const aliasList = form.value.aliases
-      ? form.value.aliases.split(',').map((a) => a.trim()).filter(Boolean)
+    const aliasList = form.aliases
+      ? form.aliases.split(',').map((a) => a.trim()).filter(Boolean)
       : []
-    const spxChanged = form.value.spx_enabled !== (props.site.spx_enabled === 1)
+    const spxChanged = form.spx_enabled !== (props.site.spx_enabled === 1)
     await store.update(props.site.id, {
-      domain: form.value.domain,
-      root_path: form.value.root_path,
-      public_dir: form.value.public_dir,
-      php_version: form.value.php_version,
+      domain: form.domain,
+      root_path: form.root_path,
+      public_dir: form.public_dir,
+      php_version: form.php_version,
       aliases: aliasList,
-      https: props.site.https,
-      spx_enabled: form.value.spx_enabled ? 1 : 0,
+      https: form.https ? 1 : 0,
+      spx_enabled: form.spx_enabled ? 1 : 0,
     })
     if (spxChanged) {
-      await store.toggleSPX(props.site.id, form.value.spx_enabled)
+      await store.toggleSPX(props.site.id, form.spx_enabled)
     }
-    toast.success(`${form.value.domain} settings saved`)
+    toast.success(`${form.domain} settings saved`)
     open.value = false
   } catch (e: any) {
     toast.error('Failed to save settings', { description: e.message })
@@ -168,6 +170,11 @@ async function save() {
             Enable SPX Profiler
             <span class="text-muted-foreground font-normal text-xs">(activates via cookie/query param)</span>
           </Label>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <Checkbox id="sd-https" v-model:checked="form.https" />
+          <Label for="sd-https" class="cursor-pointer">Force HTTPS</Label>
         </div>
 
         <!-- Worktree button — only for non-worktree, git-backed sites -->

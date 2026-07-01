@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -426,5 +427,294 @@ func TestSites_AutoDiscover_UsesLatestPHPVersion(t *testing.T) {
 	fetched := decodeJSON[Site](t, httpGet(t, fmt.Sprintf("/api/sites/%s", created.ID)))
 	if fetched.PhpVersion != wantPHP {
 		t.Errorf("re-fetched site php_version = %q, want %q", fetched.PhpVersion, wantPHP)
+	}
+}
+
+// TestSites_HTTPS_SettingsDialogPayloadPersists simulates the exact PUT body the
+// Site Settings dialog sends when toggling Force HTTPS (all fields + https).
+func TestSites_HTTPS_SettingsDialogPayloadPersists(t *testing.T) {
+	dir, err := os.MkdirTemp("", "devctl-test-site-https-ui-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	const domain = "test-https-ui-payload.test"
+
+	{
+		body := httpGet(t, "/api/sites")
+		for _, s := range decodeJSON[[]Site](t, body) {
+			if s.Domain == domain {
+				httpDelete(t, "/api/sites/"+s.ID) //nolint:errcheck
+			}
+		}
+	}
+
+	createBody, createStatus := httpPost(t, "/api/sites", map[string]any{
+		"domain":    domain,
+		"root_path": dir,
+		"https":     0,
+	})
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", createStatus, string(createBody))
+	}
+	created := decodeJSON[Site](t, createBody)
+	t.Cleanup(func() { httpDelete(t, "/api/sites/"+created.ID) }) //nolint:errcheck
+
+	if created.HTTPS != 0 {
+		t.Fatalf("precondition: https=%d, want 0", created.HTTPS)
+	}
+
+	// Mirror SiteSettingsDialog.vue save() payload when user checks Force HTTPS.
+	updateBody, updateStatus := httpPut(t, "/api/sites/"+created.ID, map[string]any{
+		"domain":      domain,
+		"root_path":   dir,
+		"public_dir":  created.PublicDir,
+		"php_version": created.PhpVersion,
+		"aliases":     []string{},
+		"https":       1,
+		"spx_enabled": 0,
+	})
+	if updateStatus != http.StatusOK {
+		t.Fatalf("settings-dialog update: expected 200, got %d: %s", updateStatus, string(updateBody))
+	}
+	updated := decodeJSON[Site](t, updateBody)
+	if updated.HTTPS != 1 {
+		t.Errorf("update response: https=%d, want 1", updated.HTTPS)
+	}
+
+	refetched := decodeJSON[Site](t, httpGet(t, "/api/sites/"+created.ID))
+	if refetched.HTTPS != 1 {
+		t.Errorf("re-fetch: https=%d, want 1", refetched.HTTPS)
+	}
+}
+
+// TestSites_HTTPS_DefaultsToForceHTTPSAndCanBeToggled verifies that:
+// - creating a site while omitting "https" in the payload defaults to https=1 (force HTTPS checked)
+// - the value can be toggled via PUT /api/sites/{id}
+func TestSites_HTTPS_DefaultsToForceHTTPSAndCanBeToggled(t *testing.T) {
+	dir, err := os.MkdirTemp("", "devctl-test-site-https-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	const domain = "test-https-force.test"
+
+	// Cleanup pre-existing
+	{
+		body := httpGet(t, "/api/sites")
+		for _, s := range decodeJSON[[]Site](t, body) {
+			if s.Domain == domain {
+				httpDelete(t, "/api/sites/"+s.ID) //nolint:errcheck
+			}
+		}
+	}
+
+	// Create without "https" in body → should default to 1
+	t.Log("step: create site omitting https field")
+	createBody, createStatus := httpPost(t, "/api/sites", map[string]any{
+		"domain":    domain,
+		"root_path": dir,
+	})
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", createStatus, string(createBody))
+	}
+	created := decodeJSON[Site](t, createBody)
+	t.Cleanup(func() { httpDelete(t, "/api/sites/"+created.ID) }) //nolint:errcheck
+
+	if created.HTTPS != 1 {
+		t.Fatalf("create (omitted https): https=%d, want 1 (default force https / checked)", created.HTTPS)
+	}
+
+	siteID := created.ID
+
+	// Update to turn off force https
+	t.Log("step: update to set https=0")
+	updatePayload := map[string]any{
+		"domain":     domain,
+		"root_path":  dir,
+		"php_version": created.PhpVersion,
+		"aliases":     []string{},
+		"spx_enabled": 0,
+		"https":       0,
+		"public_dir":  "",
+	}
+	updateBody, updateStatus := httpPut(t, "/api/sites/"+siteID, updatePayload)
+	if updateStatus != http.StatusOK {
+		t.Fatalf("update https=0: expected 200, got %d: %s", updateStatus, string(updateBody))
+	}
+	updated := decodeJSON[Site](t, updateBody)
+	if updated.HTTPS != 0 {
+		t.Errorf("after update https=0: https=%d, want 0", updated.HTTPS)
+	}
+
+	// Re-fetch to confirm persisted
+	refetched := decodeJSON[Site](t, httpGet(t, "/api/sites/"+siteID))
+	if refetched.HTTPS != 0 {
+		t.Errorf("re-fetch after disable: https=%d, want 0", refetched.HTTPS)
+	}
+
+	// Re-enable
+	t.Log("step: re-enable https=1 via update")
+	updatePayload["https"] = 1
+	updateBody2, updateStatus2 := httpPut(t, "/api/sites/"+siteID, updatePayload)
+	if updateStatus2 != http.StatusOK {
+		t.Fatalf("update https=1: expected 200, got %d: %s", updateStatus2, string(updateBody2))
+	}
+	reenabled := decodeJSON[Site](t, updateBody2)
+	if reenabled.HTTPS != 1 {
+		t.Errorf("after re-enable: https=%d, want 1", reenabled.HTTPS)
+	}
+}
+
+// TestSites_HTTPS_CaddyRedirectRouteSynced verifies that enabling Force HTTPS
+// provisions a Caddy redirect route and disabling removes it.
+func TestSites_HTTPS_CaddyRedirectRouteSynced(t *testing.T) {
+	pollServiceStatus(t, "caddy", "running", 30*time.Second)
+
+	dir, err := os.MkdirTemp("", "devctl-test-site-https-caddy-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	const domain = "test-https-caddy.test"
+	redirectID := "vhost-test-https-caddy-test-https-redirect"
+
+	// Cleanup pre-existing
+	{
+		body := httpGet(t, "/api/sites")
+		for _, s := range decodeJSON[[]Site](t, body) {
+			if s.Domain == domain {
+				httpDelete(t, "/api/sites/"+s.ID) //nolint:errcheck
+			}
+		}
+	}
+
+	// Create with force HTTPS off.
+	createBody, createStatus := httpPost(t, "/api/sites", map[string]any{
+		"domain":    domain,
+		"root_path": dir,
+		"https":     0,
+	})
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", createStatus, string(createBody))
+	}
+	created := decodeJSON[Site](t, createBody)
+	t.Cleanup(func() { httpDelete(t, "/api/sites/"+created.ID) }) //nolint:errcheck
+
+	if caddyRouteExists(t, redirectID) {
+		t.Fatalf("redirect route %q should not exist when https=0", redirectID)
+	}
+
+	// Enable force HTTPS — Caddy should gain the redirect route.
+	updatePayload := map[string]any{
+		"domain":      domain,
+		"root_path":   dir,
+		"php_version": created.PhpVersion,
+		"aliases":     []string{},
+		"spx_enabled": 0,
+		"https":       1,
+		"public_dir":  "",
+	}
+	_, updateStatus := httpPut(t, "/api/sites/"+created.ID, updatePayload)
+	if updateStatus != http.StatusOK {
+		t.Fatalf("enable https: expected 200, got %d", updateStatus)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if caddyRouteExists(t, redirectID) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !caddyRouteExists(t, redirectID) {
+		t.Fatalf("redirect route %q not found after enabling https=1", redirectID)
+	}
+
+	// Disable again — redirect route should be removed.
+	updatePayload["https"] = 0
+	_, updateStatus2 := httpPut(t, "/api/sites/"+created.ID, updatePayload)
+	if updateStatus2 != http.StatusOK {
+		t.Fatalf("disable https: expected 200, got %d", updateStatus2)
+	}
+
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !caddyRouteExists(t, redirectID) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if caddyRouteExists(t, redirectID) {
+		t.Fatalf("redirect route %q still present after disabling https", redirectID)
+	}
+}
+
+// TestSites_HTTPS_HTTPRequestRedirectsToHTTPS verifies that HTTP requests to a
+// force-HTTPS site receive a 308 redirect to the HTTPS URL.
+func TestSites_HTTPS_HTTPRequestRedirectsToHTTPS(t *testing.T) {
+	pollServiceStatus(t, "caddy", "running", 30*time.Second)
+
+	dir, err := os.MkdirTemp("", "devctl-test-site-https-redirect-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	const domain = "test-https-redirect.test"
+
+	// Cleanup pre-existing
+	{
+		body := httpGet(t, "/api/sites")
+		for _, s := range decodeJSON[[]Site](t, body) {
+			if s.Domain == domain {
+				httpDelete(t, "/api/sites/"+s.ID) //nolint:errcheck
+			}
+		}
+	}
+
+	createBody, createStatus := httpPost(t, "/api/sites", map[string]any{
+		"domain":    domain,
+		"root_path": dir,
+		"https":     1,
+	})
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", createStatus, string(createBody))
+	}
+	created := decodeJSON[Site](t, createBody)
+	t.Cleanup(func() { httpDelete(t, "/api/sites/"+created.ID) }) //nolint:errcheck
+
+	redirectID := "vhost-test-https-redirect-test-https-redirect"
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if caddyRouteExists(t, redirectID) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !caddyRouteExists(t, redirectID) {
+		t.Fatalf("redirect route %q not provisioned for https=1 site", redirectID)
+	}
+
+	var status int
+	var location string
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		status, location = httpHeadWithHost(t, domain)
+		if status == http.StatusPermanentRedirect && strings.HasPrefix(location, "https://") {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if status != http.StatusPermanentRedirect {
+		t.Fatalf("HEAD http://%s/: status=%d, want %d", domain, status, http.StatusPermanentRedirect)
+	}
+	wantLocation := "https://" + domain + "/"
+	if location != wantLocation {
+		t.Errorf("Location = %q, want %q", location, wantLocation)
 	}
 }

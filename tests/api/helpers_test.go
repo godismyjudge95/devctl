@@ -314,6 +314,50 @@ func pollUpdateAvailable(t *testing.T, id string, want bool, timeout time.Durati
 	t.Fatalf("pollUpdateAvailable: service %q not found in services list", id)
 }
 
+// caddyAdminURL returns the Caddy admin API base URL.
+func caddyAdminURL() string {
+	if u := os.Getenv("CADDY_ADMIN_URL"); u != "" {
+		return u
+	}
+	return "http://127.0.0.1:2019"
+}
+
+// caddyRouteExists reports whether a Caddy route with the given @id is configured.
+func caddyRouteExists(t *testing.T, id string) bool {
+	t.Helper()
+	url := fmt.Sprintf("%s/id/%s", caddyAdminURL(), id)
+	resp, err := http.Get(url) //nolint:noctx
+	if err != nil {
+		t.Fatalf("caddy GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode == http.StatusOK
+}
+
+// httpHeadWithHost sends an HTTP HEAD request to 127.0.0.1 with the given Host
+// header (bypasses DNS). Returns status code and Location header value.
+func httpHeadWithHost(t *testing.T, host string) (status int, location string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodHead, "http://127.0.0.1/", nil)
+	if err != nil {
+		t.Fatalf("build HEAD request: %v", err)
+	}
+	req.Host = host
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("HEAD http://127.0.0.1/ (Host: %s): %v", host, err)
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode, resp.Header.Get("Location")
+}
+
 // decodeJSON unmarshals body into a value of type T.
 // The test is marked as failed and stopped immediately on any parse error.
 func decodeJSON[T any](t *testing.T, body []byte) T {

@@ -86,6 +86,11 @@ type VhostConfig struct {
 
 // UpsertVhost adds or replaces a vhost route in the Caddy HTTP server config.
 // It uses the Caddy object-ID API: PATCH /id/{@id} if it exists, PUT otherwise.
+//
+// For sites with HTTPS=true it also ensures an HTTP→HTTPS redirect route
+// (inserted early in the routes list). When HTTPS=false any prior redirect
+// for the vhost is removed. This makes the per-site "Force HTTPS" checkbox
+// actually control redirects.
 func (c *CaddyClient) UpsertVhost(cfg VhostConfig) error {
 	route := buildRoute(cfg)
 	body, err := json.Marshal(route)
@@ -103,10 +108,12 @@ func (c *CaddyClient) UpsertVhost(cfg VhostConfig) error {
 	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode == http.StatusOK {
+		// Content updated. Now ensure/clean the redirect companion.
+		c.syncHTTPSRedirect(cfg)
 		return nil
 	}
 
-	// If not found, append to the routes array.
+	// If not found, prepend to the routes array (at 0).
 	putURL := fmt.Sprintf("%s/config/apps/http/servers/devctl/routes/0", c.adminURL)
 	resp2, err := c.http.Do(mustRequest("PUT", putURL, body))
 	if err != nil {
@@ -118,11 +125,91 @@ func (c *CaddyClient) UpsertVhost(cfg VhostConfig) error {
 	if resp2.StatusCode != http.StatusOK {
 		return fmt.Errorf("caddy PUT returned %d", resp2.StatusCode)
 	}
+
+	c.syncHTTPSRedirect(cfg)
+	return nil
+}
+
+// deleteRouteByID is a small helper to DELETE a specific @id route. It is
+// best-effort and swallows not-found.
+func (c *CaddyClient) deleteRouteByID(id string) error {
+	url := fmt.Sprintf("%s/id/%s", c.adminURL, id)
+	resp, err := c.http.Do(mustRequest("DELETE", url, nil))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("caddy DELETE %s returned %d", id, resp.StatusCode)
+	}
+	return nil
+}
+
+// syncHTTPSRedirect ensures the companion redirect route exists (and is
+// positioned early) when cfg.HTTPS is true, or removes it when false.
+func (c *CaddyClient) syncHTTPSRedirect(cfg VhostConfig) {
+	redirectID := cfg.ID + "-https-redirect"
+	if cfg.HTTPS {
+		if err := c.upsertHTTPSRedirect(cfg.Hosts, redirectID); err != nil {
+			fmt.Printf("sites: caddy https redirect upsert error for %s: %v\n", cfg.ID, err)
+		}
+	} else {
+		// Remove redirect if it exists (best effort).
+		_ = c.deleteRouteByID(redirectID)
+	}
+}
+
+// upsertHTTPSRedirect creates or updates an explicit HTTP→HTTPS redirect
+// route for the given hosts. It is only created for sites where Force HTTPS
+// is enabled. The redirect only triggers on plain HTTP (via the protocol
+// matcher) to avoid loops on HTTPS requests. The route is prepended (PUT
+// /routes/0) so it is evaluated before the main content route.
+func (c *CaddyClient) upsertHTTPSRedirect(hosts []string, id string) error {
+	if len(hosts) == 0 {
+		return nil
+	}
+
+	route := buildHTTPSRedirectRoute(hosts, id)
+
+	body, err := json.Marshal(route)
+	if err != nil {
+		return fmt.Errorf("marshal redirect route: %w", err)
+	}
+
+	// Try PATCH first (update existing redirect route).
+	patchURL := fmt.Sprintf("%s/id/%s", c.adminURL, id)
+	resp, err := c.http.Do(mustRequest("PATCH", patchURL, body))
+	if err != nil {
+		return fmt.Errorf("caddy redirect PATCH: %w", err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	// Not present — prepend at routes/0 so the redirect takes precedence over
+	// the main content route for the same hosts.
+	putURL := fmt.Sprintf("%s/config/apps/http/servers/devctl/routes/0", c.adminURL)
+	resp2, err := c.http.Do(mustRequest("PUT", putURL, body))
+	if err != nil {
+		return fmt.Errorf("caddy redirect PUT: %w", err)
+	}
+	defer resp2.Body.Close()
+	io.Copy(io.Discard, resp2.Body)
+
+	if resp2.StatusCode != http.StatusOK {
+		return fmt.Errorf("caddy redirect PUT returned %d", resp2.StatusCode)
+	}
 	return nil
 }
 
 // DeleteVhost removes a vhost route by its @id.
+// It also cleans up any associated HTTPS redirect route for the same vhost.
 func (c *CaddyClient) DeleteVhost(id string) error {
+	// Delete main content route.
 	url := fmt.Sprintf("%s/id/%s", c.adminURL, id)
 	resp, err := c.http.Do(mustRequest("DELETE", url, nil))
 	if err != nil {
@@ -134,6 +221,9 @@ func (c *CaddyClient) DeleteVhost(id string) error {
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("caddy DELETE returned %d", resp.StatusCode)
 	}
+
+	// Best-effort delete for the optional https-redirect companion route.
+	_ = c.deleteRouteByID(id + "-https-redirect")
 	return nil
 }
 
@@ -171,7 +261,7 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 		"routes": []interface{}{},
 		"automatic_https": map[string]interface{}{
 			"disable":           false,
-			"disable_redirects": false,
+			"disable_redirects": true, // per-site "Force HTTPS" controls explicit redirects instead
 		},
 	}
 
@@ -236,6 +326,31 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 	return nil
 }
 
+// buildHTTPSRedirectRoute constructs the Caddy route JSON for an HTTP→HTTPS
+// redirect. It uses the protocol matcher (not CEL expressions) so it works
+// with the standard Caddy binary.
+func buildHTTPSRedirectRoute(hosts []string, id string) map[string]interface{} {
+	return map[string]interface{}{
+		"@id": id,
+		"match": []map[string]interface{}{
+			{
+				"host":     hosts,
+				"protocol": "http",
+			},
+		},
+		"terminal": true,
+		"handle": []map[string]interface{}{
+			{
+				"handler":     "static_response",
+				"status_code": 308,
+				"headers": map[string]interface{}{
+					"Location": []string{"https://{http.request.host}{http.request.uri}"},
+				},
+			},
+		},
+	}
+}
+
 // buildRoute constructs the Caddy route JSON for a PHP site or WS proxy.
 func buildRoute(cfg VhostConfig) map[string]interface{} {
 	if cfg.SiteType == "ws" {
@@ -260,6 +375,24 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 		effectiveRoot = filepath.Join(cfg.RootPath, cfg.PublicDir)
 	}
 
+	// Supported index files for directory indexes. Order controls precedence:
+	// index.php before html so PHP wins when both index.php and index.html exist.
+	indexFiles := []string{"index.php", "index.html", "index.htm"}
+
+	// Build try_files list for the canonical dir redirect (any of these present triggers redirect).
+	dirIndexTry := make([]string, len(indexFiles))
+	for i, f := range indexFiles {
+		dirIndexTry[i] = "{http.request.uri.path}/" + f
+	}
+
+	// Build try_files for rewrite: exact path, then {path}/index.*, then bare index.*
+	// last entry is used by first_exist_fallback when nothing exists.
+	rewriteTry := []string{"{http.request.uri.path}"}
+	for _, f := range indexFiles {
+		rewriteTry = append(rewriteTry, "{http.request.uri.path}/"+f)
+	}
+	rewriteTry = append(rewriteTry, "index.html", "index.htm", "index.php")
+
 	return map[string]interface{}{
 		"@id":      cfg.ID,
 		"match":    []map[string]interface{}{{"host": cfg.Hosts}},
@@ -269,16 +402,16 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 				"handler": "subroute",
 				"routes": []map[string]interface{}{
 					// 1. Canonical-path redirect: if the path (without trailing slash)
-					// maps to a directory that has an index.php, redirect to add
-					// the trailing slash (308). Mirrors the first block of Caddy's
-					// php_fastcgi expanded form and prevents /wp-admin → /wp-admin/
+					// maps to a directory that has an index file (index.php / .html / .htm),
+					// redirect to add the trailing slash (308). Mirrors the first block of
+					// Caddy's php_fastcgi expanded form and prevents /wp-admin → /wp-admin/
 					// redirect loops in WordPress.
 					{
 						"match": []map[string]interface{}{
 							{
 								"file": map[string]interface{}{
 									"root":      effectiveRoot,
-									"try_files": []string{"{http.request.uri.path}/index.php"},
+									"try_files": dirIndexTry,
 								},
 								"not": []map[string]interface{}{
 									{"path": []string{"*/"}},
@@ -296,13 +429,13 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 						},
 					},
 					// 2. Rewrite to the best matching file (exact path, directory
-					// index, or root index.php). Uses try_policy first_exist_fallback
-					// so index.php is always the final fallback even if not on disk.
+					// index, or root index file). Uses try_policy first_exist_fallback
+					// so the last entry is always the final fallback even if not on disk.
 					{
 						"match": []map[string]interface{}{
 							{"file": map[string]interface{}{
 								"root":       effectiveRoot,
-								"try_files":  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
+								"try_files":  rewriteTry,
 								"try_policy": "first_exist_fallback",
 								"split_path": []string{".php"},
 							}},

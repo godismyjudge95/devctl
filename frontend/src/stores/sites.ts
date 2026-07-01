@@ -37,10 +37,17 @@ export const useSitesStore = defineStore('sites', () => {
   }
 
   async function update(id: string, data: SiteInput) {
-    const site = await updateSite(id, data)
+    const updated = await updateSite(id, data)
     const idx = sites.value.findIndex((s: Site) => s.id === id)
-    if (idx !== -1) sites.value[idx] = site
-    return site
+    if (idx !== -1) {
+      const current = sites.value[idx]
+      if (current) {
+        // Mutate in place to preserve the object reference used in v-for / :site props.
+        // This ensures dialogs and list items immediately see the updated fields (e.g. https).
+        Object.assign(current, updated)
+      }
+    }
+    return updated
   }
 
   async function remove(id: string) {

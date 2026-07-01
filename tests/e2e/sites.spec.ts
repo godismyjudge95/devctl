@@ -134,6 +134,11 @@ test('sites page — create site via dialog then verify row appears', async ({ p
   await rootPathInput.fill('/tmp/e2e-test-site')
   await expect(rootPathInput).toHaveValue('/tmp/e2e-test-site')
 
+  // Verify Force HTTPS checkbox (default checked).
+  const httpsCheckbox = page.locator('#https')
+  await expect(httpsCheckbox).toBeVisible({ timeout: 5_000 })
+  await expect(httpsCheckbox).toBeChecked()
+
   // Submit.
   const createBtn = page.getByRole('dialog').getByRole('button', { name: /create/i })
   await expect(createBtn).toBeEnabled()
@@ -164,6 +169,58 @@ test('sites page — create site via dialog then verify row appears', async ({ p
     if (s.domain === TEST_DOMAIN) {
       await page.request.delete(`/api/sites/${s.id}`)
     }
+  }
+})
+
+const SETTINGS_HTTPS_DOMAIN = 'e2e-settings-https.test'
+
+test('site settings — Force HTTPS checkbox persists after save', async ({ page }) => {
+  const rootPath = '/tmp/e2e-settings-https-site'
+
+  // Create with force HTTPS off so we can enable it via the settings dialog.
+  const createResp = await page.request.post('/api/sites', {
+    data: { domain: SETTINGS_HTTPS_DOMAIN, root_path: rootPath, https: 0 },
+  })
+  if (createResp.status() !== 201) {
+    test.skip()
+    return
+  }
+  const created = await createResp.json() as { id: string }
+
+  try {
+    await page.goto('/sites')
+    await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('Loading…')).toBeHidden({ timeout: 10_000 })
+
+    const row = page.locator('[data-slot="table-row"]').filter({ hasText: SETTINGS_HTTPS_DOMAIN })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    // Open Site Settings for this row.
+    await row.getByRole('button', { name: 'Settings' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 5_000 })
+
+    const httpsCheckbox = dialog.locator('#sd-https')
+    await expect(httpsCheckbox).toBeVisible()
+    await expect(httpsCheckbox).not.toBeChecked()
+
+    await httpsCheckbox.click()
+    await expect(httpsCheckbox).toBeChecked()
+
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    await expect(dialog).toBeHidden({ timeout: 15_000 })
+
+    // Re-open settings — checkbox must still be checked (persisted + reloaded).
+    await row.getByRole('button', { name: 'Settings' }).click()
+    await expect(dialog).toBeVisible({ timeout: 5_000 })
+    await expect(dialog.locator('#sd-https')).toBeChecked()
+
+    const fetched = await page.request.get(`/api/sites/${created.id}`)
+    expect(fetched.ok()).toBeTruthy()
+    const site = await fetched.json() as { https: number }
+    expect(site.https).toBe(1)
+  } finally {
+    await page.request.delete(`/api/sites/${created.id}`)
   }
 })
 

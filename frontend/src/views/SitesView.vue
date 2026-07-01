@@ -600,7 +600,7 @@ function frameworkVariant(fw: string): 'default' | 'secondary' | 'outline' {
           </div>
           <div class="flex items-center gap-2">
             <Checkbox id="https" v-model:checked="form.https" />
-            <Label for="https" class="cursor-pointer">Enable HTTPS</Label>
+            <Label for="https" class="cursor-pointer">Force HTTPS</Label>
           </div>
         </div>
         <DialogFooter>
