@@ -770,7 +770,7 @@ async function doPHPUninstall() {
       </AlertDialogHeader>
       <!-- Preserve data option for database services -->
       <div v-if="purgeTarget && hasPreserveData(purgeTarget.id)" class="flex items-center gap-2 py-1">
-        <Checkbox id="preserve-data" :checked="preserveData" @update:checked="preserveData = $event" />
+        <Checkbox id="preserve-data" :checked="preserveData" @update:checked="(v) => { if (v === true || v === false) preserveData = v }" />
         <Label for="preserve-data" class="text-sm font-normal cursor-pointer">
           Keep database data (data/ directory)
         </Label>

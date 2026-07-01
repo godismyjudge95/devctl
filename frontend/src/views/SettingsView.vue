@@ -341,7 +341,7 @@ function onConnTypeChange(type: string) {
                 <Checkbox
                   id="whodb_disable_cred"
                   :checked="whodbDisableCredForm"
-                  @update:checked="(v: boolean) => { whodbDisableCredForm = v; saveWhoDB() }"
+                  @update:checked="(v) => { if (v === true || v === false) { whodbDisableCredForm = v; saveWhoDB() } }"
                 />
                 <div>
                   <Label for="whodb_disable_cred" class="cursor-pointer">Disable credential form</Label>
