@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS sites (
     aliases          TEXT NOT NULL DEFAULT '[]',
     spx_enabled      INTEGER NOT NULL DEFAULT 0,
     https            INTEGER NOT NULL DEFAULT 1,
+    cors             INTEGER NOT NULL DEFAULT 0,
     auto_discovered  INTEGER NOT NULL DEFAULT 0,
     settings         TEXT NOT NULL DEFAULT '{}',
     parent_site_id   TEXT DEFAULT NULL,
