@@ -97,6 +97,7 @@ func init() {
 			KV("Framework", orDash(found.Framework))
 			KV("SPX profiler", spx)
 			KV("HTTPS", fmt.Sprintf("%v", found.HTTPS == 1))
+			KV("CORS", fmt.Sprintf("%v", found.CORS == 1))
 			if found.IsGitRepo == 1 {
 				KV("Git remote", found.GitRemoteURL)
 			}
@@ -164,6 +165,7 @@ func init() {
 				"aliases":        aliases,
 				"spx_enabled":    found.SPXEnabled,
 				"https":          found.HTTPS,
+				"cors":           found.CORS,
 				"public_dir":     found.PublicDir,
 				"framework":      found.Framework,
 				"is_git_repo":    found.IsGitRepo,
@@ -178,6 +180,89 @@ func init() {
 				return nil
 			}
 			PrintOK(fmt.Sprintf("Switched %s from PHP %s → PHP %s", domain, orDash(found.PHPVersion), phpVer))
+			return nil
+		},
+	})
+
+	Register(&Cmd{
+		Name:        "sites:cors",
+		Description: "Enable or disable Caddy CORS header injection for a site",
+		Usage:       "<domain> <enable|disable>",
+		Args: []ArgDef{
+			{Name: "domain", Description: "Site domain (e.g. myapp.test)"},
+			{Name: "action", Description: "enable or disable"},
+		},
+		Examples: []string{
+			"devctl sites:cors myapp.test enable",
+			"devctl sites:cors tools.infomedia.test disable",
+		},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			if len(args) < 2 {
+				return fmt.Errorf("usage: devctl sites:cors <domain> <enable|disable>")
+			}
+			domain, action := args[0], args[1]
+			if action != "enable" && action != "disable" {
+				return fmt.Errorf("action must be 'enable' or 'disable'")
+			}
+
+			sites, err := c.ListSites()
+			if err != nil {
+				return err
+			}
+			var found *Site
+			for i := range sites {
+				if sites[i].Domain == domain {
+					found = &sites[i]
+					break
+				}
+			}
+			if found == nil {
+				return fmt.Errorf("no site found with domain %q", domain)
+			}
+
+			want := int64(0)
+			if action == "enable" {
+				want = 1
+			}
+			if found.CORS == want {
+				state := "disabled"
+				if want == 1 {
+					state = "enabled"
+				}
+				fmt.Printf("CORS injection is already %s for %s\n", state, domain)
+				return nil
+			}
+
+			var aliases []string
+			if found.Aliases != "" && found.Aliases != "[]" {
+				_ = json.Unmarshal([]byte(found.Aliases), &aliases)
+			}
+			body := map[string]any{
+				"domain":         found.Domain,
+				"root_path":      found.RootPath,
+				"php_version":    found.PHPVersion,
+				"aliases":        aliases,
+				"spx_enabled":    found.SPXEnabled,
+				"https":          found.HTTPS,
+				"cors":           want,
+				"public_dir":     found.PublicDir,
+				"framework":      found.Framework,
+				"is_git_repo":    found.IsGitRepo,
+				"git_remote_url": found.GitRemoteURL,
+			}
+			updated, err := c.UpdateSite(found.ID, body)
+			if err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(updated)
+				return nil
+			}
+			if want == 1 {
+				PrintOK("CORS injection enabled for " + domain)
+			} else {
+				PrintOK("CORS injection disabled for " + domain)
+			}
 			return nil
 		},
 	})

@@ -150,6 +150,7 @@ type Site struct {
 	Aliases      string `json:"aliases"`
 	SPXEnabled   int64  `json:"spx_enabled"`
 	HTTPS        int64  `json:"https"`
+	CORS         int64  `json:"cors"`
 	PublicDir    string `json:"public_dir"`
 	Framework    string `json:"framework"`
 	IsGitRepo    int64  `json:"is_git_repo"`
