@@ -718,3 +718,99 @@ func TestSites_HTTPS_HTTPRequestRedirectsToHTTPS(t *testing.T) {
 		t.Errorf("Location = %q, want %q", location, wantLocation)
 	}
 }
+
+// TestSites_CORS_DefaultsDisabled verifies new sites omit CORS injection by default.
+func TestSites_CORS_DefaultsDisabled(t *testing.T) {
+	dir, err := os.MkdirTemp("", "devctl-test-site-cors-default-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	const domain = "test-cors-default.test"
+	createBody, createStatus := httpPost(t, "/api/sites", map[string]any{
+		"domain":    domain,
+		"root_path": dir,
+	})
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", createStatus, string(createBody))
+	}
+	created := decodeJSON[Site](t, createBody)
+	t.Cleanup(func() { httpDelete(t, "/api/sites/"+created.ID) }) //nolint:errcheck
+
+	if created.CORS != 0 {
+		t.Fatalf("create (omitted cors): cors=%d, want 0", created.CORS)
+	}
+}
+
+// TestSites_CORS_CaddySynced verifies per-site CORS toggles update the Caddy vhost.
+func TestSites_CORS_CaddySynced(t *testing.T) {
+	pollServiceStatus(t, "caddy", "running", 30*time.Second)
+
+	dir, err := os.MkdirTemp("", "devctl-test-site-cors-caddy-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	const domain = "test-cors-caddy.test"
+	vhostID := "vhost-test-cors-caddy-test"
+
+	createBody, createStatus := httpPost(t, "/api/sites", map[string]any{
+		"domain":    domain,
+		"root_path": dir,
+		"cors":      0,
+	})
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d: %s", createStatus, string(createBody))
+	}
+	created := decodeJSON[Site](t, createBody)
+	t.Cleanup(func() { httpDelete(t, "/api/sites/"+created.ID) }) //nolint:errcheck
+
+	if caddyRouteHasCORSPreflight(t, vhostID) {
+		t.Fatalf("CORS preflight should not exist when cors=0")
+	}
+
+	updatePayload := map[string]any{
+		"domain":      domain,
+		"root_path":   dir,
+		"php_version": created.PhpVersion,
+		"aliases":     []string{},
+		"spx_enabled": 0,
+		"https":       1,
+		"cors":        1,
+		"public_dir":  "",
+	}
+	_, updateStatus := httpPut(t, "/api/sites/"+created.ID, updatePayload)
+	if updateStatus != http.StatusOK {
+		t.Fatalf("enable cors: expected 200, got %d", updateStatus)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if caddyRouteHasCORSPreflight(t, vhostID) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !caddyRouteHasCORSPreflight(t, vhostID) {
+		t.Fatalf("CORS preflight not found after enabling cors=1")
+	}
+
+	updatePayload["cors"] = 0
+	_, updateStatus2 := httpPut(t, "/api/sites/"+created.ID, updatePayload)
+	if updateStatus2 != http.StatusOK {
+		t.Fatalf("disable cors: expected 200, got %d", updateStatus2)
+	}
+
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !caddyRouteHasCORSPreflight(t, vhostID) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if caddyRouteHasCORSPreflight(t, vhostID) {
+		t.Fatalf("CORS preflight still present after disabling cors")
+	}
+}

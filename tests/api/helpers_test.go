@@ -322,6 +322,26 @@ func caddyAdminURL() string {
 	return "http://127.0.0.1:2019"
 }
 
+// caddyRouteHasCORSPreflight reports whether the vhost route injects an OPTIONS
+// preflight handler (devctl CORS injection enabled for that site).
+func caddyRouteHasCORSPreflight(t *testing.T, vhostID string) bool {
+	t.Helper()
+	url := fmt.Sprintf("%s/id/%s", caddyAdminURL(), vhostID)
+	resp, err := http.Get(url) //nolint:noctx
+	if err != nil {
+		t.Fatalf("caddy GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read caddy route %s: %v", vhostID, err)
+	}
+	return strings.Contains(string(body), `"method"`) && strings.Contains(string(body), `"OPTIONS"`)
+}
+
 // caddyRouteExists reports whether a Caddy route with the given @id is configured.
 func caddyRouteExists(t *testing.T, id string) bool {
 	t.Helper()

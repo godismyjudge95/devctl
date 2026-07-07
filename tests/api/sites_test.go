@@ -16,6 +16,7 @@ type Site struct {
 	PhpVersion     string `json:"php_version"`
 	SpxEnabled     int    `json:"spx_enabled"`
 	HTTPS          int    `json:"https"`
+	CORS           int    `json:"cors"`
 	AutoDiscovered int    `json:"auto_discovered"`
 	PublicDir      string `json:"public_dir"`
 	Framework      string `json:"framework"`
