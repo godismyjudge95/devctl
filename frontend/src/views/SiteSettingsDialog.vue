@@ -40,6 +40,7 @@ const form = reactive({
   aliases: '',
   spx_enabled: false,
   https: true,
+  cors: false,
 })
 const detectedFramework = ref('')
 
@@ -56,6 +57,7 @@ function openDialog() {
     aliases,
     spx_enabled: props.site.spx_enabled === 1,
     https: props.site.https === 1,
+    cors: props.site.cors === 1,
   })
   detectedFramework.value = props.site.framework ?? ''
   open.value = true
@@ -87,6 +89,7 @@ async function save() {
       php_version: form.php_version,
       aliases: aliasList,
       https: form.https ? 1 : 0,
+      cors: form.cors ? 1 : 0,
       spx_enabled: form.spx_enabled ? 1 : 0,
     })
     if (spxChanged) {
@@ -175,6 +178,14 @@ async function save() {
         <div class="flex items-center gap-2">
           <Checkbox id="sd-https" v-model:checked="form.https" />
           <Label for="sd-https" class="cursor-pointer">Force HTTPS</Label>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <Checkbox id="sd-cors" v-model:checked="form.cors" />
+          <Label for="sd-cors" class="cursor-pointer">
+            Inject CORS headers
+            <span class="text-muted-foreground font-normal text-xs">(disable when the app manages its own CORS)</span>
+          </Label>
         </div>
 
         <!-- Worktree button — only for non-worktree, git-backed sites -->

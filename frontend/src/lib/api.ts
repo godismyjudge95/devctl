@@ -24,6 +24,7 @@ export interface Site {
   aliases: string   // JSON array string
   spx_enabled: number
   https: number
+  cors: number
   auto_discovered: number
   public_dir: string
   parent_site_id: string | null
@@ -198,6 +199,7 @@ export interface SiteInput {
   aliases?: string[]
   spx_enabled?: number
   https?: number
+  cors?: number
   auto_discovered?: number
   public_dir?: string
 }
