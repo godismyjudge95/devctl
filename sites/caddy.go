@@ -82,6 +82,9 @@ type VhostConfig struct {
 	WSUpstream string
 	// ServerRoot is the devctl server root directory, used to locate the PHP-FPM socket.
 	ServerRoot string
+	// EnableCORS injects permissive Access-Control-* headers on every response.
+	// Controlled per-site via the sites.cors column (same pattern as https).
+	EnableCORS bool
 }
 
 // UpsertVhost adds or replaces a vhost route in the Caddy HTTP server config.
@@ -326,6 +329,45 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 	return nil
 }
 
+// corsResponseHeaders are applied to every site so local *.test apps can make
+// cross-origin requests without browser CORS enforcement. Caddy does not add
+// these by default — devctl injects them into each vhost route.
+var corsResponseHeaders = map[string]interface{}{
+	"Access-Control-Allow-Origin":  []string{"*"},
+	"Access-Control-Allow-Methods": []string{"*"},
+	"Access-Control-Allow-Headers": []string{"*"},
+}
+
+// corsSubroutes returns Caddy subroutes that answer OPTIONS preflights and set
+// permissive Access-Control-* headers on every response.
+func corsSubroutes() []map[string]interface{} {
+	return []map[string]interface{}{
+		{
+			"match": []map[string]interface{}{
+				{"method": []string{"OPTIONS"}},
+			},
+			"terminal": true,
+			"handle": []map[string]interface{}{
+				{
+					"handler":     "static_response",
+					"status_code": 204,
+					"headers":     corsResponseHeaders,
+				},
+			},
+		},
+		{
+			"handle": []map[string]interface{}{
+				{
+					"handler": "headers",
+					"response": map[string]interface{}{
+						"set": corsResponseHeaders,
+					},
+				},
+			},
+		},
+	}
+}
+
 // buildHTTPSRedirectRoute constructs the Caddy route JSON for an HTTP→HTTPS
 // redirect. It uses the protocol matcher (not CEL expressions) so it works
 // with the standard Caddy binary.
@@ -351,17 +393,42 @@ func buildHTTPSRedirectRoute(hosts []string, id string) map[string]interface{} {
 	}
 }
 
+// maybeCORSSubroutes returns corsSubroutes when enabled, otherwise nil.
+func maybeCORSSubroutes(enable bool) []map[string]interface{} {
+	if !enable {
+		return nil
+	}
+	return corsSubroutes()
+}
+
 // buildRoute constructs the Caddy route JSON for a PHP site or WS proxy.
 func buildRoute(cfg VhostConfig) map[string]interface{} {
 	if cfg.SiteType == "ws" {
+		proxyHandle := []map[string]interface{}{
+			{
+				"handler":   "reverse_proxy",
+				"upstreams": []map[string]interface{}{{"dial": cfg.WSUpstream}},
+			},
+		}
+		if !cfg.EnableCORS {
+			return map[string]interface{}{
+				"@id":      cfg.ID,
+				"match":    []map[string]interface{}{{"host": cfg.Hosts}},
+				"terminal": true,
+				"handle":   proxyHandle,
+			}
+		}
+		routes := append(corsSubroutes(), map[string]interface{}{
+			"handle": proxyHandle,
+		})
 		return map[string]interface{}{
 			"@id":      cfg.ID,
 			"match":    []map[string]interface{}{{"host": cfg.Hosts}},
 			"terminal": true,
 			"handle": []map[string]interface{}{
 				{
-					"handler":   "reverse_proxy",
-					"upstreams": []map[string]interface{}{{"dial": cfg.WSUpstream}},
+					"handler": "subroute",
+					"routes":  routes,
 				},
 			},
 		}
@@ -393,14 +460,7 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 	}
 	rewriteTry = append(rewriteTry, "index.html", "index.htm", "index.php")
 
-	return map[string]interface{}{
-		"@id":      cfg.ID,
-		"match":    []map[string]interface{}{{"host": cfg.Hosts}},
-		"terminal": true,
-		"handle": []map[string]interface{}{
-			{
-				"handler": "subroute",
-				"routes": []map[string]interface{}{
+	routes := append(maybeCORSSubroutes(cfg.EnableCORS), []map[string]interface{}{
 					// 1. Canonical-path redirect: if the path (without trailing slash)
 					// maps to a directory that has an index file (index.php / .html / .htm),
 					// redirect to add the trailing slash (308). Mirrors the first block of
@@ -490,7 +550,16 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 							},
 						},
 					},
-				},
+				}...)
+
+	return map[string]interface{}{
+		"@id":      cfg.ID,
+		"match":    []map[string]interface{}{{"host": cfg.Hosts}},
+		"terminal": true,
+		"handle": []map[string]interface{}{
+			{
+				"handler": "subroute",
+				"routes":  routes,
 			},
 		},
 	}

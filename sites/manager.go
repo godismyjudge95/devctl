@@ -36,6 +36,7 @@ type CreateSiteInput struct {
 	PHPVersion     string
 	Aliases        []string
 	HTTPS          bool
+	CORS           bool
 	AutoDiscovered bool
 	// PublicDir is the subdirectory within RootPath to use as document root (e.g. "public").
 	PublicDir string
@@ -72,6 +73,10 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 	httpsVal := int64(1)
 	if !input.HTTPS {
 		httpsVal = 0
+	}
+	corsVal := int64(0)
+	if input.CORS {
+		corsVal = 1
 	}
 	autoVal := int64(0)
 	if input.AutoDiscovered {
@@ -111,6 +116,7 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		Aliases:        string(aliases),
 		SpxEnabled:     0,
 		Https:          httpsVal,
+		Cors:           corsVal,
 		AutoDiscovered: autoVal,
 		Settings:       string(settingsJSON),
 		ParentSiteID:   parentID,
@@ -118,7 +124,7 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		PublicDir:      input.PublicDir,
 		ServiceVhost:   serviceVhostVal,
 		IsGitRepo:      isGitRepoVal,
-		GitRemoteURL:   input.GitRemoteURL,
+		GitRemoteUrl:   input.GitRemoteURL,
 		Framework:      input.Framework,
 	})
 	if err != nil {
@@ -274,7 +280,7 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 		ParentSiteID:   parentID,
 		WorktreeBranch: branch,
 		IsGitRepo:      true,
-		GitRemoteURL:   parent.GitRemoteURL,
+		GitRemoteURL:   parent.GitRemoteUrl,
 		Framework:      parent.Framework,
 	})
 	if err != nil {
@@ -352,6 +358,7 @@ func (m *Manager) syncCaddy(site dbq.Site) error {
 		SiteType:   siteType,
 		WSUpstream: wsUpstream,
 		ServerRoot: m.serverRoot,
+		EnableCORS: site.Cors == 1,
 	})
 }
 

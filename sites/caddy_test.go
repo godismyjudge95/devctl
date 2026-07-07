@@ -11,22 +11,25 @@ func TestBuildRoute_IncludesHTMLAndHTMIndexes(t *testing.T) {
 		PHPVersion: "8.3",
 		HTTPS:      true,
 		ServerRoot: "/tmp/server",
+		EnableCORS: true,
 	}
 
 	route := buildRoute(cfg)
 
-	// Navigate: handle[0] is the subroute; routes[0] = redirect, routes[1] = rewrite
+	// Navigate: handle[0] is the subroute; routes[0..1] = CORS, routes[2] = redirect, routes[3] = rewrite
 	outerHandle := route["handle"].([]map[string]interface{})
 	if len(outerHandle) == 0 {
 		t.Fatal("expected outer handle")
 	}
 	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
-	if len(subroutes) < 2 {
-		t.Fatalf("expected at least 2 subroutes, got %d", len(subroutes))
+	if len(subroutes) < 4 {
+		t.Fatalf("expected at least 4 subroutes, got %d", len(subroutes))
 	}
 
-	// 0: canonical redirect block
-	redirectMatch := subroutes[0]["match"].([]map[string]interface{})
+	assertCORSSubroutes(t, subroutes[0], subroutes[1])
+
+	// 2: canonical redirect block
+	redirectMatch := subroutes[2]["match"].([]map[string]interface{})
 	redirectFile := redirectMatch[0]["file"].(map[string]interface{})
 	dirTry, ok := redirectFile["try_files"].([]string)
 	if !ok {
@@ -46,8 +49,8 @@ func TestBuildRoute_IncludesHTMLAndHTMIndexes(t *testing.T) {
 		}
 	}
 
-	// 1: rewrite block
-	rewriteMatch := subroutes[1]["match"].([]map[string]interface{})
+	// 3: rewrite block
+	rewriteMatch := subroutes[3]["match"].([]map[string]interface{})
 	rewriteFile := rewriteMatch[0]["file"].(map[string]interface{})
 	rewriteTry, ok := rewriteFile["try_files"].([]string)
 	if !ok {
@@ -100,19 +103,83 @@ func TestBuildHTTPSRedirectRoute_UsesProtocolMatcher(t *testing.T) {
 	}
 }
 
+func assertCORSSubroutes(t *testing.T, preflight, headers map[string]interface{}) {
+	t.Helper()
+
+	preflightMatch := preflight["match"].([]map[string]interface{})
+	if preflightMatch[0]["method"].([]string)[0] != "OPTIONS" {
+		t.Fatalf("preflight method = %v", preflightMatch[0]["method"])
+	}
+	if preflight["terminal"] != true {
+		t.Fatal("preflight route must be terminal")
+	}
+
+	headersHandle := headers["handle"].([]map[string]interface{})
+	if headersHandle[0]["handler"] != "headers" {
+		t.Fatalf("headers handler = %v", headersHandle[0]["handler"])
+	}
+}
+
+func TestBuildRoute_CORSDisabled_PHP(t *testing.T) {
+	cfg := VhostConfig{
+		ID:         "vhost-test",
+		Hosts:      []string{"myapp.test"},
+		RootPath:   "/tmp/myapp",
+		PHPVersion: "8.3",
+		ServerRoot: "/tmp/server",
+		EnableCORS: false,
+	}
+
+	route := buildRoute(cfg)
+	outerHandle := route["handle"].([]map[string]interface{})
+	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
+	if len(subroutes) != 4 {
+		t.Fatalf("expected 4 subroutes without CORS, got %d", len(subroutes))
+	}
+	if _, hasMethod := subroutes[0]["match"].([]map[string]interface{})[0]["method"]; hasMethod {
+		t.Fatal("first subroute must not be OPTIONS preflight when CORS disabled")
+	}
+}
+
+func TestBuildRoute_CORSDisabled_WS(t *testing.T) {
+	cfg := VhostConfig{
+		ID:         "vhost-ws",
+		Hosts:      []string{"reverb.test"},
+		SiteType:   "ws",
+		WSUpstream: "127.0.0.1:8080",
+		EnableCORS: false,
+	}
+
+	route := buildRoute(cfg)
+	handle := route["handle"].([]map[string]interface{})
+	if handle[0]["handler"] != "reverse_proxy" {
+		t.Fatalf("ws route without CORS should use reverse_proxy directly, got %v", handle[0]["handler"])
+	}
+}
+
 func TestBuildRoute_WSRoute(t *testing.T) {
 	cfg := VhostConfig{
 		ID:         "vhost-ws",
 		Hosts:      []string{"reverb.test"},
 		SiteType:   "ws",
 		WSUpstream: "127.0.0.1:8080",
+		EnableCORS: true,
 	}
 	route := buildRoute(cfg)
 	if route["@id"] != "vhost-ws" {
 		t.Error("ws route id wrong")
 	}
-	// should not have the php subroute structure
 	if _, hasHandle := route["handle"]; !hasHandle {
 		t.Error("ws route missing handle")
+	}
+
+	outerHandle := route["handle"].([]map[string]interface{})
+	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
+	if len(subroutes) < 3 {
+		t.Fatalf("expected cors + proxy subroutes, got %d", len(subroutes))
+	}
+	assertCORSSubroutes(t, subroutes[0], subroutes[1])
+	if subroutes[2]["handle"].([]map[string]interface{})[0]["handler"] != "reverse_proxy" {
+		t.Error("ws route missing reverse_proxy handler")
 	}
 }
