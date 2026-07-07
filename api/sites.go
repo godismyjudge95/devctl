@@ -19,6 +19,7 @@ type siteRequest struct {
 	Aliases    []string `json:"aliases"`
 	SPXEnabled int64    `json:"spx_enabled"`
 	HTTPS      *int64   `json:"https"`
+	CORS       *int64   `json:"cors"`
 	PublicDir  string   `json:"public_dir"`
 }
 
@@ -56,6 +57,10 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 	if req.HTTPS != nil {
 		httpsVal = *req.HTTPS
 	}
+	corsVal := int64(0)
+	if req.CORS != nil {
+		corsVal = *req.CORS
+	}
 
 	site, err := s.siteManager.Create(r.Context(), sites.CreateSiteInput{
 		Domain:       req.Domain,
@@ -63,6 +68,7 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 		PHPVersion:   req.PHPVersion,
 		Aliases:      req.Aliases,
 		HTTPS:        httpsVal == 1,
+		CORS:         corsVal == 1,
 		PublicDir:    publicDir,
 		IsGitRepo:    info.IsGitRepo,
 		GitRemoteURL: info.GitRemoteURL,
@@ -108,11 +114,15 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	if req.HTTPS != nil {
 		httpsVal = *req.HTTPS
 	}
+	corsVal := existing.Cors
+	if req.CORS != nil {
+		corsVal = *req.CORS
+	}
 	spx := req.SPXEnabled
 
 	// Re-inspect if root_path changed; otherwise preserve existing git/framework data.
 	isGitRepo := existing.IsGitRepo
-	gitRemoteURL := existing.GitRemoteURL
+	gitRemoteURL := existing.GitRemoteUrl
 	framework := existing.Framework
 	if req.RootPath != existing.RootPath {
 		info := InspectSitePath(req.RootPath)
@@ -131,10 +141,11 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		Aliases:      string(aliases),
 		SpxEnabled:   spx,
 		Https:        httpsVal,
+		Cors:         corsVal,
 		Settings:     existing.Settings,
 		PublicDir:    req.PublicDir,
 		IsGitRepo:    isGitRepo,
-		GitRemoteURL: gitRemoteURL,
+		GitRemoteUrl: gitRemoteURL,
 		Framework:    framework,
 		ID:           id,
 	})
@@ -156,6 +167,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		PublicDir:  site.PublicDir,
 		PHPVersion: site.PhpVersion,
 		HTTPS:      site.Https == 1,
+		EnableCORS: site.Cors == 1,
 		SiteType:   settings["site_type"],
 		WSUpstream: settings["ws_upstream"],
 		ServerRoot: s.serverRoot,
@@ -201,7 +213,7 @@ func (s *Server) handleRefreshSiteMetadata(w http.ResponseWriter, r *http.Reques
 		}
 		if err := s.queries.UpdateSiteGitInfo(r.Context(), dbq.UpdateSiteGitInfoParams{
 			IsGitRepo:    isGitRepo,
-			GitRemoteURL: info.GitRemoteURL,
+			GitRemoteUrl: info.GitRemoteURL,
 			Framework:    info.Framework,
 			ID:           site.ID,
 		}); err != nil {
