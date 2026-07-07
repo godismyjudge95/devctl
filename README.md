@@ -324,6 +324,7 @@ When a site directory is removed from disk, devctl automatically deregisters it 
 - Assign a PHP version (each site can run a different version)
 - Enable or disable the SPX profiler
 - Toggle HTTPS
+- Toggle CORS header injection (disable when the app manages its own CORS, e.g. Laravel embed routes)
 - Set a custom public directory
 
 **TLS:** Caddy's internal CA generates certificates automatically. To eliminate browser warnings, click **Trust Certificate** in Settings to install the CA into your system and browser trust stores (requires `libnss3-tools`).
@@ -547,6 +548,7 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `sites:get <domain>` | Show full details for a site |
 | | `sites:php <domain> <version>` | Switch the PHP version for a site |
 | | `sites:spx <domain> enable\|disable` | Enable or disable the SPX profiler for a site |
+| | `sites:cors <domain> enable\|disable` | Enable or disable Caddy CORS header injection for a site |
 | `php` | `php:versions` | List installed PHP versions and their FPM status |
 | | `php:settings` | Show current PHP ini settings (applies to all versions) |
 | | `php:set <key=value>...` | Update PHP ini settings |
