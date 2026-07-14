@@ -16,20 +16,24 @@ func TestBuildRoute_IncludesHTMLAndHTMIndexes(t *testing.T) {
 
 	route := buildRoute(cfg)
 
-	// Navigate: handle[0] is the subroute; routes[0..1] = CORS, routes[2] = redirect, routes[3] = rewrite
+	// PHP+CORS: handle[0]=headers middleware, handle[1]=subroute
+	// subroutes: [0]=OPTIONS preflight, [1]=redirect, [2]=rewrite, ...
 	outerHandle := route["handle"].([]map[string]interface{})
-	if len(outerHandle) == 0 {
-		t.Fatal("expected outer handle")
+	if len(outerHandle) < 2 {
+		t.Fatalf("expected headers + subroute, got %d handlers", len(outerHandle))
 	}
-	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
-	if len(subroutes) < 4 {
-		t.Fatalf("expected at least 4 subroutes, got %d", len(subroutes))
+	assertCORSHeadersHandler(t, outerHandle[0])
+	if outerHandle[1]["handler"] != "subroute" {
+		t.Fatalf("expected subroute, got %v", outerHandle[1]["handler"])
 	}
+	subroutes := outerHandle[1]["routes"].([]map[string]interface{})
+	if len(subroutes) < 3 {
+		t.Fatalf("expected at least 3 subroutes (preflight+redirect+rewrite), got %d", len(subroutes))
+	}
+	assertCORSPreflightRoute(t, subroutes[0])
 
-	assertCORSSubroutes(t, subroutes[0], subroutes[1])
-
-	// 2: canonical redirect block
-	redirectMatch := subroutes[2]["match"].([]map[string]interface{})
+	// 1: canonical redirect block
+	redirectMatch := subroutes[1]["match"].([]map[string]interface{})
 	redirectFile := redirectMatch[0]["file"].(map[string]interface{})
 	dirTry, ok := redirectFile["try_files"].([]string)
 	if !ok {
@@ -49,8 +53,8 @@ func TestBuildRoute_IncludesHTMLAndHTMIndexes(t *testing.T) {
 		}
 	}
 
-	// 3: rewrite block
-	rewriteMatch := subroutes[3]["match"].([]map[string]interface{})
+	// 2: rewrite block
+	rewriteMatch := subroutes[2]["match"].([]map[string]interface{})
 	rewriteFile := rewriteMatch[0]["file"].(map[string]interface{})
 	rewriteTry, ok := rewriteFile["try_files"].([]string)
 	if !ok {
@@ -103,20 +107,36 @@ func TestBuildHTTPSRedirectRoute_UsesProtocolMatcher(t *testing.T) {
 	}
 }
 
-func assertCORSSubroutes(t *testing.T, preflight, headers map[string]interface{}) {
+func assertCORSHeadersHandler(t *testing.T, h map[string]interface{}) {
 	t.Helper()
+	if h["handler"] != "headers" {
+		t.Fatalf("headers handler = %v", h["handler"])
+	}
+	resp, ok := h["response"].(map[string]interface{})
+	if !ok {
+		t.Fatal("headers handler missing response block")
+	}
+	if resp["deferred"] != true {
+		t.Fatal("CORS response headers must be deferred so reverse_proxy upstream CORS is replaced")
+	}
+	// delete+set of the same names is wrong: Caddy applies delete after set and
+	// leaves no Access-Control-Allow-Origin.
+	if _, hasDelete := resp["delete"]; hasDelete {
+		t.Fatal("CORS handler must not delete Access-Control-* (wipes deferred set values)")
+	}
+	if _, hasSet := resp["set"]; !hasSet {
+		t.Fatal("CORS response headers must set Access-Control-* values")
+	}
+}
 
+func assertCORSPreflightRoute(t *testing.T, preflight map[string]interface{}) {
+	t.Helper()
 	preflightMatch := preflight["match"].([]map[string]interface{})
 	if preflightMatch[0]["method"].([]string)[0] != "OPTIONS" {
 		t.Fatalf("preflight method = %v", preflightMatch[0]["method"])
 	}
 	if preflight["terminal"] != true {
 		t.Fatal("preflight route must be terminal")
-	}
-
-	headersHandle := headers["handle"].([]map[string]interface{})
-	if headersHandle[0]["handler"] != "headers" {
-		t.Fatalf("headers handler = %v", headersHandle[0]["handler"])
 	}
 }
 
@@ -132,6 +152,9 @@ func TestBuildRoute_CORSDisabled_PHP(t *testing.T) {
 
 	route := buildRoute(cfg)
 	outerHandle := route["handle"].([]map[string]interface{})
+	if len(outerHandle) != 1 || outerHandle[0]["handler"] != "subroute" {
+		t.Fatalf("without CORS expected single subroute handle, got %v", outerHandle)
+	}
 	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
 	if len(subroutes) != 4 {
 		t.Fatalf("expected 4 subroutes without CORS, got %d", len(subroutes))
@@ -169,17 +192,24 @@ func TestBuildRoute_WSRoute(t *testing.T) {
 	if route["@id"] != "vhost-ws" {
 		t.Error("ws route id wrong")
 	}
-	if _, hasHandle := route["handle"]; !hasHandle {
-		t.Error("ws route missing handle")
-	}
 
 	outerHandle := route["handle"].([]map[string]interface{})
-	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
-	if len(subroutes) < 3 {
-		t.Fatalf("expected cors + proxy subroutes, got %d", len(subroutes))
+	if outerHandle[0]["handler"] != "subroute" {
+		t.Fatalf("expected subroute, got %v", outerHandle[0]["handler"])
 	}
-	assertCORSSubroutes(t, subroutes[0], subroutes[1])
-	if subroutes[2]["handle"].([]map[string]interface{})[0]["handler"] != "reverse_proxy" {
-		t.Error("ws route missing reverse_proxy handler")
+	subroutes := outerHandle[0]["routes"].([]map[string]interface{})
+	if len(subroutes) != 2 {
+		t.Fatalf("expected preflight + proxy subroutes, got %d", len(subroutes))
+	}
+	assertCORSPreflightRoute(t, subroutes[0])
+
+	// Proxy route: headers middleware then reverse_proxy in one chain
+	proxyHandle := subroutes[1]["handle"].([]map[string]interface{})
+	if len(proxyHandle) != 2 {
+		t.Fatalf("proxy route handle len=%d, want 2 (headers+reverse_proxy)", len(proxyHandle))
+	}
+	assertCORSHeadersHandler(t, proxyHandle[0])
+	if proxyHandle[1]["handler"] != "reverse_proxy" {
+		t.Errorf("ws route missing reverse_proxy handler, got %v", proxyHandle[1]["handler"])
 	}
 }

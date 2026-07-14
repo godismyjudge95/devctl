@@ -338,31 +338,40 @@ var corsResponseHeaders = map[string]interface{}{
 	"Access-Control-Allow-Headers": []string{"*"},
 }
 
-// corsSubroutes returns Caddy subroutes that answer OPTIONS preflights and set
-// permissive Access-Control-* headers on every response.
-func corsSubroutes() []map[string]interface{} {
-	return []map[string]interface{}{
-		{
-			"match": []map[string]interface{}{
-				{"method": []string{"OPTIONS"}},
-			},
-			"terminal": true,
-			"handle": []map[string]interface{}{
-				{
-					"handler":     "static_response",
-					"status_code": 204,
-					"headers":     corsResponseHeaders,
-				},
-			},
+// corsHeadersHandler returns a Caddy headers middleware that replaces any
+// upstream Access-Control-* values with our permissive dev defaults.
+//
+// Must sit in the same handle chain as reverse_proxy/file_server (as an
+// earlier middleware), not in a separate subroute — deferred ops only wrap
+// handlers that are next() in the same chain.
+//
+// deferred=true so set runs when the upstream response is written, replacing
+// backend CORS (e.g. MaxIO echoing Origin). Do NOT also delete the same
+// header names: in Caddy, delete is applied after set and would wipe our
+// values, leaving no Access-Control-Allow-Origin at all.
+func corsHeadersHandler() map[string]interface{} {
+	return map[string]interface{}{
+		"handler": "headers",
+		"response": map[string]interface{}{
+			"deferred": true,
+			"set":      corsResponseHeaders,
 		},
-		{
-			"handle": []map[string]interface{}{
-				{
-					"handler": "headers",
-					"response": map[string]interface{}{
-						"set": corsResponseHeaders,
-					},
-				},
+	}
+}
+
+// corsPreflightRoute answers OPTIONS with 204 + permissive CORS headers
+// without contacting the upstream (required for browser preflights).
+func corsPreflightRoute() map[string]interface{} {
+	return map[string]interface{}{
+		"match": []map[string]interface{}{
+			{"method": []string{"OPTIONS"}},
+		},
+		"terminal": true,
+		"handle": []map[string]interface{}{
+			{
+				"handler":     "static_response",
+				"status_code": 204,
+				"headers":     corsResponseHeaders,
 			},
 		},
 	}
@@ -393,34 +402,23 @@ func buildHTTPSRedirectRoute(hosts []string, id string) map[string]interface{} {
 	}
 }
 
-// maybeCORSSubroutes returns corsSubroutes when enabled, otherwise nil.
-func maybeCORSSubroutes(enable bool) []map[string]interface{} {
-	if !enable {
-		return nil
-	}
-	return corsSubroutes()
-}
-
 // buildRoute constructs the Caddy route JSON for a PHP site or WS proxy.
 func buildRoute(cfg VhostConfig) map[string]interface{} {
 	if cfg.SiteType == "ws" {
-		proxyHandle := []map[string]interface{}{
-			{
-				"handler":   "reverse_proxy",
-				"upstreams": []map[string]interface{}{{"dial": cfg.WSUpstream}},
-			},
+		proxyHandler := map[string]interface{}{
+			"handler":   "reverse_proxy",
+			"upstreams": []map[string]interface{}{{"dial": cfg.WSUpstream}},
 		}
 		if !cfg.EnableCORS {
 			return map[string]interface{}{
 				"@id":      cfg.ID,
 				"match":    []map[string]interface{}{{"host": cfg.Hosts}},
 				"terminal": true,
-				"handle":   proxyHandle,
+				"handle":   []map[string]interface{}{proxyHandler},
 			}
 		}
-		routes := append(corsSubroutes(), map[string]interface{}{
-			"handle": proxyHandle,
-		})
+		// OPTIONS preflight is terminal; everything else is headers→proxy in one
+		// middleware chain so deferred delete+set replaces upstream CORS.
 		return map[string]interface{}{
 			"@id":      cfg.ID,
 			"match":    []map[string]interface{}{{"host": cfg.Hosts}},
@@ -428,7 +426,15 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 			"handle": []map[string]interface{}{
 				{
 					"handler": "subroute",
-					"routes":  routes,
+					"routes": []map[string]interface{}{
+						corsPreflightRoute(),
+						{
+							"handle": []map[string]interface{}{
+								corsHeadersHandler(),
+								proxyHandler,
+							},
+						},
+					},
 				},
 			},
 		}
@@ -460,97 +466,116 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 	}
 	rewriteTry = append(rewriteTry, "index.html", "index.htm", "index.php")
 
-	routes := append(maybeCORSSubroutes(cfg.EnableCORS), []map[string]interface{}{
-					// 1. Canonical-path redirect: if the path (without trailing slash)
-					// maps to a directory that has an index file (index.php / .html / .htm),
-					// redirect to add the trailing slash (308). Mirrors the first block of
-					// Caddy's php_fastcgi expanded form and prevents /wp-admin → /wp-admin/
-					// redirect loops in WordPress.
-					{
-						"match": []map[string]interface{}{
-							{
-								"file": map[string]interface{}{
-									"root":      effectiveRoot,
-									"try_files": dirIndexTry,
-								},
-								"not": []map[string]interface{}{
-									{"path": []string{"*/"}},
-								},
-							},
-						},
-						"handle": []map[string]interface{}{
-							{
-								"handler":     "static_response",
-								"status_code": 308,
-								"headers": map[string]interface{}{
-									"Location": []string{"{http.request.orig_uri.path}/"},
-								},
-							},
+	routes := []map[string]interface{}{
+		// 1. Canonical-path redirect: if the path (without trailing slash)
+		// maps to a directory that has an index file (index.php / .html / .htm),
+		// redirect to add the trailing slash (308). Mirrors the first block of
+		// Caddy's php_fastcgi expanded form and prevents /wp-admin → /wp-admin/
+		// redirect loops in WordPress.
+		{
+			"match": []map[string]interface{}{
+				{
+					"file": map[string]interface{}{
+						"root":      effectiveRoot,
+						"try_files": dirIndexTry,
+					},
+					"not": []map[string]interface{}{
+						{"path": []string{"*/"}},
+					},
+				},
+			},
+			"handle": []map[string]interface{}{
+				{
+					"handler":     "static_response",
+					"status_code": 308,
+					"headers": map[string]interface{}{
+						"Location": []string{"{http.request.orig_uri.path}/"},
+					},
+				},
+			},
+		},
+		// 2. Rewrite to the best matching file (exact path, directory
+		// index, or root index file). Uses try_policy first_exist_fallback
+		// so the last entry is always the final fallback even if not on disk.
+		{
+			"match": []map[string]interface{}{
+				{"file": map[string]interface{}{
+					"root":       effectiveRoot,
+					"try_files":  rewriteTry,
+					"try_policy": "first_exist_fallback",
+					"split_path": []string{".php"},
+				}},
+			},
+			"handle": []map[string]interface{}{
+				{
+					"handler": "rewrite",
+					"uri":     "{http.matchers.file.relative}",
+				},
+			},
+		},
+		// 3. Serve real static non-PHP files directly.
+		{
+			"match": []map[string]interface{}{
+				{
+					"file": map[string]interface{}{
+						"root":      effectiveRoot,
+						"try_files": []string{"{http.request.uri.path}"},
+					},
+					"not": []map[string]interface{}{
+						{"path": []string{"*.php"}},
+					},
+				},
+			},
+			"handle": []map[string]interface{}{
+				{"handler": "file_server", "root": effectiveRoot},
+			},
+		},
+		// 4. Pass all *.php requests to PHP-FPM via FastCGI.
+		{
+			"match": []map[string]interface{}{
+				{"path": []string{"*.php"}},
+			},
+			"handle": []map[string]interface{}{
+				{
+					"handler":   "reverse_proxy",
+					"upstreams": []map[string]interface{}{{"dial": sock}},
+					"transport": map[string]interface{}{
+						"protocol":   "fastcgi",
+						"root":       effectiveRoot,
+						"split_path": []string{".php"},
+						// Tell PHP it is behind HTTPS. Caddy terminates TLS for
+						// all *.test sites, but the FastCGI protocol carries no
+						// TLS signal by default. Without these, WordPress (and
+						// other frameworks) think the request is plain HTTP and
+						// issue an infinite HTTPS redirect loop.
+						"env": map[string]string{
+							"HTTPS":                  "on",
+							"HTTP_X_FORWARDED_PROTO": "https",
 						},
 					},
-					// 2. Rewrite to the best matching file (exact path, directory
-					// index, or root index file). Uses try_policy first_exist_fallback
-					// so the last entry is always the final fallback even if not on disk.
-					{
-						"match": []map[string]interface{}{
-							{"file": map[string]interface{}{
-								"root":       effectiveRoot,
-								"try_files":  rewriteTry,
-								"try_policy": "first_exist_fallback",
-								"split_path": []string{".php"},
-							}},
-						},
-						"handle": []map[string]interface{}{
-							{
-								"handler": "rewrite",
-								"uri":     "{http.matchers.file.relative}",
-							},
-						},
-					},
-					// 3. Serve real static non-PHP files directly.
-					{
-						"match": []map[string]interface{}{
-							{
-								"file": map[string]interface{}{
-									"root":      effectiveRoot,
-									"try_files": []string{"{http.request.uri.path}"},
-								},
-								"not": []map[string]interface{}{
-									{"path": []string{"*.php"}},
-								},
-							},
-						},
-						"handle": []map[string]interface{}{
-							{"handler": "file_server", "root": effectiveRoot},
-						},
-					},
-					// 4. Pass all *.php requests to PHP-FPM via FastCGI.
-					{
-						"match": []map[string]interface{}{
-							{"path": []string{"*.php"}},
-						},
-						"handle": []map[string]interface{}{
-							{
-								"handler":   "reverse_proxy",
-								"upstreams": []map[string]interface{}{{"dial": sock}},
-								"transport": map[string]interface{}{
-									"protocol":   "fastcgi",
-									"root":       effectiveRoot,
-									"split_path": []string{".php"},
-									// Tell PHP it is behind HTTPS. Caddy terminates TLS for
-									// all *.test sites, but the FastCGI protocol carries no
-									// TLS signal by default. Without these, WordPress (and
-									// other frameworks) think the request is plain HTTP and
-									// issue an infinite HTTPS redirect loop.
-									"env": map[string]string{
-										"HTTPS":                  "on",
-										"HTTP_X_FORWARDED_PROTO": "https",
-									},
-								},
-							},
-						},
-					},
-				}...)
+				},
+			},
+		},
+	}
+
+	if cfg.EnableCORS {
+		// Preflight is terminal inside the subroute; headers middleware wraps the
+		// whole subroute so every response (static, PHP, redirects) gets a single
+		// Access-Control-Allow-Origin after any upstream CORS is stripped.
+		routes = append([]map[string]interface{}{corsPreflightRoute()}, routes...)
+		return map[string]interface{}{
+			"@id":      cfg.ID,
+			"match":    []map[string]interface{}{{"host": cfg.Hosts}},
+			"terminal": true,
+			"handle": []map[string]interface{}{
+				corsHeadersHandler(),
+				{
+					"handler": "subroute",
+					"routes":  routes,
+				},
+			},
+		}
+	}
 
 	return map[string]interface{}{
 		"@id":      cfg.ID,
