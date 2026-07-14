@@ -218,7 +218,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			Version:         maxioDir + "/maxio --version",
 			VersionRegex:    `maxio (?P<version>[\d.]+)`,
 			Log:             paths.LogPath(serverRoot, "maxio"),
-			HealthCheck:     "curl -s --connect-timeout 2 -o /dev/null http://localhost:9000/health",
+			HealthCheck:     "curl -s --connect-timeout 2 -o /dev/null http://localhost:9900/health",
 			HasCredentials:  true,
 			CredentialsFile: maxioDir + "/connection.env",
 		},

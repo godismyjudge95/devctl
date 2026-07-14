@@ -16,7 +16,10 @@ import (
 )
 
 const (
-	maxioS3Port  = "9000"
+	// Internal loopback port — clients reach MaxIO via s3.maxio.test / the
+	// dashboard proxy, not this address. Kept off 9000 so ClickHouse can use
+	// its default native TCP port.
+	maxioS3Port  = "9900"
 	maxioRegion  = "us-east-1"
 	maxioService = "s3"
 )
@@ -130,7 +133,7 @@ func (s *Server) maxioProxyRequest(w http.ResponseWriter, r *http.Request, targe
 	return resp.StatusCode
 }
 
-// handleMaxIOS3Proxy proxies /api/maxio/s3/* → MaxIO S3 port (9000).
+// handleMaxIOS3Proxy proxies /api/maxio/s3/* → MaxIO S3 port (9900).
 func (s *Server) handleMaxIOS3Proxy(w http.ResponseWriter, r *http.Request) {
 	bucket, applyCORS := maxioBucketPutName(r)
 	status := s.maxioProxyRequest(w, r, "http://127.0.0.1:"+maxioS3Port, "/api/maxio/s3")

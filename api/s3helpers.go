@@ -18,7 +18,7 @@ import (
 type s3Credentials struct {
 	accessKey string
 	secretKey string
-	s3Host    string // e.g. "https://s3.maxio.test" or "http://127.0.0.1:9000"
+	s3Host    string // e.g. "https://s3.maxio.test" or "http://127.0.0.1:9900"
 }
 
 // ── AWS Signature V4 helpers ──────────────────────────────────────────────────

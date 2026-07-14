@@ -91,7 +91,8 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	envContent := fmt.Sprintf(
 		"MAXIO_ACCESS_KEY=DEVCTL\n"+
 			"MAXIO_SECRET_KEY=DEVCTL\n"+
-			"MAXIO_PORT=9000\n"+
+			// 9900 — not the MinIO-style 9000, so ClickHouse can use its default native port.
+			"MAXIO_PORT=9900\n"+
 			"MAXIO_ADDRESS=127.0.0.1\n"+
 			"MAXIO_DATA_DIR=%s\n"+
 			"MAXIO_HOST=https://maxio.test\n"+
@@ -114,7 +115,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "maxio.test",
 		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:9000",
+		WSUpstream:   "127.0.0.1:9900",
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,
@@ -128,7 +129,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "s3.maxio.test",
 		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:9000",
+		WSUpstream:   "127.0.0.1:9900",
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,
