@@ -112,7 +112,11 @@ type managedProc struct {
 	cmd    *exec.Cmd // non-nil for exec-based services
 	cancel context.CancelFunc
 	rotLog *rotatingLogFile // non-nil when def.Log != ""; closed after the process exits
-	done   chan struct{}    // non-nil for goroutine-based services; closed when RunFunc returns
+	// done is closed when the service has fully exited:
+	//   - for RunFunc services: when RunFunc returns
+	//   - for exec services: when cmd.Wait returns (reaping goroutine)
+	// It is non-nil for both kinds so IsRunning / Stop / restartCrashed share one path.
+	done chan struct{}
 }
 
 // Supervisor manages devctl-supervised services (child processes or embedded goroutines).
@@ -142,9 +146,8 @@ func (s *Supervisor) Start(def Definition) error {
 	defer s.mu.Unlock()
 
 	if p, ok := s.procs[def.ID]; ok {
-		// Check if still running.
+		// Still alive if done is not closed.
 		if p.done != nil {
-			// Goroutine proc: still alive if done is not closed.
 			select {
 			case <-p.done:
 				// exited — fall through to restart
@@ -152,7 +155,7 @@ func (s *Supervisor) Start(def Definition) error {
 				return nil // still running
 			}
 		} else if p.cmd != nil && p.cmd.ProcessState == nil {
-			// Process proc: still alive.
+			// Legacy path before done was set on exec procs.
 			return nil
 		}
 	}
@@ -258,7 +261,9 @@ func (s *Supervisor) startProcess(def Definition) error {
 	}
 	pw.Close() // parent side no longer needs the write end
 
-	s.procs[def.ID] = &managedProc{def: def, cmd: cmd, cancel: cancel}
+	done := make(chan struct{})
+	proc := &managedProc{def: def, cmd: cmd, cancel: cancel, done: done}
+	s.procs[def.ID] = proc
 
 	// Open rotating log file for tee if def.Log is set.
 	var rotLog *rotatingLogFile
@@ -268,9 +273,18 @@ func (s *Supervisor) startProcess(def Definition) error {
 		if err != nil {
 			log.Printf("supervisor: open log for %s: %v", def.ID, err)
 		} else {
-			s.procs[def.ID].rotLog = rotLog
+			proc.rotLog = rotLog
 		}
 	}
+
+	// Single Wait owner for this process. Closes done when the child exits so
+	// IsRunning / Stop / restartCrashed all observe the same lifecycle. Without
+	// this, a process that dies immediately (e.g. bind failure) becomes a
+	// zombie and Start treats it as still running forever.
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
 
 	// Log output lines prefixed with the service ID.
 	go func() {
@@ -350,24 +364,32 @@ func (s *Supervisor) Stop(id string) error {
 	cancel() // cancel context — triggers SIGTERM for exec procs, stops RunFunc for goroutines
 
 	if done != nil {
-		// Goroutine proc — wait for RunFunc to return.
+		// Wait for the reaping / RunFunc goroutine to finish. Force-kill if
+		// the process ignores SIGTERM (done is closed by the Wait owner).
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
-			log.Printf("supervisor: %s goroutine did not stop within 10s", id)
+			if cmd != nil && cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				log.Printf("supervisor: %s did not stop within timeout", id)
+			}
 		}
 	} else if cmd != nil {
-		// Exec proc — wait with optional force-kill.
+		// Legacy path: no done channel — Wait here.
 		waitDone := make(chan struct{})
 		go func() {
-			cmd.Wait() //nolint:errcheck
+			_ = cmd.Wait()
 			close(waitDone)
 		}()
 		select {
 		case <-waitDone:
 		case <-time.After(10 * time.Second):
 			if cmd.Process != nil {
-				cmd.Process.Kill() //nolint:errcheck
+				_ = cmd.Process.Kill()
 			}
 			<-waitDone
 		}
@@ -401,6 +423,7 @@ func (s *Supervisor) IsRunning(id string) bool {
 			return true
 		}
 	}
+	// Legacy path for procs started without a done channel.
 	return p.cmd != nil && p.cmd.ProcessState == nil
 }
 
@@ -436,6 +459,7 @@ func (s *Supervisor) restartCrashed() {
 			default:
 			}
 		} else if p.cmd != nil && p.cmd.ProcessState != nil {
+			// Legacy path for procs started without a done channel.
 			crashed = true
 		}
 
