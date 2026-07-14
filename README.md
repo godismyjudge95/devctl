@@ -6,7 +6,7 @@
 
 A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.
 
-devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO) — all from a single dashboard without touching config files.
+devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO, ClickHouse) — all from a single dashboard without touching config files.
 
 ![Services page showing Caddy running and available services](docs/screenshot-services.png)
 
@@ -175,18 +175,20 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 | Mailpit | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) | — | [github.com/axllent/mailpit](https://github.com/axllent/mailpit/releases) | `{serverRoot}/mailpit/config.env` (env vars) |
 | Laravel Reverb | `127.0.0.1:7383` | `reverb.test` | [packagist.org/laravel/reverb](https://packagist.org/packages/laravel/reverb) (via Composer) | `{serverRoot}/reverb/.env` |
 | WhoDB | `127.0.0.1:8161` | `whodb.test` | [github.com/clidey/whodb](https://github.com/clidey/whodb/releases) | `{serverRoot}/whodb/config.env` |
-| MaxIO | `127.0.0.1:9000` (S3 API), `127.0.0.1:9001` (console) | `maxio.test` | [github.com/coollabsio/maxio](https://github.com/coollabsio/maxio/releases) (always latest) | `{serverRoot}/maxio/config.env` |
+| MaxIO | `127.0.0.1:9900` (S3 API) | `maxio.test`, `s3.maxio.test` | [github.com/coollabsio/maxio](https://github.com/coollabsio/maxio/releases) (always latest) | `{serverRoot}/maxio/config.env` |
+| ClickHouse | `127.0.0.1:8123` (HTTP), `127.0.0.1:9000` (native TCP) | — | [packages.clickhouse.com/tgz](https://packages.clickhouse.com/tgz/stable/) (binary only) | `{serverRoot}/clickhouse/config.xml` |
 | PHP-FPM (per version) | Unix socket | — | [static-php-cli](https://github.com/crazywhalecc/static-php-cli) | `{serverRoot}/php/{version}/php.ini` |
 
 **Notes:**
 
-- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, MaxIO, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
-- PostgreSQL runs as a supervised child process but drops privileges to `DEVCTL_SITE_USER` (PostgreSQL refuses to start as root).
+- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
+- PostgreSQL and ClickHouse run as supervised child processes but drop privileges to `DEVCTL_SITE_USER` (both refuse to start as root against non-root data).
 - Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
 - Config files are written once on install and never overwritten on restart. User edits are preserved.
 - Mailpit is configured via `MP_*` environment variables in `config.env` rather than a native config file.
 - Meilisearch updates are handled autonomously: devctl dumps the index data, replaces the binary, then re-imports the dump automatically.
 - Reverb exposes a Laravel-ready credentials block in the Services view: `REVERB_APP_ID=1001`, `REVERB_APP_KEY=DEVCTL`, `REVERB_APP_SECRET=DEVCTL`, `REVERB_HOST=reverb.test`, `REVERB_PORT=443`, `REVERB_SCHEME=https`.
+- ClickHouse is installed as a single multi-call binary (no APT/Docker). CLI tools (`clickhouse-client`, `clickhouse-local`, …) are symlinked into `{serverRoot}/bin`. It uses the upstream default ports (`8123` HTTP, `9000` native TCP). The process runs as `DEVCTL_SITE_USER` because ClickHouse refuses to start as root against a non-root data directory.
 
 ### WhoDB
 
@@ -205,7 +207,7 @@ Connections are stored in the devctl SQLite database and applied immediately.
 
 ![MaxIO file browser showing bucket contents](docs/screenshot-maxio.png)
 
-[MaxIO](https://github.com/coollabsio/maxio) is a high-performance S3-compatible object storage server (single binary from coollabsio/maxio). Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/maxio/config.env` to change them. Data is stored at `{serverRoot}/maxio/data`. The `maxio.test` vhost proxies to the console UI at port `9001`.
+[MaxIO](https://github.com/coollabsio/maxio) is a high-performance S3-compatible object storage server (single binary from coollabsio/maxio). Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/maxio/config.env` to change them. Data is stored at `{serverRoot}/maxio/data`. The S3 API listens on loopback port `9900` and is reached via the `s3.maxio.test` / `maxio.test` Caddy vhosts (and the dashboard Storage UI). Browser uploads (e.g. Livewire direct-to-S3) work cross-origin because Caddy injects CORS headers on `s3.maxio.test` (and every new bucket also gets a permissive S3 CORS policy).
 
 For Laravel, copy the generated `connection.env` values into your `.env`:
 
@@ -324,7 +326,7 @@ When a site directory is removed from disk, devctl automatically deregisters it 
 - Assign a PHP version (each site can run a different version)
 - Enable or disable the SPX profiler
 - Toggle HTTPS
-- Toggle CORS header injection (disable when the app manages its own CORS, e.g. Laravel embed routes)
+- Toggle CORS header injection (disable when the app manages its own CORS, e.g. Laravel embed routes). Service reverse-proxy hosts (`s3.maxio.test`, `meilisearch.test`, `reverb.test`, …) always enable CORS so browser clients on other `*.test` origins can call them.
 - Set a custom public directory
 
 **TLS:** Caddy's internal CA generates certificates automatically. To eliminate browser warnings, click **Trust Certificate** in Settings to install the CA into your system and browser trust stores (requires `libnss3-tools`).
@@ -455,6 +457,7 @@ Every config-enabled service has a file icon in the Services tab that opens a fu
 | Meilisearch | `config.toml` |
 | Typesense | `typesense.ini` |
 | Mailpit | `config.env` |
+| ClickHouse | `config.xml`, `users.xml` (two tabs) |
 | PHP-FPM | `php.ini`, `php-fpm.conf` (two tabs) |
 
 ---
@@ -598,8 +601,9 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 | `127.0.0.1:1025` | Mailpit SMTP | Yes |
 | `127.0.0.1:7383` | Laravel Reverb | No |
 | `127.0.0.1:8161` | WhoDB | No |
-| `127.0.0.1:9000` | MaxIO S3 API | No |
-| `127.0.0.1:9001` | MaxIO console | No |
+| `127.0.0.1:9900` | MaxIO S3 API | No |
+| `127.0.0.1:8123` | ClickHouse HTTP | No |
+| `127.0.0.1:9000` | ClickHouse native TCP | No |
 
 ---
 
@@ -626,6 +630,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/reverb/` | Laravel app that runs `php artisan reverb:start` |
 | `{serverRoot}/whodb/` | WhoDB binary, `config.env` |
 | `{serverRoot}/maxio/` | MaxIO binary, `config.env`, object data |
+| `{serverRoot}/clickhouse/` | ClickHouse binary, `config.xml`, `users.xml`, data |
 | `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
 | `/etc/systemd/system/devctl.service` | Systemd unit file |
 | `/etc/profile.d/devctl.sh` | Adds `{serverRoot}/bin` to `PATH` for all users |
