@@ -1,0 +1,6 @@
+<!-- ClickHouse logomark-inspired icon (yellow square with CH glyph) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="20" fill="#FFCC00"/>
+  <!-- simplified geometric "house" / bar mark in dark slate -->
+  <path fill="#161517" d="M28 88V40h16l12 28 12-28h16v48H72V62L60 88H52L40 62v26H28zm72-48h-18v48h18c14 0 22-8 22-24s-8-24-22-24zm0 34h-4V54h4c6 0 9 3 9 10s-3 10-9 10z"/>
+</svg>

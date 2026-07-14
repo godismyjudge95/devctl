@@ -4,6 +4,7 @@ package apitest
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -111,6 +112,108 @@ func TestServiceInstall_Mailpit_InstallPurgeCycle(t *testing.T) {
 		}
 	}
 	t.Errorf("purge: service %q not found in services list after purge", id)
+}
+
+// TestServiceInstall_ClickHouse_InstallPurgeCycle exercises the full
+// install → running → stop → start → credentials → purge lifecycle for
+// ClickHouse. Uses the curl shim + artifact cache (no real internet required).
+//
+// Note: the ClickHouse binary is large (~180 MB tarball); the test relies on
+// the pre-cached artifact from `make test-artifacts-download`.
+func TestServiceInstall_ClickHouse_InstallPurgeCycle(t *testing.T) {
+	const id = "clickhouse"
+	const installTimeout = 10 * time.Minute
+	const actionTimeout = 60 * time.Second
+
+	// ── 0. Pre-condition: ensure clickhouse is not already installed ──────────
+	{
+		body := httpGet(t, "/api/services")
+		services := decodeJSON[[]ServiceState](t, body)
+		for _, svc := range services {
+			if svc.ID == id && svc.Installed {
+				t.Logf("pre-condition: %s already installed — purging before test", id)
+				res := httpSSE(t, http.MethodDelete, "/api/services/"+id, installTimeout)
+				if res.LastEvent != "done" {
+					t.Fatalf("pre-condition purge: last event = %q, want \"done\"; last data: %s", res.LastEvent, res.LastData)
+				}
+				pollServiceInstalled(t, id, false, 30*time.Second)
+			}
+		}
+	}
+
+	// ── 1. Install ────────────────────────────────────────────────────────────
+	t.Log("step 1: install clickhouse")
+	installResult := httpSSE(t, http.MethodPost, "/api/services/"+id+"/install", installTimeout)
+	if installResult.LastEvent != "done" {
+		t.Fatalf("install: last SSE event = %q, want \"done\"; last data: %s", installResult.LastEvent, installResult.LastData)
+	}
+
+	outputCount := 0
+	for _, ev := range installResult.Events {
+		if ev == "output" {
+			outputCount++
+		}
+	}
+	if outputCount == 0 {
+		t.Error("install: expected at least one 'output' SSE event, got none")
+	}
+
+	// ── 2. Verify installed flag ──────────────────────────────────────────────
+	t.Log("step 2: verify installed flag")
+	pollServiceInstalled(t, id, true, 30*time.Second)
+
+	// ── 3. Verify service auto-started and is running ────────────────────────
+	t.Log("step 3: verify service is running")
+	pollServiceStatus(t, id, "running", 60*time.Second)
+
+	// ── 4. Stop ───────────────────────────────────────────────────────────────
+	t.Log("step 4: stop clickhouse")
+	stopBody, stopStatus := httpPost(t, "/api/services/"+id+"/stop", nil)
+	if stopStatus != http.StatusOK {
+		t.Fatalf("stop: expected status 200, got %d: %s", stopStatus, string(stopBody))
+	}
+	pollServiceStatus(t, id, "stopped", actionTimeout)
+
+	// ── 5. Start ──────────────────────────────────────────────────────────────
+	t.Log("step 5: start clickhouse")
+	startBody, startStatus := httpPost(t, "/api/services/"+id+"/start", nil)
+	if startStatus != http.StatusOK {
+		t.Fatalf("start: expected status 200, got %d: %s", startStatus, string(startBody))
+	}
+	pollServiceStatus(t, id, "running", actionTimeout)
+
+	// ── 6. Credentials endpoint ───────────────────────────────────────────────
+	t.Log("step 6: verify credentials endpoint")
+	credBody := httpGet(t, "/api/services/"+id+"/credentials")
+	creds := decodeJSON[map[string]string](t, credBody)
+	if creds["CLICKHOUSE_HOST"] != "127.0.0.1" {
+		t.Errorf("credentials CLICKHOUSE_HOST: want 127.0.0.1, got %q", creds["CLICKHOUSE_HOST"])
+	}
+	if creds["CLICKHOUSE_PORT"] != "8123" {
+		t.Errorf("credentials CLICKHOUSE_PORT: want 8123, got %q", creds["CLICKHOUSE_PORT"])
+	}
+
+	// ── 7. Config file readable ───────────────────────────────────────────────
+	t.Log("step 7: verify config.xml is readable")
+	cfgBody := httpGet(t, "/api/services/"+id+"/config/config.xml")
+	cfg := decodeJSON[map[string]string](t, cfgBody)
+	if cfg["content"] == "" {
+		t.Error("config.xml: expected non-empty content")
+	}
+	if !strings.Contains(cfg["content"], "http_port") {
+		t.Error("config.xml: expected http_port setting in content")
+	}
+
+	// ── 8. Purge ──────────────────────────────────────────────────────────────
+	t.Log("step 8: purge clickhouse")
+	purgeResult := httpSSE(t, http.MethodDelete, "/api/services/"+id, installTimeout)
+	if purgeResult.LastEvent != "done" {
+		t.Fatalf("purge: last SSE event = %q, want \"done\"; last data: %s", purgeResult.LastEvent, purgeResult.LastData)
+	}
+
+	// ── 9. Verify not installed after purge ───────────────────────────────────
+	t.Log("step 9: verify not installed after purge")
+	pollServiceInstalled(t, id, false, 30*time.Second)
 }
 
 // TestServiceInstall_RequiredServices_StopForbidden verifies that required

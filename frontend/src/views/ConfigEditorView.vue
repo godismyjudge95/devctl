@@ -22,6 +22,10 @@ const SERVICE_META: Record<string, ServiceConfigMeta> = {
   'meilisearch':  { label: 'Meilisearch', files: [{ name: 'config.toml',   label: 'config.toml' }] },
   'typesense':    { label: 'Typesense',   files: [{ name: 'typesense.ini', label: 'typesense.ini' }] },
   'mailpit':      { label: 'Mailpit',     files: [{ name: 'config.env',    label: 'config.env' }] },
+  'clickhouse':   { label: 'ClickHouse',  files: [
+    { name: 'config.xml', label: 'config.xml' },
+    { name: 'users.xml',  label: 'users.xml' },
+  ]},
 }
 
 // PHP-FPM services are dynamic (php-fpm-8.3, php-fpm-8.4, etc.)
@@ -44,6 +48,7 @@ function resolveMeta(id: string): ServiceConfigMeta | null {
 function fileLanguage(name: string): 'ini' | 'toml' | 'text' {
   if (name.endsWith('.toml')) return 'toml'
   if (name.endsWith('.ini') || name.endsWith('.conf') || name.endsWith('.env') || name.endsWith('.cnf')) return 'ini'
+  // config.xml / users.xml — no dedicated XML mode; plain text is fine
   return 'text'
 }
 

@@ -231,6 +231,7 @@ const CONFIG_PRIMARY_FILE: Record<string, string> = {
   meilisearch: 'config.toml',
   typesense:   'typesense.ini',
   mailpit:     'config.env',
+  clickhouse:  'config.xml',
 }
 
 function hasConfigEditor(id: string): boolean {

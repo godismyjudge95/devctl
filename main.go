@@ -189,6 +189,9 @@ func run() error {
 	if err := install.EnsurePostgresConfig(cfg.ServerRoot, cfg.SiteUser); err != nil {
 		log.Printf("startup: postgres config: %v", err)
 	}
+	if err := install.EnsureClickHouseConfig(cfg.ServerRoot); err != nil {
+		log.Printf("startup: clickhouse config: %v", err)
+	}
 	done()
 
 	// --- Services ---

@@ -189,6 +189,18 @@ download "MaxIO ${MAXIO_VERSION}" \
   "https://github.com/coollabsio/maxio/releases/download/v${MAXIO_VERSION}/maxio-linux-amd64-${MAXIO_VERSION}.tar.gz" \
   "maxio-${MAXIO_VERSION}-linux-amd64.tar.gz"
 
+# ─── ClickHouse ───────────────────────────────────────────────────────────────
+# Installer downloads to /tmp/clickhouse-common-static-amd64.tgz (InstallW)
+# or clickhouse-common-static-update.tgz (UpdateW) — basenames are version-
+# independent so the curl shim matches regardless of GitHub's "latest" tag.
+CLICKHOUSE_VERSION="25.8.28.1"
+download "ClickHouse ${CLICKHOUSE_VERSION}" \
+  "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-${CLICKHOUSE_VERSION}-amd64.tgz" \
+  "clickhouse-common-static-amd64.tgz"
+download "ClickHouse ${CLICKHOUSE_VERSION} (update artifact)" \
+  "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-${CLICKHOUSE_VERSION}-amd64.tgz" \
+  "clickhouse-common-static-update.tgz"
+
 # ─── PostgreSQL (Percona) ─────────────────────────────────────────────────────
 POSTGRES_VERSION="18.3"
 POSTGRES_MAJOR="18"

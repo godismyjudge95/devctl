@@ -27,6 +27,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 	reverbDir := paths.ServiceDir(serverRoot, "reverb")
 	whodbDir := paths.ServiceDir(serverRoot, "whodb")
 	maxioDir := paths.ServiceDir(serverRoot, "maxio")
+	clickhouseDir := paths.ServiceDir(serverRoot, "clickhouse")
 	return []services.Definition{
 		{
 			ID:             "caddy",
@@ -220,6 +221,31 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			HealthCheck:     "curl -s --connect-timeout 2 -o /dev/null http://localhost:9000/health",
 			HasCredentials:  true,
 			CredentialsFile: maxioDir + "/connection.env",
+		},
+		{
+			ID:                    "clickhouse",
+			Label:                 "ClickHouse",
+			Description:           "Fast open-source column-oriented analytics database",
+			InstallVersion:        "25.8.28.1",
+			Installable:           true,
+			HasCredentials:        true,
+			Managed:               true,
+			ManagedCmd:            clickhouseDir + "/clickhouse",
+			ManagedArgs:           "server --config-file=./config.xml",
+			ManagedDir:            clickhouseDir,
+			// ClickHouse refuses to run as root when the data dir is owned by
+			// another user (MISMATCHING_USERS_FOR_PROCESS_AND_DATA). Drop to the
+			// site user like PostgreSQL.
+			ManagedUser:           siteUser,
+			// Disables the watchdog fork so the supervisor tracks a single process.
+			ManagedEnvFile:        clickhouseDir + "/clickhouse.env",
+			Version:               clickhouseDir + "/clickhouse --version",
+			VersionRegex:          `(?P<version>[\d.]+)`,
+			CredentialsFile:       clickhouseDir + "/config.env",
+			Log:                   paths.LogPath(serverRoot, "clickhouse"),
+			HealthCheck:           "curl -sf http://127.0.0.1:8123/ping",
+			HealthCheckRetries:    10,
+			HealthCheckRetryDelay: 500 * time.Millisecond,
 		},
 	}
 }

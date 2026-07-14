@@ -28,6 +28,7 @@ import meilisearchSvg from '@/assets/services/meilisearch.svg?raw'
 import typesenseSvg from '@/assets/services/typesense.svg?raw'
 import mailpitSvg from '@/assets/services/mailpit.svg?raw'
 import reverbSvg from '@/assets/services/reverb.svg?raw'
+import clickhouseSvg from '@/assets/services/clickhouse.svg?raw'
 import phpSvg from '@/assets/services/php.svg?raw'
 
 const props = defineProps<{
@@ -51,6 +52,7 @@ const SERVICE_ICONS: Record<string, string> = {
   typesense: typesenseSvg,
   mailpit: mailpitSvg,
   reverb: reverbSvg,
+  clickhouse: clickhouseSvg,
 }
 
 const KNOWN_PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4']

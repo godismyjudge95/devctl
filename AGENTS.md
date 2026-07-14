@@ -1,6 +1,6 @@
 # devctl — Agent Guide
 
-devctl is a local PHP development environment dashboard for Linux. It runs as a **systemd system service** (root) and serves a browser UI at `http://127.0.0.1:4000`. It manages Caddy, PHP-FPM, and dev services (Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb).
+devctl is a local PHP development environment dashboard for Linux. It runs as a **systemd system service** (root) and serves a browser UI at `http://127.0.0.1:4000`. It manages Caddy, PHP-FPM, and dev services (Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO, ClickHouse).
 
 ## Tech stack
 

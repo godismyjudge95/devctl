@@ -1,6 +1,6 @@
 // Package install provides idempotent install and purge routines for every
 // service devctl can manage (Caddy, Redis, PostgreSQL, MySQL, Typesense,
-// Meilisearch, Mailpit).
+// Meilisearch, Mailpit, ClickHouse, …).
 //
 // All functions run as root (devctl itself requires root) so no sudo wrapping
 // is needed.  Operations that require network access are guarded by a generous
@@ -185,6 +185,11 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		supervisor:  supervisor,
 		serverRoot:  serverRoot,
 		siteUser:    siteUser,
+	}
+	m["clickhouse"] = &ClickHouseInstaller{
+		supervisor: supervisor,
+		serverRoot: serverRoot,
+		siteUser:   siteUser,
 	}
 
 	// Register a hook: when postgres, mysql, or redis is installed/purged,
