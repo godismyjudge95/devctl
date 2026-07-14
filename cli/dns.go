@@ -1,6 +1,9 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func init() {
 	Register(&Cmd{
@@ -33,6 +36,9 @@ func init() {
 		Examples:    []string{"devctl dns:setup"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
 			if err := c.ConfigureDNS(); err != nil {
+				if strings.Contains(err.Error(), "needs elevation") || strings.Contains(err.Error(), "elevate") {
+					return fmt.Errorf("%w\n\nRun: sudo devctl elevate resolver", err)
+				}
 				return err
 			}
 			if jsonMode {

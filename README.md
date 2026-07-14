@@ -4,7 +4,7 @@
 
 # devctl
 
-A local PHP development environment dashboard for Linux. Runs as a systemd service and serves a browser UI at `http://127.0.0.1:4000`.
+A local PHP development environment dashboard for Linux. Runs as a **non-root** systemd service (with ambient capabilities for ports 80/443) and serves a browser UI at `http://127.0.0.1:4000`.
 
 devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO, ClickHouse) — all from a single dashboard without touching config files.
 
@@ -57,9 +57,9 @@ All service binaries are downloaded directly from their upstream releases and st
 ## Requirements
 
 - **OS**: Ubuntu 22.04+ or Debian 12+ (amd64)
-- **Root access**: devctl runs as a systemd system service (root)
+- **sudo once** for install and elevation (CA trust, DNS resolver, privileged ports) — day-to-day work does **not** need root
 - A non-root user whose `~/sites` directory devctl will manage
-- **DNS**: the `.test` TLD must resolve to your machine. The easiest approach is to use devctl's built-in DNS server with its `systemd-resolved` integration (see [DNS](#dns)). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
+- **DNS**: the `.test` TLD must resolve to your machine. The easiest approach is `sudo devctl elevate resolver` (see [Elevation](#elevation) and [DNS](#dns)). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
 
 ---
 
@@ -299,7 +299,13 @@ Open the gear icon on the DNS Server row in the Services tab:
 
 ### systemd-resolved integration
 
-Click **Configure** to write `/etc/systemd/resolved.conf.d/99-devctl-dns.conf` and restart `systemd-resolved`. This routes all `.test` queries on the machine to devctl's DNS server — no router config or `/etc/hosts` entries needed.
+Writing the resolver drop-in requires root. Prefer the typed elevate command:
+
+```sh
+sudo devctl elevate resolver
+```
+
+This writes `/etc/systemd/resolved.conf.d/99-devctl-dns.conf` and reloads `systemd-resolved`, routing all `.test` queries to devctl's DNS server — no router config or `/etc/hosts` entries needed.
 
 The generated drop-in:
 
@@ -309,7 +315,7 @@ DNS=127.0.0.1:5354
 Domains=~test
 ```
 
-Click **Remove** to delete the drop-in and restore the previous resolver behaviour.
+Reverse with `sudo devctl unelevate resolver`.
 
 ---
 
@@ -329,7 +335,13 @@ When a site directory is removed from disk, devctl automatically deregisters it 
 - Toggle CORS header injection (disable when the app manages its own CORS, e.g. Laravel embed routes). Service reverse-proxy hosts (`s3.maxio.test`, `meilisearch.test`, `reverb.test`, …) always enable CORS so browser clients on other `*.test` origins can call them.
 - Set a custom public directory
 
-**TLS:** Caddy's internal CA generates certificates automatically. To eliminate browser warnings, click **Trust Certificate** in Settings to install the CA into your system and browser trust stores (requires `libnss3-tools`).
+**TLS:** Caddy's internal CA generates certificates automatically. To eliminate browser warnings, trust the CA with:
+
+```sh
+sudo devctl elevate trust
+```
+
+(Requires the daemon + Caddy to be running so the CA can be read.)
 
 **Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress, and generic PHP projects.
 
@@ -503,9 +515,34 @@ The service worker registers automatically on first load. It has no caching stra
 
 ---
 
+## Elevation
+
+Day-to-day devctl runs as your user under a systemd **system** unit with:
+
+- `User=` / `Group=` set to your site user
+- `AmbientCapabilities=CAP_NET_BIND_SERVICE` so supervised Caddy can bind ports 80/443 without `setcap` on the Caddy binary (and without re-elevating after Caddy updates)
+
+One-shot privileged OS setup uses **typed elevate targets** (sudo only for these):
+
+```sh
+sudo devctl elevate              # trust + resolver + ports (default)
+sudo devctl elevate trust        # install Caddy local CA into the system trust store
+sudo devctl elevate resolver     # systemd-resolved drop-in for *.test
+sudo devctl elevate ports        # write/refresh unit with User= + AmbientCapabilities
+sudo devctl elevate install      # unit + enable + apt allowlist deps + resolver
+sudo devctl unelevate            # reverse trust + resolver (+ strip ambient from unit)
+devctl elevate:status            # no root — show which targets are configured
+```
+
+Under the hood, `sudo devctl elevate` re-invokes `devctl helper <op>` for each audited operation (frozen argv, euid 0 only). The long-lived daemon **refuses to run as root**.
+
+Self-update and API restart re-exec the process in place — **no sudo** after an update.
+
+---
+
 ## CLI
 
-The devctl binary doubles as a CLI that talks to the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`). All commands work without root.
+The devctl binary doubles as a CLI that talks to the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`). Day-to-day commands work without root; only `elevate` / `unelevate` / `install` / `uninstall` need sudo.
 
 ```sh
 devctl services:list              # list all services and status
@@ -522,7 +559,8 @@ devctl php:set memory_limit=512M  # update a PHP ini setting
 devctl dns:status                 # check systemd-resolved DNS setup
 devctl dumps:list                 # list recent php_dd() dumps
 devctl spx:profiles               # list recent SPX profiler captures
-devctl tls:trust                  # trust Caddy's internal CA
+sudo devctl elevate trust         # trust Caddy's internal CA (privileged)
+devctl elevate:status             # show elevate targets
 devctl devctl:update              # check for devctl updates and apply
 devctl devctl:skill               # generate an OpenCode CLI skill file
 ```
@@ -567,9 +605,12 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `mail:delete <id>[,<id>...]` | Delete one or more emails by ID |
 | | `mail:clear` | Delete all emails from Mailpit |
 | `dns` | `dns:status` | Check whether systemd-resolved is configured for `*.test` |
-| | `dns:setup` | Configure systemd-resolved to route `*.test` queries to devctl |
+| | `dns:setup` | Configure systemd-resolved (or returns `needs_elevation` → use `elevate resolver`) |
 | | `dns:teardown` | Remove the systemd-resolved `*.test` DNS configuration |
-| `tls` | `tls:trust` | Trust Caddy's internal CA in the system and browser certificate stores |
+| `tls` | `tls:trust` | Trust Caddy's internal CA (prefer `sudo devctl elevate trust`) |
+| `elevate` | `elevate [target]` | Grant OS privileges: `trust`, `resolver`, `ports`, `install` (requires sudo) |
+| | `unelevate [target]` | Reverse elevate targets (requires sudo) |
+| | `elevate:status` | Show which elevate targets are configured |
 | `settings` | `settings:get` | Show all devctl settings |
 | | `settings:set <key=value>...` | Update devctl settings |
 | `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |

@@ -1,6 +1,9 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func init() {
 	Register(&Cmd{
@@ -10,6 +13,10 @@ func init() {
 		Handler: func(c *Client, args []string, jsonMode bool) error {
 			output, err := c.TrustCA()
 			if err != nil {
+				// Prefer the typed elevate path when the daemon is non-root.
+				if strings.Contains(err.Error(), "needs elevation") || strings.Contains(err.Error(), "elevate") {
+					return fmt.Errorf("%w\n\nRun: sudo devctl elevate trust", err)
+				}
 				return err
 			}
 			if jsonMode {

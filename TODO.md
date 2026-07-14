@@ -18,20 +18,6 @@ Commit all files to the repo BUT DO NOT PUSH
 Keep browser UI + static binaries + CLI/skill. Do not add MCP or a tray/desktop shell as primary UX.
 Competitor clones (optional): `/tmp/yerd`, `/tmp/lerd`.
 
-## Mostly rootless — with elevation
-
-**Intent:** Day-to-day work should not need root; elevate only for one-shot privileged ops (CA trust, DNS/resolver wiring, binding low ports, install/uninstall). Today the daemon is a root systemd system service — move toward a Yerd-like split: unprivileged core + explicit elevation helper.
-
-**References:**
-- Yerd elevation model (one-shot helper: trust / resolver / ports): https://yerd.app/guide/elevation
-- Yerd elevation CLI: https://yerd.app/reference/cli/elevation
-- Yerd daemon / rootless day-to-day: https://yerd.app/guide/daemon
-- Lerd is rootless via Podman user space (different mechanism; same *feel*): https://lerd.sh/getting-started/installation
-
-**Notes:** Prefer audited, typed elevate operations over “run whole daemon as root forever.” Browser + CLI should surface “needs elevation” and re-run via pkexec/sudo helper, not force users to be root for `devctl sites:list` etc.
-
----
-
 ## Doctor
 
 **Intent:** Unified health checks with actionable fixes — system (CA, DNS/resolved, ports, PHP, Caddy, services) and optional per-site (env/key, composer, DB presence, PHP range). Dashboard Doctor page + `devctl doctor` / `devctl doctor fix` + skill-friendly JSON.
@@ -174,5 +160,7 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 
 # Completed
+
+- Mostly rootless — with elevation: daemon runs as site user with AmbientCapabilities for 80/443; `sudo devctl elevate [trust|resolver|ports|install]` / `unelevate` / `elevate:status`; re-exec for restart/self-update *(completed 2026-07-13)*
 
 

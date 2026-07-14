@@ -22,6 +22,7 @@ import (
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dumps"
+	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/selfinstall"
@@ -67,6 +68,13 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "helper":
+			// Privileged one-shot ops only (must be euid 0). Used by elevate.
+			if err := elevate.RunHelper(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "devctl helper: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "open":
 			if err := runOpen(); err != nil {
 				fmt.Fprintf(os.Stderr, "devctl open: %v\n", err)
@@ -77,7 +85,7 @@ func main() {
 			cli.PrintHelp()
 			return
 		default:
-			// Dispatch colon-namespaced CLI commands (e.g. services:restart caddy)
+			// Dispatch CLI commands (elevate, services:restart, …)
 			if cli.Dispatch(os.Args[1:]) {
 				return
 			}
@@ -96,9 +104,14 @@ func run() error {
 		return func() { log.Printf("startup: %s done (%s)", name, time.Since(t0).Round(time.Millisecond)) }
 	}
 
-	// --- Root check ---
-	if os.Getuid() != 0 {
-		fmt.Fprintln(os.Stderr, "devctl: must be run as root. Re-run with: sudo devctl")
+	// --- Privilege check ---
+	// The daemon runs as the site user under a systemd unit with
+	// AmbientCapabilities=CAP_NET_BIND_SERVICE. Running as root creates
+	// root-owned files and breaks the privilege model.
+	if os.Geteuid() == 0 {
+		fmt.Fprintln(os.Stderr, "devctl daemon: refusing to run as root")
+		fmt.Fprintln(os.Stderr, "  Install/migrate with: sudo devctl elevate install")
+		fmt.Fprintln(os.Stderr, "  Or: sudo devctl elevate ports  (writes User= unit + ambient bind cap)")
 		os.Exit(1)
 	}
 
@@ -174,6 +187,9 @@ func run() error {
 	// config-file support was added. Each Ensure* call is a no-op if the file
 	// already exists, so this is safe to run on every startup.
 	done = step("service config migration")
+	if err := install.EnsureCaddyEnv(cfg.ServerRoot); err != nil {
+		log.Printf("startup: caddy env: %v", err)
+	}
 	if err := install.EnsureValkeyConf(cfg.ServerRoot); err != nil {
 		log.Printf("startup: valkey config: %v", err)
 	}
@@ -216,13 +232,19 @@ func run() error {
 
 	// Auto-install + auto-start Caddy first so the Admin API is ready before EnsureHTTPServer.
 	// installRegistry isn't built yet at this point, so we instantiate CaddyInstaller directly.
+	// Integration tests (DEVCTL_TESTING) install Caddy themselves after the API is up —
+	// skip network-bound auto-install so startup can listen promptly.
 	caddyInstaller := install.NewCaddyInstaller(supervisor, cfg.ServerRoot)
 	if !caddyInstaller.IsInstalled() {
-		log.Printf("startup: caddy not installed — installing now...")
-		if err := caddyInstaller.Install(ctx); err != nil {
-			log.Printf("startup: caddy install failed: %v", err)
+		if os.Getenv("DEVCTL_TESTING") != "" {
+			log.Printf("startup: caddy not installed — skipping auto-install (DEVCTL_TESTING)")
 		} else {
-			log.Printf("startup: caddy installed successfully")
+			log.Printf("startup: caddy not installed — installing now...")
+			if err := caddyInstaller.Install(ctx); err != nil {
+				log.Printf("startup: caddy install failed: %v", err)
+			} else {
+				log.Printf("startup: caddy installed successfully")
+			}
 		}
 	}
 	for _, def := range registry.All() {

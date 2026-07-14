@@ -59,16 +59,24 @@ func resolveServerRoot(siteHome string) string {
 }
 
 // resolveSiteUser returns the non-root user and their home directory.
-// It reads DEVCTL_SITE_USER; if unset it falls back to SUDO_USER.
+// Order: DEVCTL_SITE_USER → SUDO_USER → current process user.
 func resolveSiteUser() (string, string, error) {
 	name := os.Getenv("DEVCTL_SITE_USER")
 	if name == "" {
 		name = os.Getenv("SUDO_USER")
 	}
 	if name == "" {
-		return "", "", fmt.Errorf(
-			"DEVCTL_SITE_USER is not set — add 'Environment=DEVCTL_SITE_USER=<your-username>' to devctl.service",
-		)
+		// Daemon runs as the site user — default to the current account.
+		cu, err := user.Current()
+		if err != nil {
+			return "", "", fmt.Errorf("resolve current user: %w", err)
+		}
+		if cu.Uid == "0" {
+			return "", "", fmt.Errorf(
+				"DEVCTL_SITE_USER is not set and process is root — set Environment=DEVCTL_SITE_USER=<username> in the unit",
+			)
+		}
+		return cu.Username, cu.HomeDir, nil
 	}
 	u, err := user.Lookup(name)
 	if err != nil {

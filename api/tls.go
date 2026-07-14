@@ -25,13 +25,19 @@ func (s *Server) handleTLSCert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTLSTrust(w http.ResponseWriter, r *http.Request) {
+	// System CA trust requires root. Prefer the typed elevate path when not root.
+	if os.Geteuid() != 0 {
+		writeNeedsElevation(w, "sudo devctl elevate trust")
+		return
+	}
+
 	const adminAddr = "localhost:2019"
 	caddyBin := filepath.Join(paths.ServiceDir(s.serverRoot, "caddy"), "caddy")
 
 	var log bytes.Buffer
 
 	// Resolve the site user's home directory so NSS db operations target the
-	// right user (~/.pki/nssdb). devctl runs as root; the browser runs as
+	// right user (~/.pki/nssdb). When daemon is root, the browser runs as
 	// siteUser, so we need that user's NSS store.
 	homeDir, err := siteUserHome(s.siteUser)
 	if err != nil {

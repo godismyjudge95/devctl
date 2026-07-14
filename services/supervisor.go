@@ -213,8 +213,9 @@ func (s *Supervisor) startProcess(def Definition) error {
 	cmd := exec.CommandContext(ctx, def.ManagedCmd, args...)
 	cmd.Dir = managedDir
 
-	// If ManagedUser is set, drop privileges to that user before exec.
-	// This is required for services that refuse to run as root (e.g. PostgreSQL).
+	// If ManagedUser is set and differs from the current process user, drop
+	// privileges before exec (requires CAP_SETUID — only works when daemon is
+	// root). When the daemon already runs as the site user, skip Credential.
 	if def.ManagedUser != "" {
 		u, err := user.Lookup(def.ManagedUser)
 		if err != nil {
@@ -223,25 +224,29 @@ func (s *Supervisor) startProcess(def Definition) error {
 		}
 		uid, _ := strconv.ParseUint(u.Uid, 10, 32)
 		gid, _ := strconv.ParseUint(u.Gid, 10, 32)
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Credential: &syscall.Credential{
-				Uid: uint32(uid),
-				Gid: uint32(gid),
-			},
+		if int(uid) != os.Getuid() {
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Credential: &syscall.Credential{
+					Uid: uint32(uid),
+					Gid: uint32(gid),
+				},
+			}
 		}
 	}
 
-	// If ManagedEnvFile is set, load key=value pairs as extra environment
-	// variables for the child process.
+	// Build child env: start from process env, then apply ManagedEnvFile and
+	// ManagedExtraEnv with override semantics (last write wins for a key).
+	// Critical for Caddy: caddy.env sets HOME to the caddy data dir so the
+	// internal CA lives under SERVER_ROOT, not $HOME/.local/share/caddy.
+	baseEnv := os.Environ()
 	if def.ManagedEnvFile != "" {
-		extra := loadEnvFile(def.ManagedEnvFile)
-		cmd.Env = append(os.Environ(), extra...)
+		baseEnv = mergeEnv(baseEnv, loadEnvFile(def.ManagedEnvFile))
 	}
 	if len(def.ManagedExtraEnv) > 0 {
-		if cmd.Env == nil {
-			cmd.Env = os.Environ()
-		}
-		cmd.Env = append(cmd.Env, def.ManagedExtraEnv...)
+		baseEnv = mergeEnv(baseEnv, def.ManagedExtraEnv)
+	}
+	if def.ManagedEnvFile != "" || len(def.ManagedExtraEnv) > 0 {
+		cmd.Env = baseEnv
 	}
 
 	// Pipe stdout and stderr to the log with a service-ID prefix.
@@ -510,6 +515,31 @@ func loadEnvFile(path string) []string {
 		}
 	}
 	return pairs
+}
+
+// mergeEnv returns a copy of base with overrides applied. For any KEY in
+// overrides, existing KEY= entries are removed from base so the override is
+// the only value (Go and libc both honor the first match in environ).
+func mergeEnv(base, overrides []string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+	drop := map[string]struct{}{}
+	for _, o := range overrides {
+		if i := strings.IndexByte(o, '='); i > 0 {
+			drop[o[:i]] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, e := range base {
+		if i := strings.IndexByte(e, '='); i > 0 {
+			if _, ok := drop[e[:i]]; ok {
+				continue
+			}
+		}
+		out = append(out, e)
+	}
+	return append(out, overrides...)
 }
 
 // ParseCommandArgs splits a shell-like argument string into argv tokens.

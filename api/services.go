@@ -229,6 +229,33 @@ func writeError(w http.ResponseWriter, msg string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+// writeNeedsElevation returns 403 with a command the user should run via sudo.
+func writeNeedsElevation(w http.ResponseWriter, command string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error":            "needs elevation",
+		"needs_elevation":  true,
+		"command":          command,
+	})
+}
+
+// isPermissionError reports whether err looks like a filesystem or exec
+// permission failure (EACCES/EPERM) so handlers can suggest elevate.
+func isPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if os.IsPermission(err) {
+		return true
+	}
+	// Wrapped exec errors, path errors, etc.
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "permission denied") ||
+		strings.Contains(msg, "operation not permitted") ||
+		strings.Contains(msg, "access denied")
+}
+
 // handleServiceInstall installs a service, streaming command output as SSE.
 // Events:
 //

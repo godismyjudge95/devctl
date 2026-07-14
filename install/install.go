@@ -2,9 +2,11 @@
 // service devctl can manage (Caddy, Redis, PostgreSQL, MySQL, Typesense,
 // Meilisearch, Mailpit, ClickHouse, …).
 //
-// All functions run as root (devctl itself requires root) so no sudo wrapping
-// is needed.  Operations that require network access are guarded by a generous
-// 10-minute timeout; APT operations use DEBIAN_FRONTEND=noninteractive.
+// Installers run as the site user under the non-root daemon. Static binary
+// downloads write under SERVER_ROOT. APT operations still need root — use
+// `sudo devctl elevate install` (allowlisted packages) or install deps manually.
+// Network operations are guarded by a generous 10-minute timeout;
+// APT operations use DEBIAN_FRONTEND=noninteractive.
 package install
 
 import (
@@ -235,14 +237,41 @@ func aptGetW(ctx context.Context, w io.Writer, args ...string) error {
 
 // aptInstall runs apt-get install -y --no-install-recommends <pkgs>.
 func aptInstall(ctx context.Context, pkgs ...string) error {
-	args := append([]string{"install", "-y", "--no-install-recommends"}, pkgs...)
-	return aptGet(ctx, args...)
+	return aptInstallW(ctx, io.Discard, pkgs...)
 }
 
 // aptInstallW is like aptInstall but streams output to w.
+// Already-installed packages are skipped. When the process is non-root and
+// packages are still missing, returns an error pointing at elevate install.
 func aptInstallW(ctx context.Context, w io.Writer, pkgs ...string) error {
-	args := append([]string{"install", "-y", "--no-install-recommends"}, pkgs...)
+	var need []string
+	for _, p := range pkgs {
+		if aptPackageInstalled(p) {
+			fmt.Fprintf(w, "apt: %s already installed — skipping\n", p)
+			continue
+		}
+		need = append(need, p)
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	if os.Geteuid() != 0 {
+		return fmt.Errorf(
+			"need packages %v but not root — run: sudo devctl elevate install (or: sudo apt-get install -y %s)",
+			need, strings.Join(need, " "),
+		)
+	}
+	args := append([]string{"install", "-y", "--no-install-recommends"}, need...)
 	return aptGetW(ctx, w, args...)
+}
+
+// aptPackageInstalled reports whether pkg is installed (dpkg status "install ok installed").
+func aptPackageInstalled(pkg string) bool {
+	out, err := exec.Command("dpkg-query", "-W", "-f=${Status}", pkg).Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "install ok installed")
 }
 
 // aptPurge runs apt-get purge -y <pkgs> then autoremove.

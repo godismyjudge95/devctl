@@ -8,24 +8,22 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 )
 
-// RunAsUserW runs a shell command as the given OS user via `sudo -u <username>`,
-// streaming combined stdout+stderr to w and also returning the full output string.
-// home is set as HOME in the subprocess environment so that tools like composer
-// and npm resolve ~ correctly. The Composer global bin directory
-// ({home}/.config/composer/vendor/bin) is prepended to PATH inside the shell
-// command itself (not via the environment), so it survives sudo's secure_path /
-// env_reset stripping. Globally installed tools such as `laravel` and `statamic`
-// are therefore accessible when devctl runs commands as the site user.
-// dir, if non-empty, is used as the working directory (via `cd` in the shell command).
+// RunAsUserW runs a shell command as the given OS user.
+// When the current process is already that user, the command runs directly
+// (no sudo). Otherwise it uses `sudo -u <username>`.
+//
+// Streaming: combined stdout+stderr go to w; the full output string is returned.
+// home is set as HOME so tools like composer resolve ~ correctly. The Composer
+// global bin directory ({home}/.config/composer/vendor/bin) is prepended to PATH
+// inside the shell command so it survives sudo secure_path / env_reset.
+// dir, if non-empty, is used as the working directory (via `cd` in the shell).
 func RunAsUserW(ctx context.Context, w io.Writer, username, home, dir, command string) (string, error) {
 	composerBin := filepath.Join(home, ".config", "composer", "vendor", "bin")
 
-	// Build the shell command.  We prepend the PATH assignment directly into
-	// the sh -c script so that it takes effect even when sudo resets PATH via
-	// secure_path / env_reset.
 	var shellCmd string
 	pathPrefix := fmt.Sprintf("PATH='%s':\"$PATH\"", composerBin)
 	if dir != "" {
@@ -33,9 +31,13 @@ func RunAsUserW(ctx context.Context, w io.Writer, username, home, dir, command s
 	} else {
 		shellCmd = fmt.Sprintf("%s && %s", pathPrefix, command)
 	}
-	cmd := exec.CommandContext(ctx, "sudo", "-u", username, "--", "sh", "-c", shellCmd)
-	// Provide a minimal but correct environment: HOME must point to the
-	// user's home so that tools like composer and npm resolve ~ correctly.
+
+	var cmd *exec.Cmd
+	if isCurrentUser(username) {
+		cmd = exec.CommandContext(ctx, "sh", "-c", shellCmd)
+	} else {
+		cmd = exec.CommandContext(ctx, "sudo", "-u", username, "--", "sh", "-c", shellCmd)
+	}
 	cmd.Env = append(os.Environ(),
 		"HOME="+home,
 		"USER="+username,
@@ -46,4 +48,15 @@ func RunAsUserW(ctx context.Context, w io.Writer, username, home, dir, command s
 	cmd.Stderr = mw
 	err := cmd.Run()
 	return buf.String(), err
+}
+
+func isCurrentUser(username string) bool {
+	if username == "" {
+		return true
+	}
+	cu, err := user.Current()
+	if err != nil {
+		return false
+	}
+	return cu.Username == username
 }

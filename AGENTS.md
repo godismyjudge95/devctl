@@ -1,6 +1,6 @@
 # devctl — Agent Guide
 
-devctl is a local PHP development environment dashboard for Linux. It runs as a **systemd system service** (root) and serves a browser UI at `http://127.0.0.1:4000`. It manages Caddy, PHP-FPM, and dev services (Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO, ClickHouse).
+devctl is a local PHP development environment dashboard for Linux. It runs as a **systemd system service as the site user** (with `AmbientCapabilities=CAP_NET_BIND_SERVICE` for ports 80/443) and serves a browser UI at `http://127.0.0.1:4000`. It manages Caddy, PHP-FPM, and dev services (Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO, ClickHouse). One-shot root ops use `sudo devctl elevate` (trust / resolver / ports / install).
 
 ## Tech stack
 
@@ -16,8 +16,8 @@ devctl is a local PHP development environment dashboard for Linux. It runs as a 
 
 | Path | Purpose |
 |---|---|
-| `/etc/devctl/devctl.db` | SQLite database |
-| `/etc/devctl/services.yaml` | Service definitions (written once on first run) |
+| `{serverRoot}/devctl/devctl.db` | SQLite database |
+| `/etc/systemd/system/devctl.service` | Systemd unit (`User=` + ambient bind cap) |
 | `127.0.0.1:4000` | HTTP dashboard |
 | `127.0.0.1:9912` | TCP dump receiver (PHP `php_dd()`) |
 
@@ -187,7 +187,7 @@ The vast majority of runtime files (PHP ini, FPM configs, Caddy config, etc.) li
 
 ## Key conventions
 
-- The binary **requires root** — enforced at startup, logged to systemd journal.
+- The **daemon refuses root** — it runs as the site user under the systemd unit. Privileged one-shots use `sudo devctl elevate` / `devctl helper`.
 - No third-party HTTP router — use Go 1.22+ `METHOD /path/{param}` pattern in `net/http`.
 - No CGO — `modernc.org/sqlite` is pure Go.
 - Frontend is embedded in the binary via `//go:embed ui/dist`; always run `make build-ui` before `go build` for a working UI.

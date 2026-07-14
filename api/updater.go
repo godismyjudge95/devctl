@@ -8,9 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"time"
 
+	"github.com/danielgormly/devctl/internal/reexec"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/selfupdate"
 	"github.com/danielgormly/devctl/tools"
@@ -75,7 +75,7 @@ func (s *Server) handleGetSelfUpdateStatus(w http.ResponseWriter, r *http.Reques
 // ---------------------------------------------------------------------------
 
 // handleApplySelfUpdate downloads the latest devctl binary, replaces the
-// current binary, and schedules a systemctl restart.
+// current binary, and re-execs the process (no sudo / systemctl needed).
 //
 // SSE events:
 //
@@ -120,17 +120,11 @@ func (s *Server) handleApplySelfUpdate(w http.ResponseWriter, r *http.Request) {
 
 	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
 
-	// Schedule a service restart after the HTTP response has been flushed.
-	// Same pattern as api/restart.go.
+	// Re-exec after the HTTP response has been flushed — no systemctl/sudo.
 	serverRoot := s.serverRoot
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		// Silently update dev tools (sqlite3, etc.) before restarting.
+	reexec.Schedule(300*time.Millisecond, func() {
 		tools.EnsureAllLatest(context.Background(), paths.BinDir(serverRoot), io.Discard)
-		if err := exec.Command("systemctl", "restart", "devctl").Run(); err != nil {
-			log.Printf("selfupdate: systemctl restart: %v", err)
-		}
-	}()
+	})
 }
 
 // ---------------------------------------------------------------------------

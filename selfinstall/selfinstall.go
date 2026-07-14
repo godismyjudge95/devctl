@@ -19,6 +19,7 @@ import (
 	"github.com/danielgormly/devctl/cli"
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
@@ -108,14 +109,17 @@ func Run(args []string) error {
 	if !*flagYes {
 		fmt.Println("devctl will perform the following steps:")
 		fmt.Printf("  1. Copy binary      → %s\n", binaryDest)
-		fmt.Printf("  2. Write service    → %s\n", existingServiceFile)
-		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
-		fmt.Printf("  4. Link binary      → %s/devctl\n", binDir)
-		fmt.Printf("  5. Configure shell PATH for %s\n", siteUser)
-		fmt.Println("  6. Download dev tools (sqlite3, ...)")
-		fmt.Println("  7. systemctl daemon-reload")
-		fmt.Println("  8. systemctl enable devctl")
-		fmt.Println("  9. systemctl start devctl")
+		fmt.Printf("  2. Write service    → %s (User=%s + AmbientCapabilities)\n", existingServiceFile, siteUser)
+		fmt.Printf("  3. Chown server tree → %s\n", siteUser)
+		fmt.Printf("  4. Set sites dir    → %s (saved to DB)\n", sitesDir)
+		fmt.Printf("  5. Link binary      → %s/devctl\n", binDir)
+		fmt.Printf("  6. Configure shell PATH for %s\n", siteUser)
+		fmt.Println("  7. Download dev tools (sqlite3, ...)")
+		fmt.Println("  8. systemctl daemon-reload")
+		fmt.Println("  9. systemctl enable devctl")
+		fmt.Println(" 10. systemctl start devctl")
+		fmt.Println()
+		fmt.Println("  Then (optional): sudo devctl elevate trust / resolver")
 		fmt.Println()
 		fmt.Print("Proceed? [y/N] ")
 		if !confirm(r) {
@@ -130,11 +134,47 @@ func Run(args []string) error {
 		fn    func() error
 	}{
 		{"Copying binary", func() error {
-			return copyFile(exe, binaryDest, 0755)
+			if err := copyFile(exe, binaryDest, 0755); err != nil {
+				return err
+			}
+			// Daemon and self-update run as siteUser — binary must be owned by them.
+			u, err := user.Lookup(siteUser)
+			if err != nil {
+				return fmt.Errorf("lookup user %q: %w", siteUser, err)
+			}
+			var uid, gid int
+			if _, err := fmt.Sscan(u.Uid, &uid); err != nil {
+				return err
+			}
+			if _, err := fmt.Sscan(u.Gid, &gid); err != nil {
+				return err
+			}
+			return os.Chown(binaryDest, uid, gid)
 		}},
 		{"Writing service file", func() error {
 			content := buildServiceFile(binaryDest, siteUser, siteHome, serverRoot)
 			return os.WriteFile(existingServiceFile, []byte(content), 0644)
+		}},
+		{"Owning server tree as site user", func() error {
+			// Migration from root daemon: data/logs under serverRoot must be
+			// writable by the non-root service User=.
+			u, err := user.Lookup(siteUser)
+			if err != nil {
+				return fmt.Errorf("lookup user %q: %w", siteUser, err)
+			}
+			var uid, gid int
+			if _, err := fmt.Sscan(u.Uid, &uid); err != nil {
+				return err
+			}
+			if _, err := fmt.Sscan(u.Gid, &gid); err != nil {
+				return err
+			}
+			return filepath.Walk(serverRoot, func(p string, info os.FileInfo, err error) error {
+				if err != nil {
+					return nil
+				}
+				return os.Chown(p, uid, gid)
+			})
 		}},
 		{"Saving sites directory", func() error {
 			return saveSitesDir(serverRoot, sitesDir)
@@ -432,23 +472,10 @@ func saveSitesDir(serverRoot, sitesDir string) error {
 }
 
 // buildServiceFile generates the systemd unit file content.
+// The daemon runs as siteUser (not root) with ambient CAP_NET_BIND_SERVICE so
+// supervised Caddy can bind :80/:443 without setcap on the Caddy binary.
 func buildServiceFile(binaryPath, siteUser, siteHome, serverRoot string) string {
-	return fmt.Sprintf(`[Unit]
-Description=devctl — Local PHP Dev Dashboard
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=%s daemon
-Restart=on-failure
-RestartSec=5s
-Environment=HOME=%s
-Environment=DEVCTL_SITE_USER=%s
-Environment=DEVCTL_SERVER_ROOT=%s
-
-[Install]
-WantedBy=multi-user.target
-`, binaryPath, siteHome, siteUser, serverRoot)
+	return elevate.BuildServiceFile(binaryPath, siteUser, siteHome, serverRoot)
 }
 
 // waitForActive polls `systemctl is-active devctl` until it returns "active"

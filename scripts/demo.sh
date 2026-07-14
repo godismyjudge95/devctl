@@ -180,6 +180,11 @@ After=network.target
 
 [Service]
 Type=simple
+User=testuser
+Group=testuser
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
 ExecStart=/usr/local/bin/devctl daemon
 Restart=on-failure
 RestartSec=5s

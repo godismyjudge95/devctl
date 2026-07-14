@@ -90,6 +90,8 @@ info "Creating testuser..."
 incus exec "$CONTAINER" -- useradd -m testuser
 incus exec "$CONTAINER" -- mkdir -p /home/testuser/ddev/sites/server
 incus exec "$CONTAINER" -- chown -R testuser:testuser /home/testuser/ddev
+# Daemon runs as testuser — binary must be writable for self-update tests.
+incus exec "$CONTAINER" -- chown testuser:testuser /usr/local/bin/devctl
 success "testuser created."
 
 # ─── Step 7a: Stub a PHP 8.4 installation for settings tests ──────────────────
@@ -283,6 +285,11 @@ After=network.target
 
 [Service]
 Type=simple
+User=testuser
+Group=testuser
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
 ExecStart=/usr/local/bin/devctl daemon
 Restart=on-failure
 RestartSec=5s

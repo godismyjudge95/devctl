@@ -30,6 +30,7 @@ func (s *Server) handleDNSCheckSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDNSSetup writes the systemd-resolved drop-in and restarts resolved.
+// When the daemon is non-root and cannot write /etc, returns needs_elevation.
 //
 //	POST /api/dns/setup
 func (s *Server) handleDNSSetup(w http.ResponseWriter, r *http.Request) {
@@ -52,15 +53,27 @@ func (s *Server) handleDNSSetup(w http.ResponseWriter, r *http.Request) {
 	content := fmt.Sprintf("[Resolve]\nDNS=127.0.0.1:%s\nDomains=~%s\n", port, domainVal)
 
 	if err := os.MkdirAll(resolvedDropinDir, 0755); err != nil {
+		if isPermissionError(err) {
+			writeNeedsElevation(w, "sudo devctl elevate resolver")
+			return
+		}
 		writeError(w, fmt.Sprintf("create drop-in dir: %v", err), http.StatusInternalServerError)
 		return
 	}
 	if err := os.WriteFile(resolvedDropinFile, []byte(content), 0644); err != nil {
+		if isPermissionError(err) {
+			writeNeedsElevation(w, "sudo devctl elevate resolver")
+			return
+		}
 		writeError(w, fmt.Sprintf("write drop-in: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	if err := restartResolved(); err != nil {
+		if isPermissionError(err) {
+			writeNeedsElevation(w, "sudo devctl elevate resolver")
+			return
+		}
 		writeError(w, fmt.Sprintf("restart systemd-resolved: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -73,11 +86,19 @@ func (s *Server) handleDNSSetup(w http.ResponseWriter, r *http.Request) {
 //	DELETE /api/dns/setup
 func (s *Server) handleDNSTeardown(w http.ResponseWriter, r *http.Request) {
 	if err := os.Remove(resolvedDropinFile); err != nil && !os.IsNotExist(err) {
+		if isPermissionError(err) {
+			writeNeedsElevation(w, "sudo devctl unelevate resolver")
+			return
+		}
 		writeError(w, fmt.Sprintf("remove drop-in: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	if err := restartResolved(); err != nil {
+		if isPermissionError(err) {
+			writeNeedsElevation(w, "sudo devctl unelevate resolver")
+			return
+		}
 		writeError(w, fmt.Sprintf("restart systemd-resolved: %v", err), http.StatusInternalServerError)
 		return
 	}

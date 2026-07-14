@@ -31,6 +31,23 @@ func (c *CaddyInstaller) IsInstalled() bool {
 	return fileExists(filepath.Join(paths.ServiceDir(c.serverRoot, "caddy"), "caddy"))
 }
 
+// EnsureCaddyEnv writes caddy.env if missing so the supervisor sets HOME to
+// the caddy data directory (internal CA + autosave live under SERVER_ROOT).
+func EnsureCaddyEnv(serverRoot string) error {
+	caddyDir := paths.ServiceDir(serverRoot, "caddy")
+	envPath := filepath.Join(caddyDir, "caddy.env")
+	if fileExists(envPath) {
+		return nil
+	}
+	if !fileExists(filepath.Join(caddyDir, "caddy")) {
+		return nil // not installed yet
+	}
+	if err := os.MkdirAll(caddyDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(envPath, []byte("HOME="+caddyDir+"\n"), 0600)
+}
+
 func (c *CaddyInstaller) Install(ctx context.Context) error {
 	return c.InstallW(ctx, io.Discard)
 }
