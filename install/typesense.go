@@ -103,6 +103,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		SiteType:     "ws", // reverse_proxy handler — works for plain HTTP too
 		WSUpstream:   "127.0.0.1:8108",
 		HTTPS:        true,
+		CORS:         true,
 		ServiceVhost: true,
 	})
 	if err != nil {

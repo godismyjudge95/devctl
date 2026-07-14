@@ -78,6 +78,13 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 	if input.CORS {
 		corsVal = 1
 	}
+	// Service vhosts (s3.maxio.test, meilisearch.test, reverb.test, …) are
+	// reverse proxies that browser clients on *.test origins call cross-origin.
+	// Always inject permissive CORS headers so uploads/API calls work without
+	// each backend service implementing its own CORS config.
+	if input.ServiceVhost {
+		corsVal = 1
+	}
 	autoVal := int64(0)
 	if input.AutoDiscovered {
 		autoVal = 1

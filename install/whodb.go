@@ -120,6 +120,7 @@ func (w *WhoDBInstaller) InstallW(ctx context.Context, out io.Writer) error {
 		SiteType:     "ws",
 		WSUpstream:   "127.0.0.1:8161",
 		HTTPS:        true,
+		CORS:         true,
 		ServiceVhost: true,
 	})
 	if err != nil {

@@ -814,3 +814,30 @@ func TestSites_CORS_CaddySynced(t *testing.T) {
 		t.Fatalf("CORS preflight still present after disabling cors")
 	}
 }
+
+// TestSites_ServiceVhostCORS_EnabledWhenInstalled verifies managed service
+// reverse-proxy vhosts (e.g. s3.maxio.test) inject CORS at the Caddy layer so
+// browser clients on other *.test origins can call them cross-origin.
+func TestSites_ServiceVhostCORS_EnabledWhenInstalled(t *testing.T) {
+	body := httpGet(t, "/api/sites")
+	sites := decodeJSON[[]Site](t, body)
+
+	var found bool
+	for _, s := range sites {
+		if s.Domain != "s3.maxio.test" {
+			continue
+		}
+		found = true
+		if s.CORS != 1 {
+			t.Fatalf("s3.maxio.test cors=%d, want 1 (service vhosts must enable CORS)", s.CORS)
+		}
+		// Site struct may not expose service_vhost; check Caddy config instead.
+		if !caddyRouteHasCORSPreflight(t, "vhost-s3-maxio-test") {
+			t.Fatal("s3.maxio.test Caddy route missing OPTIONS preflight CORS handler")
+		}
+		break
+	}
+	if !found {
+		t.Skip("s3.maxio.test not installed — skipping service vhost CORS check")
+	}
+}

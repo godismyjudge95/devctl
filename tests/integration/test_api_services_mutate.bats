@@ -436,6 +436,22 @@ load setup
   [ "$status" -eq 0 ]
 }
 
+@test "maxio: service vhosts have CORS enabled in DB and Caddy" {
+  # DB: both MaxIO vhosts should have cors=1
+  run bash -c "curl -sf '${BASE_URL}/api/sites' | jq -e '
+    map(select(.domain==\"s3.maxio.test\" or .domain==\"maxio.test\"))
+    | length == 2
+    and all(.[]; .cors == 1 and .service_vhost == 1)
+  '"
+  [ "$status" -eq 0 ]
+
+  # Caddy: reverse-proxy routes inject OPTIONS preflight handlers
+  run container_exec bash -lc 'curl -sf http://127.0.0.1:2019/id/vhost-s3-maxio-test | grep -q OPTIONS'
+  [ "$status" -eq 0 ]
+  run container_exec bash -lc 'curl -sf http://127.0.0.1:2019/id/vhost-maxio-test | grep -q OPTIONS'
+  [ "$status" -eq 0 ]
+}
+
 @test "maxio: internal certs are issued for both maxio.test and s3.maxio.test" {
   run container_exec bash -lc '
     set -euo pipefail
