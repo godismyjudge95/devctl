@@ -169,11 +169,17 @@ func Run(args []string) error {
 			if _, err := fmt.Sscan(u.Gid, &gid); err != nil {
 				return err
 			}
+			// Use Lchown so broken symlinks (e.g. postgres dependency stubs)
+			// don't abort the walk when the target is missing.
 			return filepath.Walk(serverRoot, func(p string, info os.FileInfo, err error) error {
 				if err != nil {
 					return nil
 				}
-				return os.Chown(p, uid, gid)
+				if err := os.Lchown(p, uid, gid); err != nil && !os.IsNotExist(err) {
+					// Best-effort: skip unreadable/broken entries.
+					return nil
+				}
+				return nil
 			})
 		}},
 		{"Saving sites directory", func() error {

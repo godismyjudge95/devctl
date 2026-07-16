@@ -129,16 +129,14 @@ func helperChownTree(args []string) error {
 	if _, err := fmt.Sscan(u.Gid, &gid); err != nil {
 		return err
 	}
-	err = filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+	// Lchown so broken symlinks don't fail the walk when the target is missing.
+	_ = filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
-			// Skip unreadable entries.
 			return nil
 		}
-		return os.Chown(p, uid, gid)
+		_ = os.Lchown(p, uid, gid)
+		return nil
 	})
-	if err != nil {
-		return err
-	}
 	fmt.Println("ok")
 	return nil
 }
