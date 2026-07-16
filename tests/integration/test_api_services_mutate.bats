@@ -556,6 +556,32 @@ load setup
   container_exec dpkg -l libreadline-dev | grep -q "^ii"
 }
 
+@test "postgres: TimescaleDB loader and extension files present" {
+  container_exec test -f "${SERVER_ROOT}/postgres/lib/timescaledb.so"
+  container_exec test -f "${SERVER_ROOT}/postgres/lib/timescaledb-2.28.3.so"
+  container_exec test -f "${SERVER_ROOT}/postgres/share/extension/timescaledb.control"
+}
+
+@test "postgres: shared_preload_libraries includes timescaledb" {
+  container_exec grep -E "^[[:space:]]*shared_preload_libraries[[:space:]]*=" \
+    "${SERVER_ROOT}/postgres/data/postgresql.conf" | grep -q timescaledb
+}
+
+@test "postgres: CREATE EXTENSION timescaledb succeeds" {
+  # Extension is created after auto-start; poll briefly for it.
+  for i in $(seq 1 30); do
+    if container_exec bash -c \
+      "PGPASSWORD=devctl LD_LIBRARY_PATH='${SERVER_ROOT}/postgres/lib' \
+       '${SERVER_ROOT}/postgres/bin/psql.bin' -h 127.0.0.1 -U root -d postgres -tAc \
+       \"SELECT 1 FROM pg_extension WHERE extname='timescaledb'\" 2>/dev/null" | grep -q 1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "timescaledb extension not found in pg_extension after 30s" >&2
+  return 1
+}
+
 @test "postgres: stop returns 200" {
   status=$(api_post_status /api/services/postgres/stop "")
   [ "$status" -eq 200 ]

@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
@@ -22,7 +25,9 @@ import (
 // Download page: https://downloads.percona.com/downloads/postgresql-distribution-18/
 // Tarball docs:  https://docs.percona.com/postgresql/18/tarball.html
 const (
-	postgresVersion = "18.3"
+	// postgresVersion must stay ≥ 18.4 so TimescaleDB OSS packages built
+	// against PostgreSQL 18.4 (package tag -1804) load correctly.
+	postgresVersion = "18.4"
 	postgresMajor   = "18"
 
 	// postgresSuperuser is the default database role for Laravel (.env DB_USERNAME=root).
@@ -45,20 +50,29 @@ var postgresClientBins = []struct {
 	{"dropdb", "dropdb"},
 }
 
+// perconaTarArch maps GOARCH to the Percona tarball arch token.
+func perconaTarArch() string {
+	if runtime.GOARCH == "arm64" {
+		return "aarch64"
+	}
+	return "x86_64"
+}
+
+// perconaTarBasename is the filename of the Percona tarball (also used as the
+// local download dest so the test artifact cache can match by basename).
+func perconaTarBasename() string {
+	return fmt.Sprintf("percona-postgresql-%s-ssl3-linux-%s.tar.gz", postgresVersion, perconaTarArch())
+}
+
 // perconaTarURL constructs the download URL for the Percona PostgreSQL binary
 // tarball. The ssl3 variant targets OpenSSL 3.x (Ubuntu 22.04+, Debian
 // bookworm+). Arch: amd64 → x86_64, arm64 → aarch64.
 func perconaTarURL() string {
-	arch := "x86_64"
-	if runtime.GOARCH == "arm64" {
-		arch = "aarch64"
-	}
 	return fmt.Sprintf(
-		"https://downloads.percona.com/downloads/postgresql-distribution-%s/%s/binary/tarball/percona-postgresql-%s-ssl3-linux-%s.tar.gz",
+		"https://downloads.percona.com/downloads/postgresql-distribution-%s/%s/binary/tarball/%s",
 		postgresMajor,
 		postgresVersion,
-		postgresVersion,
-		arch,
+		perconaTarBasename(),
 	)
 }
 
@@ -67,12 +81,16 @@ func perconaTarURL() string {
 // siteUser (PostgreSQL refuses to start as root), and runs postgres as a
 // supervised child process of devctl with privilege drop via ManagedUser.
 //
+// TimescaleDB Apache 2 Edition is installed alongside Postgres by extracting
+// packagecloud .deb packages into lib/ and share/extension/ (no APT).
+//
 // No APT packages for PostgreSQL itself — only libreadline-dev is installed as
 // a system library required by the tarball. No systemd unit.
 type PostgresInstaller struct {
 	supervisor *services.Supervisor
 	serverRoot string // absolute path to the devctl server directory
 	siteUser   string // username of the non-root site user (e.g. "alice")
+	siteHome   string // home directory of siteUser (for runuser env)
 }
 
 func (p *PostgresInstaller) ServiceID() string { return "postgres" }
@@ -93,12 +111,28 @@ func (p *PostgresInstaller) Install(ctx context.Context) error {
 func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if p.IsInstalled() {
 		fmt.Fprintln(w, "postgres: already installed")
+		// Backfill TimescaleDB for clusters installed before extension support.
+		if !isTimescaleInstalled(p.postgresDir()) {
+			fmt.Fprintln(w, "postgres: installing TimescaleDB (Apache 2 Edition)...")
+			if err := installTimescaleOSS(ctx, w, p.postgresDir()); err != nil {
+				return err
+			}
+			if p.siteUser != "" {
+				chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, p.postgresDir())
+				if out, err := runShellW(ctx, w, chownCmd); err != nil {
+					return fmt.Errorf("postgres: chown after timescale: %w\n%s", err, out)
+				}
+			}
+			fmt.Fprintln(w, "postgres: TimescaleDB installed — restart PostgreSQL to load the extension")
+		}
 		return nil
 	}
 
 	pgDir := p.postgresDir()
 	dataDir := filepath.Join(pgDir, "data")
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("percona-postgresql-%s.tar.gz", postgresVersion))
+	// Basename must match scripts/download-artifacts.sh so the test curl shim
+	// can serve the cached tarball without hitting the network.
+	tmpTar := filepath.Join(os.TempDir(), perconaTarBasename())
 	defer os.Remove(tmpTar)
 
 	// 1. Install libreadline-dev — required by the Percona tarball binaries.
@@ -128,12 +162,16 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("postgres: extract: %w", err)
 	}
 
-	// 5. Transfer ownership of the entire postgres directory to siteUser.
+	// 5. Transfer ownership of the entire postgres directory to siteUser when
+	//    we have privileges to do so (no-op / best-effort when already that user).
 	//    PostgreSQL refuses to start (and initdb refuses to run) as root.
-	fmt.Fprintf(w, "postgres: transferring ownership to %s...\n", p.siteUser)
-	chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
-	if out, err := runShellW(ctx, w, chownCmd); err != nil {
-		return fmt.Errorf("postgres: chown: %w\n%s", err, out)
+	if p.siteUser != "" {
+		fmt.Fprintf(w, "postgres: transferring ownership to %s...\n", p.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			// Non-root daemon already owns the tree it created — warn only.
+			fmt.Fprintf(w, "postgres: chown (best-effort): %v\n%s", err, out)
+		}
 	}
 
 	// 6. Initialise the data directory as siteUser (idempotent: skip if already done).
@@ -142,14 +180,14 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if !fileExists(filepath.Join(dataDir, "PG_VERSION")) {
 		fmt.Fprintln(w, "postgres: initialising data directory...")
 		initCmd := fmt.Sprintf(
-			`su -s /bin/sh -c "%s/bin/initdb -D %s/data --username=%s --encoding=UTF8 --no-locale --auth-local=trust --auth-host=scram-sha-256" %s`,
-			pgDir, pgDir, postgresSuperuser, p.siteUser,
+			`%s/bin/initdb -D %s/data --username=%s --encoding=UTF8 --no-locale --auth-local=trust --auth-host=scram-sha-256`,
+			pgDir, pgDir, postgresSuperuser,
 		)
-		if out, err := runShellW(ctx, w, initCmd); err != nil {
+		if out, err := runuser.RunAsUserW(ctx, w, p.siteUser, p.siteHome, "", initCmd); err != nil {
 			return fmt.Errorf("postgres: initdb: %w\n%s", err, out)
 		}
 		fmt.Fprintln(w, "postgres: setting superuser password...")
-		if err := setPostgresPasswordSingleUser(pgDir, p.siteUser); err != nil {
+		if err := setPostgresPasswordSingleUser(pgDir, p.siteUser, p.siteHome); err != nil {
 			return fmt.Errorf("postgres: set password: %w", err)
 		}
 	}
@@ -170,13 +208,27 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("postgres: write postgresql.conf: %w", err)
 	}
 
-	// 8. Write config.env for the credentials panel (no DB_DATABASE — app-specific).
+	// 8. Install TimescaleDB Apache 2 Edition extension files + preload.
+	fmt.Fprintln(w, "postgres: installing TimescaleDB (Apache 2 Edition)...")
+	if err := installTimescaleOSS(ctx, w, pgDir); err != nil {
+		return err
+	}
+
+	// 9. Re-chown after timescale files land (install may run as root).
+	if p.siteUser != "" {
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("postgres: chown after timescale: %w\n%s", err, out)
+		}
+	}
+
+	// 10. Write config.env for the credentials panel (no DB_DATABASE — app-specific).
 	fmt.Fprintln(w, "postgres: writing config.env...")
 	if err := writePostgresConfigEnv(pgDir); err != nil {
 		return fmt.Errorf("postgres: write config.env: %w", err)
 	}
 
-	// 9. Write client wrappers into the shared bin dir (sets LD_LIBRARY_PATH and
+	// 11. Write client wrappers into the shared bin dir (sets LD_LIBRARY_PATH and
 	//    default connection env vars so tools work from PATH like mysql/redis).
 	fmt.Fprintln(w, "postgres: writing client binary wrappers...")
 	if err := writePostgresClientWrappers(p.serverRoot); err != nil {
@@ -203,7 +255,8 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	}
 
 	pgDir := p.postgresDir()
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("percona-postgresql-%s-update.tar.gz", postgresVersion))
+	// Same basename as InstallW so the test curl shim can serve the cache.
+	tmpTar := filepath.Join(os.TempDir(), perconaTarBasename())
 	defer os.Remove(tmpTar)
 
 	fmt.Fprintln(w, "postgres: stopping service...")
@@ -228,6 +281,19 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("postgres: update chown: %w\n%s", err, out)
+		}
+	}
+
+	fmt.Fprintln(w, "postgres: updating TimescaleDB (Apache 2 Edition)...")
+	if err := updateTimescaleOSS(ctx, w, pgDir); err != nil {
+		return err
+	}
+
+	// Re-chown after timescale extract.
+	if p.siteUser != "" {
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("postgres: update chown after timescale: %w\n%s", err, out)
 		}
 	}
 
@@ -423,14 +489,15 @@ func removePostgresClientWrappers(serverRoot string) {
 
 // setPostgresPasswordSingleUser sets the superuser password without starting the
 // server, using postgres --single mode and local trust auth.
-func setPostgresPasswordSingleUser(pgDir, siteUser string) error {
+func setPostgresPasswordSingleUser(pgDir, siteUser, siteHome string) error {
 	sql := fmt.Sprintf(`ALTER USER %s WITH PASSWORD '%s';`, postgresSuperuser, postgresDevPassword)
-	return runPostgresSingleUserSQL(pgDir, siteUser, sql)
+	return runPostgresSingleUserSQL(pgDir, siteUser, siteHome, sql)
 }
 
 // EnsurePostgresConfig migrates existing installations: refreshes config.env and
 // client wrappers, renames the legacy site-user superuser to root, and ensures
-// the dev password is set. Safe to call on every devctl startup.
+// the dev password is set. When TimescaleDB files are present, also ensures
+// shared_preload_libraries and CREATE EXTENSION. Safe to call on every startup.
 func EnsurePostgresConfig(serverRoot, siteUser string) error {
 	pgDir := paths.ServiceDir(serverRoot, "postgres")
 	if !fileExists(filepath.Join(pgDir, "bin", "postgres")) {
@@ -442,10 +509,55 @@ func EnsurePostgresConfig(serverRoot, siteUser string) error {
 	if err := writePostgresClientWrappers(serverRoot); err != nil {
 		return err
 	}
+	if isTimescaleInstalled(pgDir) {
+		if err := ensureTimescalePreload(pgDir); err != nil {
+			return err
+		}
+	}
 	if !fileExists(filepath.Join(pgDir, "data", "PG_VERSION")) {
 		return nil
 	}
-	return ensurePostgresRoleAndPassword(pgDir, siteUser)
+	siteHome := lookupHome(siteUser)
+	if err := ensurePostgresRoleAndPassword(pgDir, siteUser, siteHome); err != nil {
+		return err
+	}
+	// CREATE EXTENSION only works when the server is already up (e.g. restart).
+	// Fresh install creates the extension after auto-start (see EnsureTimescaleAfterStart).
+	_, err := ensureTimescaleExtension(pgDir, siteUser, siteHome)
+	return err
+}
+
+// EnsureTimescaleAfterStart creates the timescaledb extension once Postgres is
+// accepting connections. Polls for up to 30s. Called after install auto-start.
+func EnsureTimescaleAfterStart(serverRoot, siteUser string) error {
+	pgDir := paths.ServiceDir(serverRoot, "postgres")
+	siteHome := lookupHome(siteUser)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		ready, err := ensureTimescaleExtension(pgDir, siteUser, siteHome)
+		if err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("postgres: timed out waiting to CREATE EXTENSION timescaledb")
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// lookupHome returns the home directory for username, or "" on failure.
+func lookupHome(username string) string {
+	if username == "" {
+		return ""
+	}
+	u, err := user.Lookup(username)
+	if err != nil {
+		return ""
+	}
+	return u.HomeDir
 }
 
 // postgresMigrateSQL returns SQL to ensure the root superuser exists with the dev password.
@@ -460,12 +572,12 @@ func postgresMigrateSQL(siteUser string) string {
 }
 
 // runPostgresSingleUserSQL runs SQL against a stopped cluster via postgres --single.
-func runPostgresSingleUserSQL(pgDir, siteUser, sql string) error {
+func runPostgresSingleUserSQL(pgDir, siteUser, siteHome, sql string) error {
 	cmd := fmt.Sprintf(
-		`printf '%%s\n' %q | su -s /bin/sh -c 'LD_LIBRARY_PATH=%q/lib %q/bin/postgres --single -D %q/data postgres' %q`,
-		sql, pgDir, pgDir, pgDir, siteUser,
+		`printf '%%s\n' %q | LD_LIBRARY_PATH=%q/lib %q/bin/postgres --single -D %q/data postgres`,
+		sql, pgDir, pgDir, pgDir,
 	)
-	if out, err := runShell(context.Background(), cmd); err != nil {
+	if out, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", cmd); err != nil {
 		return fmt.Errorf("%w\n%s", err, out)
 	}
 	return nil
@@ -474,29 +586,29 @@ func runPostgresSingleUserSQL(pgDir, siteUser, sql string) error {
 // ensurePostgresRoleAndPassword renames a legacy site-user superuser to root and
 // sets the dev password. Uses the cluster's Unix socket when running; falls back
 // to --single mode when the server is stopped (e.g. port 5432 already taken).
-func ensurePostgresRoleAndPassword(pgDir, siteUser string) error {
+func ensurePostgresRoleAndPassword(pgDir, siteUser, siteHome string) error {
 	dataDir := filepath.Join(pgDir, "data")
 	migrateSQL := postgresMigrateSQL(siteUser)
 
 	readyCmd := fmt.Sprintf("LD_LIBRARY_PATH=%s/lib %s/bin/pg_isready -h %s -p 5432 -q", pgDir, pgDir, dataDir)
 	if _, err := runShell(context.Background(), readyCmd); err != nil {
-		return runPostgresSingleUserSQL(pgDir, siteUser, migrateSQL)
+		return runPostgresSingleUserSQL(pgDir, siteUser, siteHome, migrateSQL)
 	}
 
 	connectUser := postgresSuperuser
 	tryRoot := fmt.Sprintf(
-		`su -s /bin/sh -c 'LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -tAc "SELECT 1"' %q`,
-		pgDir, pgDir, dataDir, postgresSuperuser, siteUser,
+		`LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -tAc "SELECT 1"`,
+		pgDir, pgDir, dataDir, postgresSuperuser,
 	)
-	if _, err := runShell(context.Background(), tryRoot); err != nil && siteUser != "" && siteUser != postgresSuperuser {
+	if _, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", tryRoot); err != nil && siteUser != "" && siteUser != postgresSuperuser {
 		connectUser = siteUser
 	}
 
 	cmd := fmt.Sprintf(
-		`su -s /bin/sh -c 'LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -c %q' %q`,
-		pgDir, pgDir, dataDir, connectUser, migrateSQL, siteUser,
+		`LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -c %q`,
+		pgDir, pgDir, dataDir, connectUser, migrateSQL,
 	)
-	if out, err := runShell(context.Background(), cmd); err != nil {
+	if out, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", cmd); err != nil {
 		return fmt.Errorf("postgres: migrate role/password: %w\n%s", err, out)
 	}
 	return nil

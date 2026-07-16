@@ -135,6 +135,7 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		supervisor: supervisor,
 		serverRoot: serverRoot,
 		siteUser:   siteUser,
+		siteHome:   siteHome,
 	}
 	m["caddy"] = NewCaddyInstaller(supervisor, serverRoot)
 	m["reverb"] = &ReverbInstaller{

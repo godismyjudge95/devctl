@@ -202,11 +202,29 @@ download "ClickHouse ${CLICKHOUSE_VERSION} (update artifact)" \
   "clickhouse-common-static-update.tgz"
 
 # ─── PostgreSQL (Percona) ─────────────────────────────────────────────────────
-POSTGRES_VERSION="18.3"
+# Must be ≥ 18.4 for TimescaleDB OSS packages built against PG 18.4 (-1804).
+POSTGRES_VERSION="18.4"
 POSTGRES_MAJOR="18"
 download "PostgreSQL ${POSTGRES_VERSION} (Percona tarball)" \
   "https://downloads.percona.com/downloads/postgresql-distribution-${POSTGRES_MAJOR}/${POSTGRES_VERSION}/binary/tarball/percona-postgresql-${POSTGRES_VERSION}-ssl3-linux-x86_64.tar.gz" \
   "percona-postgresql-${POSTGRES_VERSION}-ssl3-linux-x86_64.tar.gz"
+
+# ─── TimescaleDB Apache 2 Edition (extension debs for Postgres) ───────────────
+# Extracted into {serverRoot}/postgres/{lib,share/extension}/ — not installed via APT.
+# Filenames match the /tmp DEST basenames used by install/timescaledb.go so the
+# curl shim in the test container can serve them from cache.
+TS_VERSION="2.28.3"
+TS_PKG_TAG="2.28.3~ubuntu22.04-1804"
+TS_ARCH="amd64"
+TS_LOADER="timescaledb-2-loader-postgresql-${POSTGRES_MAJOR}_${TS_PKG_TAG}_${TS_ARCH}.deb"
+TS_OSS="timescaledb-2-oss-${TS_VERSION}-postgresql-${POSTGRES_MAJOR}_${TS_PKG_TAG}_${TS_ARCH}.deb"
+TS_BASE="https://packagecloud.io/timescale/timescaledb/ubuntu/pool/jammy/main/t"
+download "TimescaleDB loader ${TS_VERSION}" \
+  "${TS_BASE}/timescaledb-2-${TS_VERSION}-postgresql-${POSTGRES_MAJOR}/${TS_LOADER}" \
+  "${TS_LOADER}"
+download "TimescaleDB OSS ${TS_VERSION}" \
+  "${TS_BASE}/timescaledb-2-oss-${TS_VERSION}-postgresql-${POSTGRES_MAJOR}/${TS_OSS}" \
+  "${TS_OSS}"
 
 # ─── MySQL 8.4 (.deb packages) ────────────────────────────────────────────────
 # The MySQL installer downloads to /tmp/mysql-{pkg}-{version}.deb (e.g.

@@ -333,6 +333,13 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 				log.Printf("install: maxio CORS synced on %d bucket(s)", n)
 			}()
 		}
+		if id == "postgres" {
+			go func() {
+				if err := install.EnsureTimescaleAfterStart(s.serverRoot, s.siteUser); err != nil {
+					log.Printf("install: timescale extension: %v", err)
+				}
+			}()
+		}
 	}
 
 	go s.poller.Poll()
@@ -770,6 +777,13 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 				}
 				if err := s.siteManager.SyncAll(context.Background()); err != nil {
 					log.Printf("update: caddy sync sites: %v", err)
+				}
+			}()
+		}
+		if id == "postgres" {
+			go func() {
+				if err := install.EnsureTimescaleAfterStart(s.serverRoot, s.siteUser); err != nil {
+					log.Printf("update: timescale extension: %v", err)
 				}
 			}()
 		}

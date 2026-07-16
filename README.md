@@ -216,7 +216,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 | Caddy | `:80`, `:443`, `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
 | DNS Server | `127.0.0.1:5354` (UDP+TCP) | — | Embedded goroutine (no download) | — |
 | Valkey (Redis-compatible) | `127.0.0.1:6379` | — | [download.valkey.io](https://download.valkey.io/releases/) | `{serverRoot}/valkey/valkey.conf` |
-| PostgreSQL | `127.0.0.1:5432` | — | [downloads.percona.com](https://downloads.percona.com/downloads/postgresql-distribution-18/) (Percona Distribution) | `{serverRoot}/postgres/data/postgresql.conf` |
+| PostgreSQL + TimescaleDB | `127.0.0.1:5432` | — | [Percona PG tarball](https://downloads.percona.com/downloads/postgresql-distribution-18/) + [TimescaleDB OSS `.deb`](https://packagecloud.io/timescale/timescaledb) (extracted in-place) | `{serverRoot}/postgres/data/postgresql.conf` |
 | MySQL | `127.0.0.1:3306` | — | [repo.mysql.com/apt](https://repo.mysql.com/apt/) (Ubuntu `.deb` packages, extracted in-place) | `{serverRoot}/mysql/my.cnf` |
 | Meilisearch | `127.0.0.1:7700` | `meilisearch.test` | [github.com/meilisearch/meilisearch](https://github.com/meilisearch/meilisearch/releases) | `{serverRoot}/meilisearch/config.toml` |
 | Typesense | `127.0.0.1:8108` | `typesense.test` | [dl.typesense.org](https://dl.typesense.org/releases/) | `{serverRoot}/typesense/typesense.ini` |
@@ -231,6 +231,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 
 - Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
 - PostgreSQL and ClickHouse run as supervised child processes but drop privileges to `DEVCTL_SITE_USER` (both refuse to start as root against non-root data).
+- PostgreSQL installs [TimescaleDB Apache 2 Edition](https://github.com/timescale/timescaledb) as an extension (`.deb` files downloaded from packagecloud and extracted into the Percona tree — no APT). `shared_preload_libraries` is set automatically and `CREATE EXTENSION timescaledb` is applied to the default `postgres` database after start.
 - Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
 - Config files are written once on install and never overwritten on restart. User edits are preserved.
 - Mailpit is configured via `MP_*` environment variables in `config.env` rather than a native config file.
@@ -711,7 +712,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, …) |
 | `{serverRoot}/caddy/` | Caddy binary, env file, internal CA data |
 | `{serverRoot}/valkey/` | Valkey binary, `valkey.conf`, data |
-| `{serverRoot}/postgres/` | PostgreSQL binary tarball, `data/` directory |
+| `{serverRoot}/postgres/` | PostgreSQL binary tarball, TimescaleDB extension files, `data/` directory |
 | `{serverRoot}/mysql/` | MySQL binaries (extracted from `.deb`), `data/` directory |
 | `{serverRoot}/meilisearch/` | Meilisearch binary, `config.toml`, index data |
 | `{serverRoot}/typesense/` | Typesense binary, `typesense.ini`, data |
