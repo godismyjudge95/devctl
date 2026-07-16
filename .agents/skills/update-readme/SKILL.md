@@ -21,26 +21,29 @@ Load this skill any time you are asked to:
 The README must always contain a full TOC with anchor links. The sections must appear in this exact order:
 
 1. Overview
-2. Requirements
-3. Installation
+2. Comparison
+3. Requirements
+4. Installation
    - From a release binary
    - From source
-4. Uninstall
-5. Services
-6. PHP
-7. DNS
-8. Sites
-9. Git Worktrees
-10. PHP Dumps (`php_dd`)
-11. SPX Profiler
-12. Mail
-13. Config Editor
-14. Browser Notifications
-15. MCP Server
-16. Ports
-17. Data Paths
-18. Contributing & Development
-19. License
+5. Uninstall
+6. Services
+7. PHP
+8. DNS
+9. Sites
+10. Git Worktrees
+11. PHP Dumps (`php_dd`)
+12. SPX Profiler
+13. Mail
+14. Config Editor
+15. Logs
+16. Browser Notifications
+17. PWA (Install as an App)
+18. CLI
+19. Ports
+20. Data Paths
+21. Contributing & Development
+22. License
 
 Do not add, remove, or reorder sections without updating the TOC anchor links to match.
 

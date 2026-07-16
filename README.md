@@ -15,6 +15,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Comparison](#comparison)
 - [Requirements](#requirements)
 - [Installation](#installation)
   - [From a release binary](#from-a-release-binary)
@@ -51,6 +52,53 @@ devctl is a self-contained development environment manager for PHP projects on L
 - **AI-friendly** — a CLI lets AI agents (OpenCode, Claude, Cursor) interact with your dev environment without root: `devctl services:list`, `devctl sites:list`, `devctl logs:tail caddy`, etc.
 
 All service binaries are downloaded directly from their upstream releases and stored under your sites directory (default `~/sites/server/`). Nothing is installed system-wide except the devctl binary and systemd unit.
+
+---
+
+## Comparison
+
+How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://github.com/lerd-env/lerd), and [Yerd](https://github.com/forjedio/yerd). Competitor columns summarize their public docs and README comparison tables; features change over time — verify upstream if you need the latest.
+
+| | Laravel Herd | Lerd | Yerd | **devctl** |
+|---|---|---|---|---|
+| Free | ✅ (Pro is paid) | ✅ | ✅ | ✅ |
+| Open source | ❌ | ✅ | ✅ | ✅ |
+| Linux | ❌ | ✅ | ✅ | ✅ |
+| macOS | ✅ | ✅ | ✅ | ❌ |
+| Windows | ✅ | WSL2 (beta) | ❌ | WSL2 |
+| Automatic `.test` domains | ✅ | ✅ | ✅ | ✅ |
+| HTTPS with a trusted local CA | ✅ | ✅ | ✅ | ✅ |
+| Multiple PHP versions | ✅ | ✅ | ✅ | ✅ |
+| PHP version **per site** | ✅ | ✅ | ✅ | ✅ |
+| PHP runtime | PHP-FPM | PHP-FPM · FrankenPHP | PHP-FPM | PHP-FPM |
+| First-class CLI | ✅ | ✅ | ✅ | ✅ |
+| UI | Native app | Web app | Desktop app | Web app |
+| Menu-bar / tray | ✅ | ✅ | ✅ | ❌ |
+| MySQL | ✅ (Pro) | ✅ | ✅ | ✅ |
+| MariaDB | ✅ (Pro) | ✅ | ✅ | ❌ |
+| PostgreSQL | ✅ (Pro) | ✅ | ✅ | ✅ |
+| Redis | ✅ (Pro) | ✅ | ✅ | ✅ (Valkey) |
+| ClickHouse | ❌ | ❌ | ❌ | ✅ |
+| Meilisearch | ❌ | ✅ | ❌ | ✅ |
+| Typesense | ❌ | ❌ | ❌ | ✅ |
+| Object storage (S3) | ❌ | ✅ (RustFS) | ❌ | ✅ (MaxIO) |
+| Mail capture | ✅ (Pro) | ✅ | ✅ | ✅ (Mailpit) |
+| WebSockets (Reverb) | ✅ (Pro) | ✅ | ❌ | ✅ |
+| Database GUI | ❌ | ✅ | ❌ | ✅ (WhoDB) |
+| Variable dump inspector | ✅ (Pro) | ✅ | ✅ | ✅ (`php_dd`) |
+| Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ❌ |
+| SPX profiler | ❌ | ✅ | ❌ | ✅ |
+| Git worktrees | ❌ | ✅ | ❌ | ✅ |
+| Share a site publicly | ✅ | ✅ | ✅ | ❌ |
+| Health checks (`doctor`) | ❌ | ✅ | ✅ | ❌ |
+| AI integration | MCP | MCP | ❌ | CLI + skill |
+| Per-project Node isolation | ❌ | ✅ | tools install | ❌ |
+| Rootless day-to-day | ✅ | ✅ | ✅ | ✅ |
+| Containers / VM | None | Podman | None | None [^no-containers] |
+
+[^no-containers]: No Docker/Podman by design — managed services are native binaries, not container images.
+
+**Related comparisons (upstream):** [Yerd vs Herd vs Lerd](https://github.com/forjedio/yerd#yerd-vs-herd-vs-lerd) · [Why Lerd](https://github.com/lerd-env/lerd#why-lerd)
 
 ---
 
