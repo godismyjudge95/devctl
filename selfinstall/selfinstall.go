@@ -110,11 +110,11 @@ func Run(args []string) error {
 		fmt.Println("devctl will perform the following steps:")
 		fmt.Printf("  1. Copy binary      → %s\n", binaryDest)
 		fmt.Printf("  2. Write service    → %s (User=%s + AmbientCapabilities)\n", existingServiceFile, siteUser)
-		fmt.Printf("  3. Chown server tree → %s\n", siteUser)
-		fmt.Printf("  4. Set sites dir    → %s (saved to DB)\n", sitesDir)
-		fmt.Printf("  5. Link binary      → %s/devctl\n", binDir)
-		fmt.Printf("  6. Configure shell PATH for %s\n", siteUser)
-		fmt.Println("  7. Download dev tools (sqlite3, ...)")
+		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
+		fmt.Printf("  4. Link binary      → %s/devctl\n", binDir)
+		fmt.Println("  5. Download dev tools (sqlite3, ...)")
+		fmt.Printf("  6. Chown server tree → %s\n", siteUser)
+		fmt.Printf("  7. Configure shell PATH for %s\n", siteUser)
 		fmt.Println("  8. systemctl daemon-reload")
 		fmt.Println("  9. systemctl enable devctl")
 		fmt.Println(" 10. systemctl start devctl")
@@ -155,6 +155,17 @@ func Run(args []string) error {
 			content := buildServiceFile(binaryDest, siteUser, siteHome, serverRoot)
 			return os.WriteFile(existingServiceFile, []byte(content), 0644)
 		}},
+		{"Saving sites directory", func() error {
+			return saveSitesDir(serverRoot, sitesDir)
+		}},
+		{"Linking binary into bin dir", func() error {
+			return install.LinkIntoBinDir(binDir, "devctl", binaryDest)
+		}},
+		{"Downloading dev tools", func() error {
+			tools.EnsureAllLatest(context.Background(), binDir, os.Stdout)
+			return nil
+		}},
+		// Chown after bin links + tools so nothing created as root is left behind.
 		{"Owning server tree as site user", func() error {
 			// Migration from root daemon: data/logs under serverRoot must be
 			// writable by the non-root service User=.
@@ -181,16 +192,6 @@ func Run(args []string) error {
 				}
 				return nil
 			})
-		}},
-		{"Saving sites directory", func() error {
-			return saveSitesDir(serverRoot, sitesDir)
-		}},
-		{"Linking binary into bin dir", func() error {
-			return install.LinkIntoBinDir(binDir, "devctl", binaryDest)
-		}},
-		{"Downloading dev tools", func() error {
-			tools.EnsureAllLatest(context.Background(), binDir, os.Stdout)
-			return nil
 		}},
 		{"Configuring shell PATH", func() error {
 			u, err := user.Lookup(siteUser)
