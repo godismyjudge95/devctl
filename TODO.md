@@ -161,6 +161,4 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 # Completed
 
-- Mostly rootless — with elevation: daemon runs as site user with AmbientCapabilities for 80/443; `sudo devctl elevate [trust|resolver|ports|install]` / `unelevate` / `elevate:status`; re-exec for restart/self-update *(completed 2026-07-13)*
-
 

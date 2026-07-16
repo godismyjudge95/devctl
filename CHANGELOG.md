@@ -2,16 +2,14 @@
 
 ## Unreleased
 
+## v0.10.0 — 2026-07-16
+
 - **Mostly rootless daemon with elevation**: the systemd unit now runs the daemon as the site user (`User=`) with `AmbientCapabilities=CAP_NET_BIND_SERVICE` so Caddy can bind ports 80/443 without root and without re-running elevate after Caddy updates. The daemon refuses to start as root.
 - Added **`sudo devctl elevate [trust|resolver|ports|install]`** and **`sudo devctl unelevate`** for one-shot privileged OS setup (CA trust store, systemd-resolved drop-in, unit ambient caps). Day-to-day CLI stays unprivileged. `devctl elevate:status` reports configuration without sudo.
 - Privileged work is performed via audited **`devctl helper <op>`** ops (euid 0, frozen argv) invoked by elevate — not by leaving the long-lived HTTP daemon as root.
 - Self-update and API restart now **re-exec** the process in place (no `systemctl restart` / sudo after updates).
 - DNS setup / TLS trust API handlers return `needs_elevation` with the matching elevate command when the daemon cannot write system paths.
-- Added `make demo` / `make demo-screenshots` targets and `scripts/demo.sh` to spin up a fresh Incus demo container with seeded sites, PHP dumps, mail, SPX profiles, and MaxIO files, then take full-dashboard screenshots automatically
-- Updated `scripts/screenshots.js` to capture all dashboard pages (Services, Sites, Dumps, Mail, SPX, Logs, Settings, MaxIO, WhoDB) at both desktop and mobile viewports; `BASE_URL` is now configurable via env var
-- Added Logs section to README documenting the real-time log viewer tab
-- Added screenshots to Mail, SPX Profiler, Logs, MaxIO, and WhoDB README sections
-- Added all mobile screenshots to the Contributing → Screenshots section of the README
+- Install chowns the server tree to the site user after bin links/tools (and ignores broken dependency symlinks) so upgrades leave no root-owned files under `SERVER_ROOT`.
 
 ## v0.5.0 — 2026-04-07
 
