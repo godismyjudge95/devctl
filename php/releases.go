@@ -45,17 +45,38 @@ func LatestReleaseTag(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tags := make([]string, 0, len(releases))
+	// Prefer immutable dated tags (php-binaries-YYYYMMDD.N) over legacy
+	// php-binaries-latest so lexicographic "latest" never outranks real builds.
+	var versioned, legacy []string
 	for _, rel := range releases {
-		if strings.HasPrefix(rel.TagName, releaseTagPrefix) {
-			tags = append(tags, rel.TagName)
+		if !strings.HasPrefix(rel.TagName, releaseTagPrefix) {
+			continue
+		}
+		if isVersionedPHPReleaseTag(rel.TagName) {
+			versioned = append(versioned, rel.TagName)
+		} else {
+			legacy = append(legacy, rel.TagName)
 		}
 	}
-	if len(tags) == 0 {
-		return "", fmt.Errorf("no %s releases found", releaseTagPrefix)
+	if len(versioned) > 0 {
+		sort.Strings(versioned)
+		return versioned[len(versioned)-1], nil
 	}
-	sort.Strings(tags)
-	return tags[len(tags)-1], nil
+	if len(legacy) > 0 {
+		sort.Strings(legacy)
+		return legacy[len(legacy)-1], nil
+	}
+	return "", fmt.Errorf("no %s releases found", releaseTagPrefix)
+}
+
+// isVersionedPHPReleaseTag reports whether tag is an immutable dated release
+// such as php-binaries-20260422.1 (as opposed to php-binaries-latest).
+func isVersionedPHPReleaseTag(tag string) bool {
+	rest := strings.TrimPrefix(tag, releaseTagPrefix)
+	if rest == "" || rest == tag {
+		return false
+	}
+	return rest[0] >= '0' && rest[0] <= '9'
 }
 
 func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, error) {
@@ -70,8 +91,15 @@ func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, er
 			break
 		}
 	}
+	// Older php-binaries-latest releases ship CLI/FPM assets without a
+	// php-binaries.json. Synthesize a manifest from asset filenames so install
+	// still works until a versioned release with a real manifest is published.
 	if manifestURL == "" {
-		return nil, fmt.Errorf("php release %s missing %s", tag, manifestAssetName)
+		manifest, synthErr := synthesizeManifestFromAssets(tag, release)
+		if synthErr != nil {
+			return nil, fmt.Errorf("php release %s missing %s: %w", tag, manifestAssetName, synthErr)
+		}
+		return manifest, nil
 	}
 
 	req, err := newGitHubRequest(ctx, manifestURL)
@@ -108,6 +136,69 @@ func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, er
 	return &manifest, nil
 }
 
+// synthesizeManifestFromAssets builds a ReleaseManifest by scanning release
+// assets named php-{minor}-{cli|fpm}-linux-x86_64. Patch versions are unknown
+// without a real manifest, so PHPVersions is left empty.
+func synthesizeManifestFromAssets(tag string, release *githubRelease) (*ReleaseManifest, error) {
+	assets := map[string]ReleaseAssets{}
+	for _, asset := range release.Assets {
+		minor, kind, ok := parsePHPBinaryAssetName(asset.Name)
+		if !ok {
+			continue
+		}
+		entry := assets[minor]
+		switch kind {
+		case "cli":
+			entry.CLI = asset.Name
+		case "fpm":
+			entry.FPM = asset.Name
+		}
+		assets[minor] = entry
+	}
+	// Keep only minors that have both CLI and FPM.
+	complete := map[string]ReleaseAssets{}
+	for minor, a := range assets {
+		if a.CLI != "" && a.FPM != "" {
+			complete[minor] = a
+		}
+	}
+	if len(complete) == 0 {
+		return nil, fmt.Errorf("no php-{ver}-{cli|fpm}-linux-x86_64 assets found")
+	}
+	return &ReleaseManifest{
+		ReleaseTag:  tag,
+		PHPVersions: map[string]string{},
+		Assets:      complete,
+	}, nil
+}
+
+// parsePHPBinaryAssetName extracts minor version and kind ("cli"/"fpm") from
+// names like php-8.4-cli-linux-x86_64. Returns ok=false when the name does not
+// match.
+func parsePHPBinaryAssetName(name string) (minor, kind string, ok bool) {
+	// php-<minor>-<kind>-linux-x86_64
+	const suffix = "-linux-x86_64"
+	if !strings.HasPrefix(name, "php-") || !strings.HasSuffix(name, suffix) {
+		return "", "", false
+	}
+	mid := strings.TrimSuffix(strings.TrimPrefix(name, "php-"), suffix) // e.g. "8.4-cli"
+	// Split on last hyphen so minors like "8.4" work; kind is the final segment.
+	i := strings.LastIndex(mid, "-")
+	if i <= 0 || i == len(mid)-1 {
+		return "", "", false
+	}
+	minor = mid[:i]
+	kind = mid[i+1:]
+	if kind != "cli" && kind != "fpm" {
+		return "", "", false
+	}
+	// Basic minor sanity: must look like N.N
+	if !strings.Contains(minor, ".") {
+		return "", "", false
+	}
+	return minor, kind, true
+}
+
 func LatestReleaseManifest(ctx context.Context) (*ReleaseManifest, error) {
 	tag, err := LatestReleaseTag(ctx)
 	if err != nil {
@@ -123,13 +214,26 @@ func AssetURLsForMinor(ctx context.Context, minor string) (cliURL, fpmURL string
 	}
 	assets, ok := manifest.Assets[minor]
 	if !ok {
-		return "", "", nil, fmt.Errorf("php release %s missing assets for %s", manifest.ReleaseTag, minor)
+		return "", "", nil, fmt.Errorf("php %s is not available in release %s (available: %s)",
+			minor, manifest.ReleaseTag, strings.Join(sortedAssetMinors(manifest), ", "))
 	}
 	if assets.CLI == "" || assets.FPM == "" {
 		return "", "", nil, fmt.Errorf("php release %s has incomplete assets for %s", manifest.ReleaseTag, minor)
 	}
 	base := githubDownloadBase() + "/" + manifest.ReleaseTag + "/"
 	return base + assets.CLI, base + assets.FPM, manifest, nil
+}
+
+func sortedAssetMinors(manifest *ReleaseManifest) []string {
+	if manifest == nil || len(manifest.Assets) == 0 {
+		return nil
+	}
+	minors := make([]string, 0, len(manifest.Assets))
+	for m := range manifest.Assets {
+		minors = append(minors, m)
+	}
+	sort.Strings(minors)
+	return minors
 }
 
 func githubAPIBase() string {

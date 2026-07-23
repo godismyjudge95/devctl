@@ -14,7 +14,7 @@ There are two independent release types in this repo:
 | Release type | Tag format | GitHub Actions triggered | Binary attached |
 |---|---|---|---|
 | devctl binary | `v1.2.3` | `release.yml` | `devctl` (linux-x86_64) |
-| PHP binaries | `php-binaries-YYYYMMDD.N` | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 8.1–8.4 plus `php-binaries.json` |
+| PHP binaries | `php-binaries-YYYYMMDD.N` | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 7.0–8.5 plus `php-binaries.json` |
 
 They are fully independent — you can do either or both. PHP binaries now use unique immutable tags, and devctl discovers the newest `php-binaries-*` release plus its `php-binaries.json` manifest at install/update time.
 
@@ -142,20 +142,21 @@ gh release create "$PHP_TAG" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds all four PHP versions in parallel, and attaches the eight binaries plus `php-binaries.json` to this release.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds supported PHP minors in parallel (legacy 7.x, packaged 8.0, built 8.1–8.5), and attaches the binaries plus `php-binaries.json` to this release.
 
 ### 2.4 Verify
 
-After the CI run completes, check the release page has all nine assets:
+After the CI run completes, check the release page has the expected assets (minors that failed to build may be absent — check the workflow run):
 ```
-php-8.1-cli-linux-x86_64
-php-8.1-fpm-linux-x86_64
-php-8.2-cli-linux-x86_64
-php-8.2-fpm-linux-x86_64
-php-8.3-cli-linux-x86_64
-php-8.3-fpm-linux-x86_64
-php-8.4-cli-linux-x86_64
-php-8.4-fpm-linux-x86_64
+php-7.0-cli-linux-x86_64 / php-7.0-fpm-linux-x86_64
+php-7.2-cli-linux-x86_64 / php-7.2-fpm-linux-x86_64
+php-7.4-cli-linux-x86_64 / php-7.4-fpm-linux-x86_64
+php-8.0-cli-linux-x86_64 / php-8.0-fpm-linux-x86_64
+php-8.1-cli-linux-x86_64 / php-8.1-fpm-linux-x86_64
+php-8.2-cli-linux-x86_64 / php-8.2-fpm-linux-x86_64
+php-8.3-cli-linux-x86_64 / php-8.3-fpm-linux-x86_64
+php-8.4-cli-linux-x86_64 / php-8.4-fpm-linux-x86_64
+php-8.5-cli-linux-x86_64 / php-8.5-fpm-linux-x86_64
 php-binaries.json
 ```
 
@@ -182,4 +183,4 @@ curl -sIL "https://github.com/godismyjudge95/devctl/releases/download/${PHP_TAG}
 - [ ] `git tag "$PHP_TAG" && git push origin "$PHP_TAG"`
 - [ ] `gh release create "$PHP_TAG" --title "PHP Binaries — ${PHP_TAG}" --notes "<what changed>"`
 - [ ] Wait for `build-php.yml` to complete
-- [ ] Verify all 8 binary assets plus `php-binaries.json` are attached to the release
+- [ ] Verify binary assets plus `php-binaries.json` are attached (see 2.4)

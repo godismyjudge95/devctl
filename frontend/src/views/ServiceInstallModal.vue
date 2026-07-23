@@ -55,7 +55,9 @@ const SERVICE_ICONS: Record<string, string> = {
   clickhouse: clickhouseSvg,
 }
 
-const KNOWN_PHP_VERSIONS = ['8.4', '8.3', '8.2', '8.1', '8.0', '7.4']
+// Must match versions published in php-binaries-* GitHub releases
+// (see .github/workflows/build-php.yml). Newest first.
+const KNOWN_PHP_VERSIONS = ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4', '7.2', '7.0']
 
 // Services that are installable and not yet installed (excludes php-fpm-* — handled separately)
 const uninstalledServices = computed(() =>
