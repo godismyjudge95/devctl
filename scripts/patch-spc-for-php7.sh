@@ -77,24 +77,51 @@ else:
     print(f"openssl license unchanged: {lic}")
 PY
 
-# 4b) PHP 7.0/7.2 AC_CHECK_LIB(ssl, ...) only adds -lssl before LIBS, so static
-#     libssl.a fails the configure link test (needs -lcrypto -lz). Put those on
-#     SPC_CMD_VAR_PHP_CONFIGURE_LIBS. Do NOT install libssl.so GROUP linker
-#     scripts: libzip's OpenSSL-enabled ossfuzz targets then pick them up and
-#     fail with "cannot find -lz" (regression on php-binaries-20260723.14).
+# 4b) PHP 7.0/7.2 AC_CHECK_LIB(ssl, ...) fails against static libssl.a (needs
+#     -lcrypto -lz). Do NOT put those on global LIBS — that breaks PHP_SETUP_LIBXML
+#     ("build test failed"). Do NOT install libssl.so GROUP scripts — that breaks
+#     libzip ossfuzz. Instead skip the broken configure probe via autoconf cache;
+#     the final link still gets libssl.a/libcrypto.a/libz.a from SPC_EXTRA_LIBS.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("src/SPC/builder/linux/LinuxBuilder.php")
+t = p.read_text()
+needle = """        $envs_build_php = SystemUtil::makeEnvVarString([
+            'CFLAGS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_CFLAGS'),
+            'CPPFLAGS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_CPPFLAGS'),
+            'LDFLAGS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_LDFLAGS'),
+            'LIBS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_LIBS'),
+        ]);"""
+inject = """        $envs_build_php = SystemUtil::makeEnvVarString([
+            'CFLAGS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_CFLAGS'),
+            'CPPFLAGS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_CPPFLAGS'),
+            'LDFLAGS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_LDFLAGS'),
+            'LIBS' => getenv('SPC_CMD_VAR_PHP_CONFIGURE_LIBS'),
+            // PHP 7.0/7.2: static OpenSSL fails AC_CHECK_LIB(ssl) without -lcrypto -lz;
+            // skipping the probe is safe — EXTRA_LIBS already links ssl/crypto/z.
+            'ac_cv_lib_ssl_SSL_CTX_set_ssl_version' => 'yes',
+        ]);"""
+if "ac_cv_lib_ssl_SSL_CTX_set_ssl_version" in t:
+    print("openssl ac_cv configure skip already present")
+elif needle in t:
+    p.write_text(t.replace(needle, inject, 1))
+    print("patched LinuxBuilder to skip static libssl AC_CHECK_LIB probe")
+else:
+    print("WARNING: could not find LinuxBuilder configure env block to patch")
+PY
+
+# Also undo any earlier GlobalEnvManager -lcrypto LIBS patch if re-running on a dirty tree.
 python3 - <<'PY'
 from pathlib import Path
 p = Path("src/SPC/util/GlobalEnvManager.php")
 t = p.read_text()
-old = "'SPC_CMD_VAR_PHP_CONFIGURE_LIBS' => '-ldl -lpthread -lm',"
-new = "'SPC_CMD_VAR_PHP_CONFIGURE_LIBS' => '-lcrypto -lz -ldl -lpthread -lm',"
-if "-lcrypto -lz -ldl" in t:
-    print("SPC_CMD_VAR_PHP_CONFIGURE_LIBS already includes -lcrypto -lz")
-elif old in t:
+old = "'SPC_CMD_VAR_PHP_CONFIGURE_LIBS' => '-lcrypto -lz -ldl -lpthread -lm',"
+new = "'SPC_CMD_VAR_PHP_CONFIGURE_LIBS' => '-ldl -lpthread -lm',"
+if old in t:
     p.write_text(t.replace(old, new, 1))
-    print("patched SPC_CMD_VAR_PHP_CONFIGURE_LIBS for static OpenSSL")
+    print("reverted SPC_CMD_VAR_PHP_CONFIGURE_LIBS crypto/z (use ac_cv instead)")
 else:
-    print("WARNING: could not find SPC_CMD_VAR_PHP_CONFIGURE_LIBS default to patch")
+    print("SPC_CMD_VAR_PHP_CONFIGURE_LIBS left as stock/default")
 PY
 
 # 4c) PHP 7.0/7.2 need --enable-libxml (+ --with-libxml-dir). PHP 7.4+ switched
@@ -166,7 +193,10 @@ fi
 
 echo "---- alpine docker pins ----"
 grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
-echo "---- PHP configure LIBS ----"
-grep -n "SPC_CMD_VAR_PHP_CONFIGURE_LIBS" src/SPC/util/GlobalEnvManager.php | head -5
+echo "---- PHP configure OpenSSL ac_cv / LIBS ----"
+grep -n "ac_cv_lib_ssl_SSL_CTX_set_ssl_version\|SPC_CMD_VAR_PHP_CONFIGURE_LIBS" \
+  src/SPC/builder/linux/LinuxBuilder.php src/SPC/util/GlobalEnvManager.php | head -10
+echo "---- xml.php libxml gate ----"
+grep -n "70400\|enable-libxml\|with-libxml" src/SPC/builder/extension/xml.php | head -15
 echo "---- openssl build tail ----"
 tail -n 25 src/SPC/builder/linux/library/openssl.php
