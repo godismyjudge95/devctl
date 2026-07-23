@@ -185,6 +185,95 @@ else:
     print("WARNING: could not find xml.php --with-libxml line to patch")
 PY
 
+# 4e) PHP < 7.4 GD uses --with-gd + --with-*-dir; 7.4+ uses --enable-gd.
+#     spc 2.3.0 only emits --enable-gd, which configure ignores → "GD support... no".
+python3 - <<'PY'
+from pathlib import Path
+p = Path("src/SPC/builder/extension/gd.php")
+t = p.read_text()
+if "getPHPVersionID() < 70400" in t and "with-gd" in t:
+    print("gd.php already version-gates configure flags")
+elif "public function getUnixConfigureArg(): string" in t:
+    new = r'''    public function getUnixConfigureArg(): string
+    {
+        // PHP < 7.4: --with-gd + --with-{png,jpeg,freetype}-dir
+        // PHP >= 7.4: --enable-gd + --with-{jpeg,freetype,webp,avif}
+        if ($this->builder->getPHPVersionID() < 70400) {
+            $arg = '--with-gd --with-png-dir="' . BUILD_ROOT_PATH . '" --with-zlib-dir="' . BUILD_ROOT_PATH . '"';
+            $arg .= $this->builder->getLib('libjpeg') ? ' --with-jpeg-dir="' . BUILD_ROOT_PATH . '"' : '';
+            $arg .= $this->builder->getLib('freetype') ? ' --with-freetype-dir="' . BUILD_ROOT_PATH . '"' : '';
+            return $arg;
+        }
+        $arg = '--enable-gd';
+        $arg .= $this->builder->getLib('freetype') ? ' --with-freetype' : '';
+        $arg .= $this->builder->getLib('libjpeg') ? ' --with-jpeg' : '';
+        $arg .= $this->builder->getLib('libwebp') ? ' --with-webp' : '';
+        $arg .= $this->builder->getLib('libavif') ? ' --with-avif' : '';
+        return $arg;
+    }
+'''
+    import re
+    t2, n = re.subn(
+        r'    public function getUnixConfigureArg\(\): string\n    \{.*?\n    \}\n',
+        new,
+        t,
+        count=1,
+        flags=re.S,
+    )
+    if n != 1:
+        raise SystemExit("WARNING: could not rewrite gd.php getUnixConfigureArg")
+    p.write_text(t2)
+    print("patched gd.php flags for PHP < 7.4")
+else:
+    print("WARNING: could not find gd.php getUnixConfigureArg")
+PY
+
+# 4f) PHP < 7.4 zip uses --enable-zip/--with-libzip; 7.4+ uses --with-zip.
+#     spc emits --with-zip which configure ignores → zip never built.
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+# Point zip at a CustomExt class
+ext = Path("config/ext.json")
+d = json.loads(ext.read_text())
+if d.get("zip", {}).get("arg-type") == "custom" and Path("src/SPC/builder/extension/zip.php").exists():
+    print("zip already custom with zip.php")
+else:
+    d["zip"]["arg-type"] = "custom"
+    ext.write_text(json.dumps(d, indent=4) + "\n")
+    print("set zip arg-type to custom in ext.json")
+
+zip_php = Path("src/SPC/builder/extension/zip.php")
+if zip_php.exists() and "70400" in zip_php.read_text():
+    print("zip.php already version-gates")
+else:
+    zip_php.write_text('''<?php
+
+declare(strict_types=1);
+
+namespace SPC\\builder\\extension;
+
+use SPC\\builder\\Extension;
+use SPC\\util\\CustomExt;
+
+#[CustomExt('zip')]
+class zip extends Extension
+{
+    public function getUnixConfigureArg(): string
+    {
+        // PHP < 7.4: --enable-zip + --with-libzip=DIR
+        // PHP >= 7.4: --with-zip=DIR
+        if ($this->builder->getPHPVersionID() < 70400) {
+            return '--enable-zip --with-libzip="' . BUILD_ROOT_PATH . '"';
+        }
+        return '--with-zip="' . BUILD_ROOT_PATH . '"';
+    }
+}
+''')
+    print("wrote zip.php CustomExt for PHP < 7.4")
+PY
+
 # 4d) PHP < 7.4 needs --enable-hash (always-on from 7.4). spc treats "hash" as
 #     SPC_INTERNAL_EXTENSIONS and ignores it in the ext list — same pattern as
 #     json for PHP < 8: inject the flag in LinuxBuilder configure.
@@ -265,5 +354,7 @@ grep -n "ac_cv_lib_ssl_SSL_CTX_set_ssl_version\|php_cv_libxml_build_works\|SPC_C
   src/SPC/builder/linux/LinuxBuilder.php src/SPC/util/GlobalEnvManager.php | head -15
 echo "---- xml.php libxml gate ----"
 grep -n "70400\|enable-libxml\|with-libxml" src/SPC/builder/extension/xml.php | head -15
+echo "---- gd.php / zip.php PHP < 7.4 gates ----"
+grep -n "70400\|with-gd\|enable-gd\|with-libzip\|with-zip" src/SPC/builder/extension/gd.php src/SPC/builder/extension/zip.php | head -20
 echo "---- openssl build tail ----"
 tail -n 25 src/SPC/builder/linux/library/openssl.php
