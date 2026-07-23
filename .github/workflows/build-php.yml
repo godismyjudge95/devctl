@@ -152,7 +152,12 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Patch spc 2.3.0 for 2026 (Alpine 3.17 + OpenSSL 1.1)
-        run: bash devctl/scripts/patch-spc-for-php7.sh
+        run: |
+          set -euo pipefail
+          SCRIPT="${GITHUB_WORKSPACE}/devctl/scripts/patch-spc-for-php7.sh"
+          test -x "$SCRIPT" || chmod +x "$SCRIPT"
+          test -f "$SCRIPT"
+          bash "$SCRIPT"
         working-directory: spc
 
       - name: Cache downloaded sources
