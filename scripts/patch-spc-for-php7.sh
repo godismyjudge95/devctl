@@ -77,6 +77,33 @@ else:
     print(f"openssl license unchanged: {lic}")
 PY
 
+# 4b) PHP 7.0/7.2 configure often fails with "libssl not found" against static
+#     OpenSSL (looks for .so). After install_sw, symlink .a -> .so for detection.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("src/SPC/builder/linux/library/openssl.php")
+t = p.read_text()
+needle = "make install_sw DESTDIR={$destdir}\");"
+inject = '''make install_sw DESTDIR={$destdir}");
+        // PHP 7.0/7.2 configure looks for libssl.so; provide static aliases.
+        $libDir = BUILD_LIB_PATH;
+        foreach (['ssl', 'crypto'] as $n) {
+            $a = "{$libDir}/lib{$n}.a";
+            $so = "{$libDir}/lib{$n}.so";
+            if (is_file($a) && !file_exists($so)) {
+                @symlink("lib{$n}.a", $so);
+            }
+        }
+'''
+if "libssl.so" in t:
+    print("openssl symlink helper already present")
+elif needle in t:
+    p.write_text(t.replace(needle, inject, 1))
+    print("injected libssl.so static aliases after install_sw")
+else:
+    print("WARNING: could not find install_sw line to inject symlinks")
+PY
+
 # 5) If license dump still fails for any source, don't abort a finished build.
 #    Soften LicenseDumper to warn instead of throw on missing license files.
 if [[ -f src/SPC/util/LicenseDumper.php ]]; then

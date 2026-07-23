@@ -80,27 +80,52 @@ while true; do
     echo "  (ignoring $other_count non-matching failure(s) for early-exit: $(echo "$other_failed" | jq -r '.[].name' | tr '\n' ' '))"
   fi
 
+  # Matching jobs still running?
+  pending=$(echo "$json" | jq -c --arg re "$regex" \
+    '[.jobs[] | select((.name | test($re)) and .status != "completed")]')
+  pending_count=$(echo "$pending" | jq 'length')
+
   if [[ "$fail_count" -gt 0 ]]; then
     echo
-    echo "EARLY FAIL: $fail_count job(s) failed (regex=$regex)"
+    echo "FAIL so far: $fail_count job(s) (regex=$regex); pending matching=$pending_count"
     echo "$failed" | jq -r '.[] | "  - \(.name) (id=\(.databaseId))"'
 
-    # Dump log for the first failure (enough to start fixing)
-    first_id=$(echo "$failed" | jq -r '.[0].databaseId')
-    first_name=$(echo "$failed" | jq -r '.[0].name')
-    dump_job_log "$first_id" "$first_name"
-
-    if [[ "$CANCEL_ON_FAIL" == "1" && "$status" == "in_progress" ]]; then
-      echo
-      echo "cancelling run $RUN_ID so remaining matrix jobs stop..."
-      gh run cancel "$RUN_ID" || true
+    if [[ "$CANCEL_ON_FAIL" == "1" ]]; then
+      # Dump first failure and cancel immediately.
+      first_id=$(echo "$failed" | jq -r '.[0].databaseId')
+      first_name=$(echo "$failed" | jq -r '.[0].name')
+      dump_job_log "$first_id" "$first_name"
+      if [[ "$status" == "in_progress" || "$status" == "queued" ]]; then
+        echo
+        echo "cancelling run $RUN_ID so remaining matrix jobs stop..."
+        gh run cancel "$RUN_ID" || true
+      fi
+      exit 1
     fi
-    exit 1
+
+    # cancel_on_fail=0: keep waiting until all matching jobs finish so we
+    # collect every failure (e.g. 7.0/7.2/7.4 in parallel).
+    if [[ "$pending_count" -eq 0 ]]; then
+      echo
+      echo "all matching jobs finished with failures — dumping logs"
+      for row in $(echo "$failed" | jq -r '.[] | @base64'); do
+        _jq() { echo "$row" | base64 -d | jq -r "$1"; }
+        dump_job_log "$(_jq '.databaseId')" "$(_jq '.name')"
+      done
+      exit 1
+    fi
   fi
 
   if [[ "$status" == "completed" ]]; then
     echo
     echo "run completed: conclusion=$conclusion"
+    # Dump any matching failures we may not have exited on yet
+    if [[ "$fail_count" -gt 0 ]]; then
+      for row in $(echo "$failed" | jq -r '.[] | @base64'); do
+        _jq() { echo "$row" | base64 -d | jq -r "$1"; }
+        dump_job_log "$(_jq '.databaseId')" "$(_jq '.name')"
+      done
+    fi
     case "$conclusion" in
       success) exit 0 ;;
       cancelled|skipped) exit 2 ;;
