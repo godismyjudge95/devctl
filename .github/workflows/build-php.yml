@@ -9,15 +9,18 @@ on:
     types: [published]
   workflow_dispatch:
 
-# Cancel in-progress runs of the same workflow on the same ref.
 concurrency:
   group: build-php-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ── Modern PHP (8.1–8.5): current static-php-cli + full extension set ─────
-  build:
-    name: Build PHP ${{ matrix.php }} (linux-x86_64)
+  # ── PHP 8.0–8.5: repackage static builds from dl.static-php.dev ───────────
+  # Building every minor from source with the full extension set is brittle
+  # (pre-built libsqlite often lacks SQLITE_ENABLE_COLUMN_METADATA). The
+  # static-php.dev "common" builds are already static CLI/FPM binaries with
+  # a solid extension set, so we rehost the latest patch per minor.
+  package:
+    name: Package PHP ${{ matrix.minor }} (linux-x86_64)
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'php-binaries')
 
@@ -27,152 +30,83 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.1", "8.2", "8.3", "8.4", "8.5"]
+        include:
+          - minor: "8.0"
+            patch: "8.0.30"
+          - minor: "8.1"
+            patch: "8.1.34"
+          - minor: "8.2"
+            patch: "8.2.32"
+          - minor: "8.3"
+            patch: "8.3.32"
+          - minor: "8.4"
+            patch: "8.4.23"
+          - minor: "8.5"
+            patch: "8.5.8"
 
     steps:
-      - name: Checkout static-php-cli
-        uses: actions/checkout@v4
-        with:
-          repository: crazywhalecc/static-php-cli
-          ref: main
-
-      - name: Cache downloaded sources
-        uses: actions/cache@v4
-        with:
-          path: downloads
-          key: spc-downloads-${{ matrix.php }}-linux-x86_64-${{ github.run_id }}
-          restore-keys: |
-            spc-downloads-${{ matrix.php }}-linux-x86_64-
-
-      - name: Check and fix build environment
-        run: ./bin/spc-alpine-docker doctor --auto-fix
-
-      - name: Set extensions for PHP version
-        id: exts
-        run: |
-          # swoole requires PHP >= 8.2; SPX is available 8.1+
-          if [ "${{ matrix.php }}" = "8.1" ]; then
-            echo "list=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx" >> "$GITHUB_OUTPUT"
-          else
-            echo "list=apcu,bcmath,brotli,bz2,calendar,ctype,curl,dba,dom,event,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,imagick,intl,ldap,libxml,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,swoole,swoole-hook-mysql,swoole-hook-pgsql,swoole-hook-sqlite,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,xz,zip,zlib,zstd,spx" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Download PHP sources and dependency tarballs
-        run: |
-          ./bin/spc-alpine-docker download \
-            --with-php=${{ matrix.php }} \
-            --for-extensions=${{ steps.exts.outputs.list }} \
-            --prefer-pre-built \
-            --ignore-cache-sources=php-src \
-            --retry=5
-
-      - name: Build PHP CLI and FPM
-        run: |
-          ./bin/spc-alpine-docker build \
-            ${{ steps.exts.outputs.list }} \
-            --build-cli \
-            --build-fpm \
-            --debug
-
-          mkdir -p tmp_dist
-          cp buildroot/bin/php     tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
-          cp buildroot/bin/php-fpm tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
-
-          PHP_PATCH=$(./tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64 -v | awk 'NR==1 {print $2}')
-          mkdir -p tmp_meta
-          cat > tmp_meta/${{ matrix.php }}.json <<EOF
-          {
-            "minor": "${{ matrix.php }}",
-            "patch": "${PHP_PATCH}",
-            "cli": "php-${{ matrix.php }}-cli-linux-x86_64",
-            "fpm": "php-${{ matrix.php }}-fpm-linux-x86_64"
-          }
-          EOF
-
-      - name: Upload metadata artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: php-meta-${{ matrix.php }}
-          path: tmp_meta/${{ matrix.php }}.json
-
-      - name: Upload binaries to release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
-            tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
-
-  # ── PHP 8.0: repackage proven static builds from static-php.dev ───────────
-  # Current static-php-cli no longer maintains 8.0 builds. The common builds
-  # on dl.static-php.dev are still static CLI/FPM binaries we can rehost.
-  package-php80:
-    name: Package PHP 8.0 (linux-x86_64)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'php-binaries')
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download and repackage PHP 8.0 static binaries
+      - name: Download and repackage static binaries
         run: |
           set -euo pipefail
-          PATCH=8.0.30
+          MINOR="${{ matrix.minor }}"
+          PATCH="${{ matrix.patch }}"
           BASE="https://dl.static-php.dev/static-php-cli/common"
-          mkdir -p tmp_dist tmp_meta
+          mkdir -p tmp_dist tmp_meta /tmp/cli /tmp/fpm
 
           curl -fsSL -o /tmp/cli.tgz "$BASE/php-${PATCH}-cli-linux-x86_64.tar.gz"
           curl -fsSL -o /tmp/fpm.tgz "$BASE/php-${PATCH}-fpm-linux-x86_64.tar.gz"
-
-          mkdir -p /tmp/cli /tmp/fpm
           tar xzf /tmp/cli.tgz -C /tmp/cli
           tar xzf /tmp/fpm.tgz -C /tmp/fpm
 
-          # Tarballs contain a single binary named php / php-fpm
           if [ -f /tmp/cli/php ]; then
-            cp /tmp/cli/php tmp_dist/php-8.0-cli-linux-x86_64
+            cp /tmp/cli/php "tmp_dist/php-${MINOR}-cli-linux-x86_64"
           else
-            cp "$(find /tmp/cli -type f -executable | head -1)" tmp_dist/php-8.0-cli-linux-x86_64
+            cp "$(find /tmp/cli -type f -executable | head -1)" "tmp_dist/php-${MINOR}-cli-linux-x86_64"
           fi
           if [ -f /tmp/fpm/php-fpm ]; then
-            cp /tmp/fpm/php-fpm tmp_dist/php-8.0-fpm-linux-x86_64
+            cp /tmp/fpm/php-fpm "tmp_dist/php-${MINOR}-fpm-linux-x86_64"
           else
-            cp "$(find /tmp/fpm -type f -executable | head -1)" tmp_dist/php-8.0-fpm-linux-x86_64
+            cp "$(find /tmp/fpm -type f -executable | head -1)" "tmp_dist/php-${MINOR}-fpm-linux-x86_64"
           fi
-          chmod 755 tmp_dist/php-8.0-cli-linux-x86_64 tmp_dist/php-8.0-fpm-linux-x86_64
+          chmod 755 "tmp_dist/php-${MINOR}-cli-linux-x86_64" "tmp_dist/php-${MINOR}-fpm-linux-x86_64"
 
-          ./tmp_dist/php-8.0-cli-linux-x86_64 -v
-          PHP_PATCH=$(./tmp_dist/php-8.0-cli-linux-x86_64 -v | awk 'NR==1 {print $2}')
+          ./tmp_dist/php-${MINOR}-cli-linux-x86_64 -v
+          PHP_PATCH=$(./tmp_dist/php-${MINOR}-cli-linux-x86_64 -v | awk 'NR==1 {print $2}')
+          # Sanity: reported patch must match the minor we claim.
+          case "$PHP_PATCH" in
+            ${MINOR}.*) ;;
+            *)
+              echo "expected PHP ${MINOR}.x, got ${PHP_PATCH}" >&2
+              exit 1
+              ;;
+          esac
 
-          cat > tmp_meta/8.0.json <<EOF
+          cat > "tmp_meta/${MINOR}.json" <<EOF
           {
-            "minor": "8.0",
+            "minor": "${MINOR}",
             "patch": "${PHP_PATCH}",
-            "cli": "php-8.0-cli-linux-x86_64",
-            "fpm": "php-8.0-fpm-linux-x86_64"
+            "cli": "php-${MINOR}-cli-linux-x86_64",
+            "fpm": "php-${MINOR}-fpm-linux-x86_64"
           }
           EOF
 
       - name: Upload metadata artifact
         uses: actions/upload-artifact@v4
         with:
-          name: php-meta-8.0
-          path: tmp_meta/8.0.json
+          name: php-meta-${{ matrix.minor }}
+          path: tmp_meta/${{ matrix.minor }}.json
 
       - name: Upload binaries to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            tmp_dist/php-8.0-cli-linux-x86_64
-            tmp_dist/php-8.0-fpm-linux-x86_64
+            tmp_dist/php-${{ matrix.minor }}-cli-linux-x86_64
+            tmp_dist/php-${{ matrix.minor }}-fpm-linux-x86_64
 
-  # ── Legacy PHP (7.0 / 7.2 / 7.4): current spc + OpenSSL 1.1 ──────────────
-  # These versions are EOL and not advertised by static-php-cli, but the
-  # toolchain still accepts --with-php=7.x with --with-openssl11. We use
-  # static-php-cli main (working Alpine image) rather than old tags whose
-  # alpine:edge Dockerfiles pin vanished php82 packages.
+  # ── Legacy PHP 7.0 / 7.2 / 7.4: build with static-php-cli + OpenSSL 1.1 ──
+  # Not available on dl.static-php.dev. Best-effort: EOL PHP, reduced
+  # extension set, no prefer-pre-built (prebuilt sqlite often fails validation).
   build-legacy:
     name: Build PHP ${{ matrix.php }} legacy (linux-x86_64)
     runs-on: ubuntu-latest
@@ -207,17 +141,16 @@ jobs:
       - name: Set legacy extension list
         id: exts
         run: |
-          # Core extensions for Laravel 5.x / WordPress / older apps.
-          # Omit: swoole, spx, opentelemetry, imagick (fragile on EOL PHP).
+          # Keep the set small and well-supported on EOL PHP.
           case "${{ matrix.php }}" in
             7.0)
-              LIST="bcmath,bz2,calendar,ctype,curl,dba,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,pcntl,pdo,pdo_mysql,pgsql,phar,posix,readline,redis,session,shmop,simplexml,soap,sockets,sqlite3,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,zip,zlib"
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.2)
-              LIST="bcmath,bz2,calendar,ctype,curl,dba,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,pcntl,pdo,pdo_mysql,pgsql,phar,posix,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,zip,zlib"
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.4)
-              LIST="bcmath,bz2,calendar,ctype,curl,dba,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,pcntl,pdo,pdo_mysql,pgsql,phar,posix,readline,redis,session,shmop,simplexml,soap,sockets,sodium,sqlite3,sysvmsg,sysvsem,sysvshm,tokenizer,xml,xmlreader,xmlwriter,xsl,zip,zlib"
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,opcache,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             *)
               echo "unsupported legacy PHP version: ${{ matrix.php }}" >&2
@@ -228,12 +161,13 @@ jobs:
 
       - name: Download PHP sources and dependency tarballs
         run: |
+          # No --prefer-pre-built: prebuilt libsqlite often lacks
+          # SQLITE_ENABLE_COLUMN_METADATA and fails extension sanity checks.
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
             --with-openssl11 \
             --for-extensions=${{ steps.exts.outputs.list }} \
-            --prefer-pre-built \
-            --ignore-cache-sources=php-src \
+            --ignore-cache-sources=php-src,sqlite \
             --retry=5
 
       - name: Build PHP CLI and FPM
@@ -244,12 +178,11 @@ jobs:
             --build-fpm \
             --debug
 
-          mkdir -p tmp_dist
+          mkdir -p tmp_dist tmp_meta
           cp buildroot/bin/php     tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
           cp buildroot/bin/php-fpm tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
 
           PHP_PATCH=$(./tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64 -v | awk 'NR==1 {print $2}')
-          mkdir -p tmp_meta
           SAFE=$(echo "${{ matrix.php }}" | tr '.' '_')
           cat > "tmp_meta/${SAFE}.json" <<EOF
           {
@@ -274,15 +207,14 @@ jobs:
             tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
             tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
 
-  # ── Assemble php-binaries.json from whatever matrix cells succeeded ───────
+  # ── Assemble php-binaries.json from whatever jobs succeeded ───────────────
   manifest:
     name: Build PHP manifest
     runs-on: ubuntu-latest
-    # Run even if some version builds failed so successful versions still ship.
     if: >-
       always() &&
       (github.event_name == 'release' && startsWith(github.ref_name, 'php-binaries'))
-    needs: [build, package-php80, build-legacy]
+    needs: [package, build-legacy]
 
     permissions:
       contents: write
@@ -317,10 +249,8 @@ jobs:
               print('No metadata JSON files found', file=sys.stderr)
               sys.exit(1)
 
-          # Stable sort by minor version (e.g. 7.0 < 7.2 < 8.0 < 8.5)
           def minor_key(row):
-              parts = row['minor'].split('.')
-              return tuple(int(p) for p in parts)
+              return tuple(int(p) for p in row['minor'].split('.'))
 
           rows.sort(key=minor_key)
 

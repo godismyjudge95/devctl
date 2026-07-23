@@ -268,7 +268,7 @@ AWS_ENDPOINT=https://s3.maxio.test
 
 ## PHP
 
-PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. Builds for 8.1–8.5 use [static-php-cli](https://github.com/crazywhalecc/static-php-cli); 8.0 is repackaged from static-php.dev; 7.x uses a legacy static-php-cli toolchain with a reduced extension set.
+PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP 8.x is repackaged from [static-php.dev](https://static-php.dev) common builds; 7.x is built best-effort with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) and a reduced extension set.
 
 devctl resolves PHP downloads from the newest immutable `php-binaries-*` release and reads `php-binaries.json` metadata from that release to surface patch-level updates such as `8.4.18 -> 8.4.19` in the Services UI.
 
