@@ -200,14 +200,17 @@ jobs:
         working-directory: spc
         run: |
           set -euo pipefail
-          # openssl.org/source/ no longer lists 1.1.x, so --with-openssl11's
-          # filelist scrape returns false and crashes the downloader. Pin 1.1.1w.
+          # Pin dependency versions that still support OpenSSL 1.1 / PHP 7:
+          # - openssl.org no longer lists 1.1.x (scrape returns false)
+          # - current curl requires OpenSSL >= 3.0
           OPENSSL_URL="https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
+          CURL_URL="https://curl.se/download/curl-7.88.1.tar.gz"
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
             --for-extensions=${{ steps.exts.outputs.list }} \
             --custom-url "openssl:${OPENSSL_URL}" \
-            --ignore-cache-sources=php-src,openssl \
+            --custom-url "curl:${CURL_URL}" \
+            --ignore-cache-sources=php-src,openssl,curl \
             --retry=5
 
       - name: Build PHP CLI and FPM
