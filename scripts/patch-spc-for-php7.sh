@@ -100,12 +100,30 @@ inject = """        $envs_build_php = SystemUtil::makeEnvVarString([
             // PHP 7.0/7.2: static OpenSSL fails AC_CHECK_LIB(ssl) without -lcrypto -lz;
             // skipping the probe is safe — EXTRA_LIBS already links ssl/crypto/z.
             'ac_cv_lib_ssl_SSL_CTX_set_ssl_version' => 'yes',
+            // PHP 7.0/7.2: xml2-config --libs omits ICU/iconv for static libxml2;
+            // PHP_SETUP_LIBXML build test then fails. EXTRA_LIBS has the full set.
+            'php_cv_libxml_build_works' => 'yes',
         ]);"""
-if "ac_cv_lib_ssl_SSL_CTX_set_ssl_version" in t:
-    print("openssl ac_cv configure skip already present")
+if "php_cv_libxml_build_works" in t and "ac_cv_lib_ssl_SSL_CTX_set_ssl_version" in t:
+    print("openssl/libxml ac_cv configure skips already present")
+elif "ac_cv_lib_ssl_SSL_CTX_set_ssl_version" in t and "php_cv_libxml_build_works" not in t:
+    # Upgrade earlier openssl-only inject
+    t2 = t.replace(
+        "'ac_cv_lib_ssl_SSL_CTX_set_ssl_version' => 'yes',\n",
+        "'ac_cv_lib_ssl_SSL_CTX_set_ssl_version' => 'yes',\n"
+        "            // PHP 7.0/7.2: xml2-config --libs omits ICU/iconv for static libxml2;\n"
+        "            // PHP_SETUP_LIBXML build test then fails. EXTRA_LIBS has the full set.\n"
+        "            'php_cv_libxml_build_works' => 'yes',\n",
+        1,
+    )
+    if t2 == t:
+        print("WARNING: found openssl ac_cv but could not inject libxml ac_cv")
+    else:
+        p.write_text(t2)
+        print("upgraded LinuxBuilder inject with libxml build-works skip")
 elif needle in t:
     p.write_text(t.replace(needle, inject, 1))
-    print("patched LinuxBuilder to skip static libssl AC_CHECK_LIB probe")
+    print("patched LinuxBuilder to skip static libssl + libxml configure probes")
 else:
     print("WARNING: could not find LinuxBuilder configure env block to patch")
 PY
