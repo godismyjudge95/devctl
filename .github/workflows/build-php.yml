@@ -183,11 +183,15 @@ jobs:
 
       - name: Download PHP sources and dependency tarballs
         run: |
+          set -euo pipefail
+          # openssl.org/source/ no longer lists 1.1.x, so --with-openssl11's
+          # filelist scrape returns false and crashes the downloader. Pin 1.1.1w.
+          OPENSSL_URL="https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
-            --with-openssl11 \
             --for-extensions=${{ steps.exts.outputs.list }} \
-            --ignore-cache-sources=php-src \
+            --custom-url "openssl:${OPENSSL_URL}" \
+            --ignore-cache-sources=php-src,openssl \
             --retry=5
 
       - name: Build PHP CLI and FPM
