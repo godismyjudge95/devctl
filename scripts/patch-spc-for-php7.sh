@@ -97,6 +97,32 @@ else:
     print("WARNING: could not find SPC_CMD_VAR_PHP_CONFIGURE_LIBS default to patch")
 PY
 
+# 4c) PHP 7.0/7.2 need --enable-libxml (+ --with-libxml-dir). PHP 7.4+ switched
+#     to --with-libxml=DIR which both enables and sets the prefix. spc 2.3.0 only
+#     emits --with-libxml, so 7.0/7.2 die at DOM with "add --enable-libxml".
+python3 - <<'PY'
+from pathlib import Path
+p = Path("src/SPC/builder/extension/xml.php")
+t = p.read_text()
+if "getPHPVersionID() < 70400" in t:
+    print("xml.php already version-gates libxml flags")
+elif ' $arg .= \' --with-libxml="\' . BUILD_ROOT_PATH . \'"\';' in t:
+    old = """        $arg .= ' --with-libxml="' . BUILD_ROOT_PATH . '"';
+        return $arg;"""
+    new = """        // PHP < 7.4: --enable-libxml + --with-libxml-dir
+        // PHP >= 7.4: --with-libxml=DIR enables and sets the prefix
+        if ($this->builder->getPHPVersionID() < 70400) {
+            $arg = '--enable-libxml --with-libxml-dir="' . BUILD_ROOT_PATH . '" ' . $arg;
+        } else {
+            $arg .= ' --with-libxml="' . BUILD_ROOT_PATH . '"';
+        }
+        return $arg;"""
+    p.write_text(t.replace(old, new, 1))
+    print("patched xml.php libxml flags for PHP 7.0/7.2")
+else:
+    print("WARNING: could not find xml.php --with-libxml line to patch")
+PY
+
 # 5) If license dump still fails for any source, don't abort a finished build.
 #    Soften LicenseDumper to warn instead of throw on missing license files.
 if [[ -f src/SPC/util/LicenseDumper.php ]]; then
