@@ -141,103 +141,30 @@ jobs:
         with:
           repository: crazywhalecc/static-php-cli
           ref: 2.3.0
+          path: spc
 
-      - name: Patch spc 2.3.0 for 2026 (Alpine image + OpenSSL 1.1)
-        run: |
-          set -euo pipefail
-          # 2.3.0's spc-alpine-docker bakes alpine:edge + php82 — both broken in 2026.
-          # Alpine 3.17 still has php81-* packages and an older musl/gcc suitable for 7.x.
-          sed -i \
-            -e 's|ALPINE_FROM=alpine:edge|ALPINE_FROM=alpine:3.17|g' \
-            -e 's|ALPINE_FROM=multiarch/alpine:aarch64-edge|ALPINE_FROM=alpine:3.17|g' \
-            -e 's|ALPINE_FROM=multiarch/alpine:x86_64-edge|ALPINE_FROM=alpine:3.17|g' \
-            -e 's/php82/php81/g' \
-            bin/spc-alpine-docker
-          # Force image rebuild name so we never reuse a stale cwcc-spc image.
-          sed -i 's/cwcc-spc-/cwcc-spc-a317-/g' bin/spc-alpine-docker
+      - name: Checkout devctl (patch script)
+        uses: actions/checkout@v4
+        with:
+          path: devctl
+          sparse-checkout: |
+            scripts/patch-spc-for-php7.sh
+          sparse-checkout-cone-mode: false
 
-          # openssl.php always passes Configure flag "no-legacy" (OpenSSL 3 only).
-          # We pin OpenSSL 1.1.1w for PHP 7.x, which rejects that flag.
-          for f in \
-            src/SPC/builder/linux/library/openssl.php \
-            src/SPC/builder/unix/library/openssl.php \
-            src/SPC/builder/macos/library/openssl.php
-          do
-            if [ -f "$f" ]; then
-              sed -i "s/no-legacy //g" "$f"
-              echo "patched no-legacy in $f"
-            fi
-          done
-
-          # OpenSSL 1.1.1 does not install cmake/OpenSSL/OpenSSLConfig.cmake.
-          # spc 2.3.0 always FileSystem::readFile()'s it and fatals. Guard those
-          # post-install patches so 1.1.1 can finish.
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("src/SPC/builder/linux/library/openssl.php")
-          t = p.read_text()
-          old = """        $this->patchPkgconfPrefix(['libssl.pc', 'openssl.pc', 'libcrypto.pc']);
-        // patch for openssl 3.3.0+
-        if (!str_contains($file = FileSystem::readFile(BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake'), 'prefix=')) {
-            FileSystem::writeFile(BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake', 'prefix=${pcfiledir}/../..' . "\\n" . $file);
-        }
-        if (!str_contains($file = FileSystem::readFile(BUILD_LIB_PATH . '/pkgconfig/openssl.pc'), 'prefix=')) {
-            FileSystem::writeFile(BUILD_LIB_PATH . '/pkgconfig/openssl.pc', 'prefix=${pcfiledir}/../..' . "\\n" . $file);
-        }
-        if (!str_contains($file = FileSystem::readFile(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc'), 'prefix=')) {
-            FileSystem::writeFile(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc', 'prefix=${pcfiledir}/../..' . "\\n" . $file);
-        }
-        FileSystem::replaceFileRegex(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc', '/Libs.private:.*/m', 'Libs.private: ${libdir}/libz.a');
-        FileSystem::replaceFileRegex(BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake', '/set\\(OPENSSL_LIBCRYPTO_DEPENDENCIES .*\\)/m', 'set(OPENSSL_LIBCRYPTO_DEPENDENCIES "${OPENSSL_LIBRARY_DIR}/libz.a")');
-"""
-          new = """        $this->patchPkgconfPrefix(['libssl.pc', 'openssl.pc', 'libcrypto.pc']);
-        // OpenSSL 1.1.1 has no cmake config; only patch files that exist.
-        foreach (['libssl.pc', 'openssl.pc', 'libcrypto.pc'] as $pc) {
-            $pcPath = BUILD_LIB_PATH . '/pkgconfig/' . $pc;
-            if (is_file($pcPath) && !str_contains($file = FileSystem::readFile($pcPath), 'prefix=')) {
-                FileSystem::writeFile($pcPath, 'prefix=${pcfiledir}/../..' . "\\n" . $file);
-            }
-        }
-        if (is_file(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc')) {
-            FileSystem::replaceFileRegex(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc', '/Libs.private:.*/m', 'Libs.private: ${libdir}/libz.a');
-        }
-        $cmake = BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake';
-        if (is_file($cmake)) {
-            if (!str_contains($file = FileSystem::readFile($cmake), 'prefix=')) {
-                FileSystem::writeFile($cmake, 'prefix=${pcfiledir}/../..' . "\\n" . $file);
-            }
-            FileSystem::replaceFileRegex($cmake, '/set\\(OPENSSL_LIBCRYPTO_DEPENDENCIES .*\\)/m', 'set(OPENSSL_LIBCRYPTO_DEPENDENCIES "${OPENSSL_LIBRARY_DIR}/libz.a")');
-        }
-"""
-          if old not in t:
-              # Fallback: delete any line that reads OpenSSLConfig.cmake
-              lines = []
-              for line in t.splitlines(True):
-                  if "OpenSSLConfig.cmake" in line and "FileSystem::" in line:
-                      lines.append("        // skipped OpenSSLConfig.cmake (OpenSSL 1.1)\n")
-                      continue
-                  lines.append(line)
-              p.write_text("".join(lines))
-              print("fallback-patched openssl.php (stripped cmake reads)")
-          else:
-              p.write_text(t.replace(old, new))
-              print("block-patched openssl.php for OpenSSL 1.1")
-          PY
-
-          echo "---- patched spc-alpine-docker (image + php packages) ----"
-          grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
-          echo "---- openssl tail ----"
-          tail -n 40 src/SPC/builder/linux/library/openssl.php
+      - name: Patch spc 2.3.0 for 2026 (Alpine 3.17 + OpenSSL 1.1)
+        run: bash devctl/scripts/patch-spc-for-php7.sh
+        working-directory: spc
 
       - name: Cache downloaded sources
         uses: actions/cache@v4
         with:
-          path: downloads
-          key: spc-2.3.0-legacy-${{ matrix.php }}-linux-x86_64-v1
+          path: spc/downloads
+          key: spc-2.3.0-legacy-${{ matrix.php }}-linux-x86_64-v2
           restore-keys: |
             spc-2.3.0-legacy-${{ matrix.php }}-linux-x86_64-
 
       - name: Check and fix build environment
+        working-directory: spc
         run: ./bin/spc-alpine-docker doctor --auto-fix
 
       - name: Set legacy extension list
@@ -265,6 +192,7 @@ jobs:
           echo "list=$LIST" >> "$GITHUB_OUTPUT"
 
       - name: Download PHP sources and dependency tarballs
+        working-directory: spc
         run: |
           set -euo pipefail
           # openssl.org/source/ no longer lists 1.1.x, so --with-openssl11's
@@ -278,6 +206,7 @@ jobs:
             --retry=5
 
       - name: Build PHP CLI and FPM
+        working-directory: spc
         run: |
           set -euo pipefail
           ./bin/spc-alpine-docker build \
@@ -286,16 +215,16 @@ jobs:
             --build-fpm \
             --debug
 
-          mkdir -p tmp_dist tmp_meta
+          mkdir -p ../tmp_dist ../tmp_meta
           test -x buildroot/bin/php
           test -x buildroot/bin/php-fpm
-          cp buildroot/bin/php     "tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64"
-          cp buildroot/bin/php-fpm "tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64"
-          chmod 755 "tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" "tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64"
+          cp buildroot/bin/php     "../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64"
+          cp buildroot/bin/php-fpm "../tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64"
+          chmod 755 "../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" "../tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64"
 
           # Smoke-test the binary (static musl should run on the GHA host).
-          "./tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -v
-          PHP_PATCH=$("./tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -v | awk 'NR==1 {print $2}')
+          "../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -v
+          PHP_PATCH=$("../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -v | awk 'NR==1 {print $2}')
           case "$PHP_PATCH" in
             ${{ matrix.php }}.*) ;;
             *)
@@ -305,7 +234,7 @@ jobs:
           esac
 
           SAFE=$(echo "${{ matrix.php }}" | tr '.' '_')
-          cat > "tmp_meta/${SAFE}.json" <<EOF
+          cat > "../tmp_meta/${SAFE}.json" <<EOF
           {
             "minor": "${{ matrix.php }}",
             "patch": "${PHP_PATCH}",
