@@ -77,52 +77,24 @@ else:
     print(f"openssl license unchanged: {lic}")
 PY
 
-# 4b) PHP 7.0/7.2 AC_CHECK_LIB(ssl, ...) only passes -Ldir, so static
-#     libssl.a fails to link (needs -lcrypto -lz -ldl). Install GNU ld
-#     linker scripts named libssl.so / libcrypto.so that GROUP the static
-#     archives with their deps. PHP 7.4 uses better detection and already works.
+# 4b) PHP 7.0/7.2 AC_CHECK_LIB(ssl, ...) only adds -lssl before LIBS, so static
+#     libssl.a fails the configure link test (needs -lcrypto -lz). Put those on
+#     SPC_CMD_VAR_PHP_CONFIGURE_LIBS. Do NOT install libssl.so GROUP linker
+#     scripts: libzip's OpenSSL-enabled ossfuzz targets then pick them up and
+#     fail with "cannot find -lz" (regression on php-binaries-20260723.14).
 python3 - <<'PY'
 from pathlib import Path
-p = Path("src/SPC/builder/linux/library/openssl.php")
+p = Path("src/SPC/util/GlobalEnvManager.php")
 t = p.read_text()
-needle = "make install_sw DESTDIR={$destdir}\");"
-inject = r'''make install_sw DESTDIR={$destdir}");
-        // PHP 7.0/7.2: linker scripts so -lssl pulls crypto/z/dl for static OpenSSL.
-        $libDir = BUILD_LIB_PATH;
-        if (is_file("{$libDir}/libssl.a")) {
-            file_put_contents(
-                "{$libDir}/libssl.so",
-                "GROUP ( libssl.a libcrypto.a AS_NEEDED ( -lz -ldl -lpthread ) )\n"
-            );
-        }
-        if (is_file("{$libDir}/libcrypto.a")) {
-            file_put_contents(
-                "{$libDir}/libcrypto.so",
-                "GROUP ( libcrypto.a AS_NEEDED ( -lz -ldl -lpthread ) )\n"
-            );
-        }
-'''
-if "GROUP ( libssl.a" in t:
-    print("openssl linker-script helper already present")
-elif needle in t:
-    # Remove any earlier weak symlink inject if present
-    t = t.replace(
-        """        // PHP 7.0/7.2 configure looks for libssl.so; provide static aliases.
-        $libDir = BUILD_LIB_PATH;
-        foreach (['ssl', 'crypto'] as $n) {
-            $a = "{$libDir}/lib{$n}.a";
-            $so = "{$libDir}/lib{$n}.so";
-            if (is_file($a) && !file_exists($so)) {
-                @symlink("lib{$n}.a", $so);
-            }
-        }
-""",
-        "",
-    )
-    p.write_text(t.replace(needle, inject, 1))
-    print("injected libssl.so linker scripts after install_sw")
+old = "'SPC_CMD_VAR_PHP_CONFIGURE_LIBS' => '-ldl -lpthread -lm',"
+new = "'SPC_CMD_VAR_PHP_CONFIGURE_LIBS' => '-lcrypto -lz -ldl -lpthread -lm',"
+if "-lcrypto -lz -ldl" in t:
+    print("SPC_CMD_VAR_PHP_CONFIGURE_LIBS already includes -lcrypto -lz")
+elif old in t:
+    p.write_text(t.replace(old, new, 1))
+    print("patched SPC_CMD_VAR_PHP_CONFIGURE_LIBS for static OpenSSL")
 else:
-    print("WARNING: could not find install_sw line to inject linker scripts")
+    print("WARNING: could not find SPC_CMD_VAR_PHP_CONFIGURE_LIBS default to patch")
 PY
 
 # 5) If license dump still fails for any source, don't abort a finished build.
@@ -168,5 +140,7 @@ fi
 
 echo "---- alpine docker pins ----"
 grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
+echo "---- PHP configure LIBS ----"
+grep -n "SPC_CMD_VAR_PHP_CONFIGURE_LIBS" src/SPC/util/GlobalEnvManager.php | head -5
 echo "---- openssl build tail ----"
-tail -n 35 src/SPC/builder/linux/library/openssl.php
+tail -n 25 src/SPC/builder/linux/library/openssl.php
