@@ -165,14 +165,69 @@ jobs:
           do
             if [ -f "$f" ]; then
               sed -i "s/no-legacy //g" "$f"
-              echo "patched $f"
+              echo "patched no-legacy in $f"
             fi
           done
 
+          # OpenSSL 1.1.1 does not install cmake/OpenSSL/OpenSSLConfig.cmake.
+          # spc 2.3.0 always FileSystem::readFile()'s it and fatals. Guard those
+          # post-install patches so 1.1.1 can finish.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/SPC/builder/linux/library/openssl.php")
+          t = p.read_text()
+          old = """        $this->patchPkgconfPrefix(['libssl.pc', 'openssl.pc', 'libcrypto.pc']);
+        // patch for openssl 3.3.0+
+        if (!str_contains($file = FileSystem::readFile(BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake'), 'prefix=')) {
+            FileSystem::writeFile(BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake', 'prefix=${pcfiledir}/../..' . "\\n" . $file);
+        }
+        if (!str_contains($file = FileSystem::readFile(BUILD_LIB_PATH . '/pkgconfig/openssl.pc'), 'prefix=')) {
+            FileSystem::writeFile(BUILD_LIB_PATH . '/pkgconfig/openssl.pc', 'prefix=${pcfiledir}/../..' . "\\n" . $file);
+        }
+        if (!str_contains($file = FileSystem::readFile(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc'), 'prefix=')) {
+            FileSystem::writeFile(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc', 'prefix=${pcfiledir}/../..' . "\\n" . $file);
+        }
+        FileSystem::replaceFileRegex(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc', '/Libs.private:.*/m', 'Libs.private: ${libdir}/libz.a');
+        FileSystem::replaceFileRegex(BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake', '/set\\(OPENSSL_LIBCRYPTO_DEPENDENCIES .*\\)/m', 'set(OPENSSL_LIBCRYPTO_DEPENDENCIES "${OPENSSL_LIBRARY_DIR}/libz.a")');
+"""
+          new = """        $this->patchPkgconfPrefix(['libssl.pc', 'openssl.pc', 'libcrypto.pc']);
+        // OpenSSL 1.1.1 has no cmake config; only patch files that exist.
+        foreach (['libssl.pc', 'openssl.pc', 'libcrypto.pc'] as $pc) {
+            $pcPath = BUILD_LIB_PATH . '/pkgconfig/' . $pc;
+            if (is_file($pcPath) && !str_contains($file = FileSystem::readFile($pcPath), 'prefix=')) {
+                FileSystem::writeFile($pcPath, 'prefix=${pcfiledir}/../..' . "\\n" . $file);
+            }
+        }
+        if (is_file(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc')) {
+            FileSystem::replaceFileRegex(BUILD_LIB_PATH . '/pkgconfig/libcrypto.pc', '/Libs.private:.*/m', 'Libs.private: ${libdir}/libz.a');
+        }
+        $cmake = BUILD_LIB_PATH . '/cmake/OpenSSL/OpenSSLConfig.cmake';
+        if (is_file($cmake)) {
+            if (!str_contains($file = FileSystem::readFile($cmake), 'prefix=')) {
+                FileSystem::writeFile($cmake, 'prefix=${pcfiledir}/../..' . "\\n" . $file);
+            }
+            FileSystem::replaceFileRegex($cmake, '/set\\(OPENSSL_LIBCRYPTO_DEPENDENCIES .*\\)/m', 'set(OPENSSL_LIBCRYPTO_DEPENDENCIES "${OPENSSL_LIBRARY_DIR}/libz.a")');
+        }
+"""
+          if old not in t:
+              # Fallback: delete any line that reads OpenSSLConfig.cmake
+              lines = []
+              for line in t.splitlines(True):
+                  if "OpenSSLConfig.cmake" in line and "FileSystem::" in line:
+                      lines.append("        // skipped OpenSSLConfig.cmake (OpenSSL 1.1)\n")
+                      continue
+                  lines.append(line)
+              p.write_text("".join(lines))
+              print("fallback-patched openssl.php (stripped cmake reads)")
+          else:
+              p.write_text(t.replace(old, new))
+              print("block-patched openssl.php for OpenSSL 1.1")
+          PY
+
           echo "---- patched spc-alpine-docker (image + php packages) ----"
           grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
-          echo "---- openssl Configure lines ----"
-          grep -n 'Configure\|no-legacy\|legacy' src/SPC/builder/linux/library/openssl.php | head -20
+          echo "---- openssl tail ----"
+          tail -n 40 src/SPC/builder/linux/library/openssl.php
 
       - name: Cache downloaded sources
         uses: actions/cache@v4
