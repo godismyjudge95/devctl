@@ -77,15 +77,37 @@ else:
     print(f"openssl license unchanged: {lic}")
 PY
 
-# 4b) PHP 7.0/7.2 configure often fails with "libssl not found" against static
-#     OpenSSL (looks for .so). After install_sw, symlink .a -> .so for detection.
+# 4b) PHP 7.0/7.2 AC_CHECK_LIB(ssl, ...) only passes -Ldir, so static
+#     libssl.a fails to link (needs -lcrypto -lz -ldl). Install GNU ld
+#     linker scripts named libssl.so / libcrypto.so that GROUP the static
+#     archives with their deps. PHP 7.4 uses better detection and already works.
 python3 - <<'PY'
 from pathlib import Path
 p = Path("src/SPC/builder/linux/library/openssl.php")
 t = p.read_text()
 needle = "make install_sw DESTDIR={$destdir}\");"
-inject = '''make install_sw DESTDIR={$destdir}");
-        // PHP 7.0/7.2 configure looks for libssl.so; provide static aliases.
+inject = r'''make install_sw DESTDIR={$destdir}");
+        // PHP 7.0/7.2: linker scripts so -lssl pulls crypto/z/dl for static OpenSSL.
+        $libDir = BUILD_LIB_PATH;
+        if (is_file("{$libDir}/libssl.a")) {
+            file_put_contents(
+                "{$libDir}/libssl.so",
+                "GROUP ( libssl.a libcrypto.a AS_NEEDED ( -lz -ldl -lpthread ) )\n"
+            );
+        }
+        if (is_file("{$libDir}/libcrypto.a")) {
+            file_put_contents(
+                "{$libDir}/libcrypto.so",
+                "GROUP ( libcrypto.a AS_NEEDED ( -lz -ldl -lpthread ) )\n"
+            );
+        }
+'''
+if "GROUP ( libssl.a" in t:
+    print("openssl linker-script helper already present")
+elif needle in t:
+    # Remove any earlier weak symlink inject if present
+    t = t.replace(
+        """        // PHP 7.0/7.2 configure looks for libssl.so; provide static aliases.
         $libDir = BUILD_LIB_PATH;
         foreach (['ssl', 'crypto'] as $n) {
             $a = "{$libDir}/lib{$n}.a";
@@ -94,14 +116,13 @@ inject = '''make install_sw DESTDIR={$destdir}");
                 @symlink("lib{$n}.a", $so);
             }
         }
-'''
-if "libssl.so" in t:
-    print("openssl symlink helper already present")
-elif needle in t:
+""",
+        "",
+    )
     p.write_text(t.replace(needle, inject, 1))
-    print("injected libssl.so static aliases after install_sw")
+    print("injected libssl.so linker scripts after install_sw")
 else:
-    print("WARNING: could not find install_sw line to inject symlinks")
+    print("WARNING: could not find install_sw line to inject linker scripts")
 PY
 
 # 5) If license dump still fails for any source, don't abort a finished build.
