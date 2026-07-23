@@ -116,7 +116,9 @@ jobs:
       contents: write
 
     strategy:
-      fail-fast: false
+      # Abort sibling 7.x jobs on first failure so we can fix/re-run sooner.
+      # (package job is independent and still ships 8.x.)
+      fail-fast: true
       matrix:
         php: ["7.0", "7.2", "7.4"]
 
