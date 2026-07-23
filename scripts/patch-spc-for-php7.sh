@@ -185,20 +185,36 @@ else:
     print("WARNING: could not find xml.php --with-libxml line to patch")
 PY
 
-# 4d) PHP < 7.4 needs explicit --enable-hash (built-in from 7.4). Without it,
-#     redis fails at link with undefined reference to php_hash_fetch_ops.
-#     spc 2.3.0 ext.json has no "hash" entry.
+# 4d) PHP < 7.4 needs --enable-hash (always-on from 7.4). spc treats "hash" as
+#     SPC_INTERNAL_EXTENSIONS and ignores it in the ext list — same pattern as
+#     json for PHP < 8: inject the flag in LinuxBuilder configure.
 python3 - <<'PY'
-import json
 from pathlib import Path
-p = Path("config/ext.json")
-d = json.loads(p.read_text())
-if "hash" in d:
-    print("ext.json already has hash")
+p = Path("src/SPC/builder/linux/LinuxBuilder.php")
+t = p.read_text()
+if "enable-hash" in t and "$hash_74" in t:
+    print("LinuxBuilder already injects --enable-hash for PHP < 7.4")
+elif "$json_74 = $phpVersionID < 80000 ? '--enable-json ' : '';" in t:
+    t = t.replace(
+        "$json_74 = $phpVersionID < 80000 ? '--enable-json ' : '';",
+        "$json_74 = $phpVersionID < 80000 ? '--enable-json ' : '';\n"
+        "        // PHP < 7.4: hash is optional and required for redis (php_hash_fetch_ops)\n"
+        "        $hash_74 = $phpVersionID < 70400 ? '--enable-hash ' : '';",
+        1,
+    )
+    # Insert $hash_74 on the line after $json_74 . in the configure invocation
+    if "$hash_74 ." not in t:
+        t = t.replace(
+            "$json_74 .\n",
+            "$json_74 .\n                $hash_74 .\n",
+            1,
+        )
+    if "$hash_74 ." not in t:
+        raise SystemExit("WARNING: defined hash_74 but failed to insert into configure")
+    p.write_text(t)
+    print("patched LinuxBuilder to --enable-hash for PHP < 7.4")
 else:
-    d["hash"] = {"type": "builtin"}
-    p.write_text(json.dumps(d, indent=4) + "\n")
-    print("added hash builtin to ext.json for PHP < 7.4")
+    print("WARNING: could not find json_74 line to add hash_74")
 PY
 
 # 5) If license dump still fails for any source, don't abort a finished build.
