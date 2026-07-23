@@ -181,10 +181,12 @@ jobs:
           case "${{ matrix.php }}" in
             7.0)
               # sodium is 7.2+; ffi is 7.4+
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              # intl dropped: PHP 7.0 intl is incompatible with modern ICU (icu_77::)
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.2)
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              # intl dropped: PHP 7.2 intl fails vs modern ICU (TRUE/FALSE + C++ API)
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.4)
               LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
