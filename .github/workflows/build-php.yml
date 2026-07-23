@@ -203,14 +203,17 @@ jobs:
           # Pin dependency versions that still support OpenSSL 1.1 / PHP 7:
           # - openssl.org no longer lists 1.1.x (scrape returns false)
           # - current curl requires OpenSSL >= 3.0
+          # - ftp.gnu.org is flaky from GHA (libiconv timeouts)
           OPENSSL_URL="https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
           CURL_URL="https://curl.se/download/curl-7.88.1.tar.gz"
+          LIBICONV_URL="https://ftpmirror.gnu.org/libiconv/libiconv-1.19.tar.gz"
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
             --for-extensions=${{ steps.exts.outputs.list }} \
             --custom-url "openssl:${OPENSSL_URL}" \
             --custom-url "curl:${CURL_URL}" \
-            --ignore-cache-sources=php-src,openssl,curl \
+            --custom-url "libiconv:${LIBICONV_URL}" \
+            --ignore-cache-sources=php-src,openssl,curl,libiconv \
             --retry=5
 
       - name: Build PHP CLI and FPM

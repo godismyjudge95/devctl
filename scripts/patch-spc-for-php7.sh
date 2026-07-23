@@ -142,6 +142,23 @@ else:
     print("SPC_CMD_VAR_PHP_CONFIGURE_LIBS left as stock/default")
 PY
 
+# 4b2) Modern ICU dropped TRUE/FALSE macros that PHP 7.x intl still uses
+#      (collator_sort.c). Restore them via U_DEFINE_FALSE_AND_TRUE.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("src/SPC/util/GlobalEnvManager.php")
+t = p.read_text()
+old = "'SPC_CMD_VAR_PHP_MAKE_EXTRA_CFLAGS' => $php_extra_cflags_optimize . ' -fno-ident -fPIE',"
+new = "'SPC_CMD_VAR_PHP_MAKE_EXTRA_CFLAGS' => $php_extra_cflags_optimize . ' -fno-ident -fPIE -DU_DEFINE_FALSE_AND_TRUE=1',"
+if "U_DEFINE_FALSE_AND_TRUE" in t:
+    print("U_DEFINE_FALSE_AND_TRUE already on EXTRA_CFLAGS")
+elif old in t:
+    p.write_text(t.replace(old, new, 1))
+    print("patched EXTRA_CFLAGS with -DU_DEFINE_FALSE_AND_TRUE=1 for PHP 7 intl")
+else:
+    print("WARNING: could not find SPC_CMD_VAR_PHP_MAKE_EXTRA_CFLAGS to patch")
+PY
+
 # 4c) PHP 7.0/7.2 need --enable-libxml (+ --with-libxml-dir). PHP 7.4+ switched
 #     to --with-libxml=DIR which both enables and sets the prefix. spc 2.3.0 only
 #     emits --with-libxml, so 7.0/7.2 die at DOM with "add --enable-libxml".
@@ -212,8 +229,8 @@ fi
 echo "---- alpine docker pins ----"
 grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
 echo "---- PHP configure OpenSSL ac_cv / LIBS ----"
-grep -n "ac_cv_lib_ssl_SSL_CTX_set_ssl_version\|SPC_CMD_VAR_PHP_CONFIGURE_LIBS" \
-  src/SPC/builder/linux/LinuxBuilder.php src/SPC/util/GlobalEnvManager.php | head -10
+grep -n "ac_cv_lib_ssl_SSL_CTX_set_ssl_version\|php_cv_libxml_build_works\|SPC_CMD_VAR_PHP_CONFIGURE_LIBS\|U_DEFINE_FALSE_AND_TRUE\|SPC_CMD_VAR_PHP_MAKE_EXTRA_CFLAGS" \
+  src/SPC/builder/linux/LinuxBuilder.php src/SPC/util/GlobalEnvManager.php | head -15
 echo "---- xml.php libxml gate ----"
 grep -n "70400\|enable-libxml\|with-libxml" src/SPC/builder/extension/xml.php | head -15
 echo "---- openssl build tail ----"
