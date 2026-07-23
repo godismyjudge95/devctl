@@ -55,10 +55,8 @@ const SERVICE_ICONS: Record<string, string> = {
   clickhouse: clickhouseSvg,
 }
 
-// Must match versions present in the newest php-binaries-* release manifest.
-// 7.x is not currently shippable with static-php-cli main (patch/toolchain
-// incompatibilities). Re-add when build-legacy succeeds in CI.
-const KNOWN_PHP_VERSIONS = ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0']
+// Must match versions we publish in php-binaries-* releases (see build-php.yml).
+const KNOWN_PHP_VERSIONS = ['8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4', '7.2', '7.0']
 
 // Services that are installable and not yet installed (excludes php-fpm-* — handled separately)
 const uninstalledServices = computed(() =>
