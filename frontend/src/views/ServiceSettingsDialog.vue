@@ -19,6 +19,8 @@ import type {
   MeilisearchServiceSettings,
   PHPSettings,
   DNSServiceSettings,
+  PostgresServiceSettings,
+  PostgresExtensionStatus,
 } from '@/lib/api'
 
 const props = defineProps<{
@@ -36,6 +38,7 @@ function isMySQL(id: string) { return id === 'mysql' }
 function isMeilisearch(id: string) { return id === 'meilisearch' }
 function isPHPFPM(id: string) { return id.startsWith('php-fpm-') }
 function isDNS(id: string) { return id === 'dns' }
+function isPostgres(id: string) { return id === 'postgres' }
 
 const loading = ref(false)
 const saving = ref(false)
@@ -66,6 +69,9 @@ const dnsSystemConfigured = ref(false)
 const dnsDetecting = ref(false)
 const dnsSetupLoading = ref(false)
 
+// Postgres extensions (read-only)
+const postgresExtensions = ref<PostgresExtensionStatus[]>([])
+
 async function loadSettings() {
   loading.value = true
   try {
@@ -94,6 +100,9 @@ async function loadSettings() {
       dnsTargetIP.value = d.target_ip
       dnsTLD.value = d.tld
       dnsSystemConfigured.value = d.system_dns_configured
+    } else if (isPostgres(props.serviceId)) {
+      const pg = data as PostgresServiceSettings
+      postgresExtensions.value = pg.extensions ?? []
     }
   } catch (e: any) {
     toast.error('Failed to load settings', { description: e.message })
@@ -374,6 +383,49 @@ watch(() => props.open, (val) => {
               <Loader2 v-if="saving" class="w-3.5 h-3.5 animate-spin" />
               Save &amp; Restart
             </Button>
+          </DialogFooter>
+        </template>
+
+        <!-- PostgreSQL extensions (read-only) -->
+        <template v-else-if="isPostgres(serviceId)">
+          <div class="grid gap-3 py-2">
+            <div>
+              <Label class="text-sm">Managed extensions</Label>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                Installed with PostgreSQL. pg_clickhouse wires into template1 when ClickHouse is also installed.
+              </p>
+            </div>
+            <div v-if="postgresExtensions.length === 0" class="text-sm text-muted-foreground py-4 text-center">
+              No managed extensions.
+            </div>
+            <ul v-else class="divide-y divide-border rounded-md border">
+              <li
+                v-for="ext in postgresExtensions"
+                :key="ext.id"
+                class="flex items-start justify-between gap-3 px-3 py-2.5"
+              >
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium text-sm">{{ ext.label }}</span>
+                    <span v-if="ext.version" class="text-xs font-mono text-muted-foreground">{{ ext.version }}</span>
+                  </div>
+                  <p class="text-xs text-muted-foreground mt-0.5 truncate">{{ ext.note }}</p>
+                </div>
+                <span
+                  class="shrink-0 text-[10px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5"
+                  :class="ext.ready
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                    : ext.files_installed
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                      : 'bg-muted text-muted-foreground'"
+                >
+                  {{ ext.ready ? 'Ready' : ext.files_installed ? 'Partial' : 'Missing' }}
+                </span>
+              </li>
+            </ul>
+          </div>
+          <DialogFooter class="gap-2">
+            <Button variant="outline" size="sm" @click="emit('update:open', false)">Close</Button>
           </DialogFooter>
         </template>
       </template>

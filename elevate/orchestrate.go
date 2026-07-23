@@ -282,7 +282,7 @@ func elevateInstall(facts Facts, w io.Writer) error {
 	}
 	// Best-effort apt deps.
 	fmt.Fprintf(w, "    installing allowlisted apt packages (best-effort)\n")
-	_ = RunHelperSelf(w, w, "apt-install", "libnss3-tools", "libreadline-dev", "libnuma1")
+	_ = RunHelperSelf(w, w, "apt-install", "libnss3-tools", "libreadline-dev", "libnuma1", "build-essential")
 	// trust + resolver after service is up (CA may need Caddy).
 	// Caller may re-run elevate for trust after Caddy is ready.
 	fmt.Fprintf(w, "    note: run `sudo devctl elevate trust` after Caddy has issued the local CA if trust failed\n")

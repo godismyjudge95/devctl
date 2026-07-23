@@ -33,6 +33,40 @@ func TestLatestReleaseTag_IgnoresNonPHPReleases(t *testing.T) {
 	}
 }
 
+func TestLatestReleaseTag_NumericSuffixBeatsLexicographic(t *testing.T) {
+	// .9 sorts after .24 as strings, but .24 is the newer build.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/releases" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"tag_name": "php-binaries-20260723.9"},
+			{"tag_name": "php-binaries-20260723.24"},
+			{"tag_name": "php-binaries-20260722.99"},
+			{"tag_name": "php-binaries-latest"},
+		})
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEVCTL_PHP_RELEASES_API_BASE", ts.URL)
+	tag, err := LatestReleaseTag(context.Background())
+	if err != nil {
+		t.Fatalf("LatestReleaseTag: %v", err)
+	}
+	if tag != "php-binaries-20260723.24" {
+		t.Fatalf("tag = %q, want %q", tag, "php-binaries-20260723.24")
+	}
+}
+
+func TestComparePHPReleaseTags(t *testing.T) {
+	if comparePHPReleaseTags("php-binaries-20260723.9", "php-binaries-20260723.24") >= 0 {
+		t.Fatal("expected .24 > .9 numerically")
+	}
+	if comparePHPReleaseTags("php-binaries-20260723.24", "php-binaries-20260722.99") <= 0 {
+		t.Fatal("expected newer date to win even if N is smaller")
+	}
+}
+
 func TestFetchReleaseManifest_ParsesManifest(t *testing.T) {
 	var serverURL string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

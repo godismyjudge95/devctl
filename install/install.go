@@ -447,6 +447,18 @@ func runShellW(ctx context.Context, w io.Writer, command string) (string, error)
 	return buf.String(), err
 }
 
+// runShellInDirW is like runShellW but sets the working directory.
+func runShellInDirW(ctx context.Context, w io.Writer, dir, command string) (string, error) {
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Dir = dir
+	var buf bytes.Buffer
+	mw := io.MultiWriter(&buf, w)
+	cmd.Stdout = mw
+	cmd.Stderr = mw
+	err := cmd.Run()
+	return buf.String(), err
+}
+
 // lsbReleaseName returns the Ubuntu/Debian codename (e.g. "noble").
 func lsbReleaseName(ctx context.Context) (string, error) {
 	out, err := runShell(ctx, "lsb_release -cs")

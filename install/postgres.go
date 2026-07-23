@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
@@ -25,7 +24,7 @@ import (
 // Download page: https://downloads.percona.com/downloads/postgresql-distribution-18/
 // Tarball docs:  https://docs.percona.com/postgresql/18/tarball.html
 const (
-	// postgresVersion must stay ≥ 18.4 so TimescaleDB OSS packages built
+	// postgresVersion must stay ≥ 18.4 so TimescaleDB packages built
 	// against PostgreSQL 18.4 (package tag -1804) load correctly.
 	postgresVersion = "18.4"
 	postgresMajor   = "18"
@@ -81,7 +80,7 @@ func perconaTarURL() string {
 // siteUser (PostgreSQL refuses to start as root), and runs postgres as a
 // supervised child process of devctl with privilege drop via ManagedUser.
 //
-// TimescaleDB Apache 2 Edition is installed alongside Postgres by extracting
+// TimescaleDB Community Edition is installed alongside Postgres by extracting
 // packagecloud .deb packages into lib/ and share/extension/ (no APT).
 //
 // No APT packages for PostgreSQL itself — only libreadline-dev is installed as
@@ -111,19 +110,20 @@ func (p *PostgresInstaller) Install(ctx context.Context) error {
 func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if p.IsInstalled() {
 		fmt.Fprintln(w, "postgres: already installed")
-		// Backfill TimescaleDB for clusters installed before extension support.
-		if !isTimescaleInstalled(p.postgresDir()) {
-			fmt.Fprintln(w, "postgres: installing TimescaleDB (Apache 2 Edition)...")
-			if err := installTimescaleOSS(ctx, w, p.postgresDir()); err != nil {
-				return err
+		// Backfill managed extensions (TimescaleDB, pg_clickhouse, …).
+		env := ExtensionEnv{ServerRoot: p.serverRoot, SiteUser: p.siteUser, SiteHome: p.siteHome}
+		if err := InstallManagedPostgresExtensions(ctx, w, env); err != nil {
+			return err
+		}
+		if p.siteUser != "" {
+			chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, p.postgresDir())
+			if out, err := runShellW(ctx, w, chownCmd); err != nil {
+				return fmt.Errorf("postgres: chown after extensions: %w\n%s", err, out)
 			}
-			if p.siteUser != "" {
-				chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, p.postgresDir())
-				if out, err := runShellW(ctx, w, chownCmd); err != nil {
-					return fmt.Errorf("postgres: chown after timescale: %w\n%s", err, out)
-				}
-			}
-			fmt.Fprintln(w, "postgres: TimescaleDB installed — restart PostgreSQL to load the extension")
+		}
+		// Best-effort wire if peers (e.g. ClickHouse) already installed.
+		if _, err := WireManagedPostgresExtensions(ctx, env); err != nil {
+			fmt.Fprintf(w, "postgres: extension wire (best-effort): %v\n", err)
 		}
 		return nil
 	}
@@ -208,17 +208,18 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("postgres: write postgresql.conf: %w", err)
 	}
 
-	// 8. Install TimescaleDB Apache 2 Edition extension files + preload.
-	fmt.Fprintln(w, "postgres: installing TimescaleDB (Apache 2 Edition)...")
-	if err := installTimescaleOSS(ctx, w, pgDir); err != nil {
+	// 8. Install managed PostgreSQL extensions (TimescaleDB, pg_clickhouse, …).
+	fmt.Fprintln(w, "postgres: installing managed extensions...")
+	env := ExtensionEnv{ServerRoot: p.serverRoot, SiteUser: p.siteUser, SiteHome: p.siteHome}
+	if err := InstallManagedPostgresExtensions(ctx, w, env); err != nil {
 		return err
 	}
 
-	// 9. Re-chown after timescale files land (install may run as root).
+	// 9. Re-chown after extension files land (install may run as root).
 	if p.siteUser != "" {
 		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
-			return fmt.Errorf("postgres: chown after timescale: %w\n%s", err, out)
+			return fmt.Errorf("postgres: chown after extensions: %w\n%s", err, out)
 		}
 	}
 
@@ -284,16 +285,17 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
-	fmt.Fprintln(w, "postgres: updating TimescaleDB (Apache 2 Edition)...")
-	if err := updateTimescaleOSS(ctx, w, pgDir); err != nil {
+	fmt.Fprintln(w, "postgres: updating managed extensions...")
+	env := ExtensionEnv{ServerRoot: p.serverRoot, SiteUser: p.siteUser, SiteHome: p.siteHome}
+	if err := UpdateManagedPostgresExtensions(ctx, w, env); err != nil {
 		return err
 	}
 
-	// Re-chown after timescale extract.
+	// Re-chown after extension files land.
 	if p.siteUser != "" {
 		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
-			return fmt.Errorf("postgres: update chown after timescale: %w\n%s", err, out)
+			return fmt.Errorf("postgres: update chown after extensions: %w\n%s", err, out)
 		}
 	}
 
@@ -496,8 +498,8 @@ func setPostgresPasswordSingleUser(pgDir, siteUser, siteHome string) error {
 
 // EnsurePostgresConfig migrates existing installations: refreshes config.env and
 // client wrappers, renames the legacy site-user superuser to root, and ensures
-// the dev password is set. When TimescaleDB files are present, also ensures
-// shared_preload_libraries and CREATE EXTENSION. Safe to call on every startup.
+// the dev password is set. Also ensures managed extension files, preloads, and
+// SQL wiring when the server is up. Safe to call on every startup.
 func EnsurePostgresConfig(serverRoot, siteUser string) error {
 	pgDir := paths.ServiceDir(serverRoot, "postgres")
 	if !fileExists(filepath.Join(pgDir, "bin", "postgres")) {
@@ -509,43 +511,46 @@ func EnsurePostgresConfig(serverRoot, siteUser string) error {
 	if err := writePostgresClientWrappers(serverRoot); err != nil {
 		return err
 	}
-	if isTimescaleInstalled(pgDir) {
-		if err := ensureTimescalePreload(pgDir); err != nil {
-			return err
+	siteHome := lookupHome(siteUser)
+	env := ExtensionEnv{ServerRoot: serverRoot, SiteUser: siteUser, SiteHome: siteHome}
+	// One-shot migration: rebuild Percona's -march=native vector.so. Failure is
+	// deferred until after role/wire so startup still configures the rest;
+	// postgres:extensions:ensure can retry.
+	var pgvectorMigrateErr error
+	if fileExists(filepath.Join(pgDir, "lib", "vector.so")) && !isPgvectorPortable(pgDir) {
+		if err := installPgvectorPortable(context.Background(), io.Discard, pgDir); err != nil {
+			pgvectorMigrateErr = fmt.Errorf("postgres: pgvector portable rebuild: %w", err)
+		}
+	}
+	// Preloads for extensions already present (no network/compile on the happy path).
+	for _, ext := range managedPostgresExtensions() {
+		if !ext.IsFilesInstalled(pgDir) {
+			continue
+		}
+		if lib := ext.PreloadLibrary(); lib != "" {
+			if err := ensureSharedPreloadLibraries(filepath.Join(pgDir, "data", "postgresql.conf"), lib); err != nil {
+				return fmt.Errorf("postgres: preload %s: %w", lib, err)
+			}
 		}
 	}
 	if !fileExists(filepath.Join(pgDir, "data", "PG_VERSION")) {
-		return nil
+		return pgvectorMigrateErr
 	}
-	siteHome := lookupHome(siteUser)
 	if err := ensurePostgresRoleAndPassword(pgDir, siteUser, siteHome); err != nil {
 		return err
 	}
-	// CREATE EXTENSION only works when the server is already up (e.g. restart).
-	// Fresh install creates the extension after auto-start (see EnsureTimescaleAfterStart).
-	_, err := ensureTimescaleExtension(pgDir, siteUser, siteHome)
+	// CREATE EXTENSION / FDW only when the server is already up.
+	_, err := WireManagedPostgresExtensions(context.Background(), env)
+	if pgvectorMigrateErr != nil {
+		return pgvectorMigrateErr
+	}
 	return err
 }
 
-// EnsureTimescaleAfterStart creates the timescaledb extension once Postgres is
-// accepting connections. Polls for up to 30s. Called after install auto-start.
+// EnsureTimescaleAfterStart is kept as a thin alias for post-install wiring of
+// all managed extensions (Timescale + pg_clickhouse, …).
 func EnsureTimescaleAfterStart(serverRoot, siteUser string) error {
-	pgDir := paths.ServiceDir(serverRoot, "postgres")
-	siteHome := lookupHome(siteUser)
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		ready, err := ensureTimescaleExtension(pgDir, siteUser, siteHome)
-		if err != nil {
-			return err
-		}
-		if ready {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("postgres: timed out waiting to CREATE EXTENSION timescaledb")
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
+	return EnsurePostgresExtensionsAfterStart(serverRoot, siteUser)
 }
 
 // lookupHome returns the home directory for username, or "" on failure.

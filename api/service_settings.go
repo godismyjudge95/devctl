@@ -149,6 +149,11 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if id == "postgres" {
+		writeJSON(w, postgresSettingsPayload(s.serverRoot, s.siteUser))
+		return
+	}
+
 	writeError(w, fmt.Sprintf("service %q has no configurable settings", id), http.StatusNotFound)
 }
 

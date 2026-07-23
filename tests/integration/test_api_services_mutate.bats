@@ -559,7 +559,14 @@ load setup
 @test "postgres: TimescaleDB loader and extension files present" {
   container_exec test -f "${SERVER_ROOT}/postgres/lib/timescaledb.so"
   container_exec test -f "${SERVER_ROOT}/postgres/lib/timescaledb-2.28.3.so"
+  container_exec test -f "${SERVER_ROOT}/postgres/lib/timescaledb-tsl-2.28.3.so"
   container_exec test -f "${SERVER_ROOT}/postgres/share/extension/timescaledb.control"
+}
+
+@test "postgres: pgvector portable stamp present" {
+  container_exec test -f "${SERVER_ROOT}/postgres/lib/vector.so"
+  container_exec test -f "${SERVER_ROOT}/postgres/share/extension/vector.control"
+  container_exec grep -qx "0.8.2" "${SERVER_ROOT}/postgres/lib/.devctl-pgvector-portable"
 }
 
 @test "postgres: shared_preload_libraries includes timescaledb" {

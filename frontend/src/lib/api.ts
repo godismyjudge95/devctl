@@ -269,8 +269,24 @@ export interface DNSServiceSettings {
   system_dns_configured: boolean
 }
 
+export interface PostgresExtensionStatus {
+  id: string
+  label: string
+  files_installed: boolean
+  preload_configured: boolean
+  wired: boolean
+  ready: boolean
+  version?: string
+  note?: string
+  requires_peer?: string
+}
+
+export interface PostgresServiceSettings {
+  extensions: PostgresExtensionStatus[]
+}
+
 export const getServiceSettings = (id: string) =>
-  request<MailpitServiceSettings | MySQLServiceSettings | MeilisearchServiceSettings | PHPServiceSettings | DNSServiceSettings>('GET', `/api/services/${id}/settings`)
+  request<MailpitServiceSettings | MySQLServiceSettings | MeilisearchServiceSettings | PHPServiceSettings | DNSServiceSettings | PostgresServiceSettings>('GET', `/api/services/${id}/settings`)
 export const putServiceSettings = (id: string, data: MailpitServiceSettings | MySQLServiceSettings | MeilisearchServiceSettings | PHPServiceSettings | DNSServiceSettings) =>
   request<{ status: string }>('PUT', `/api/services/${id}/settings`, data)
 

@@ -338,9 +338,69 @@ func extractFromTarXz(tarXzPath, destDir string) error {
 	return nil
 }
 
-// extractFromTar finds the first entry whose base name matches binaryName in a
+// extractFromTar finds the best entry whose base name matches binaryName in a
 // .tar.gz archive and writes it to destPath.
+//
+// When multiple matches exist (e.g. ClickHouse ships a tiny bash-completion
+// script named "clickhouse" before usr/bin/clickhouse), the largest regular
+// file wins. Ties prefer a path containing "/bin/".
 func extractFromTar(tarPath, binaryName, destPath string) error {
+	bestName, err := findBestTarMember(tarPath, binaryName)
+	if err != nil {
+		return err
+	}
+	return extractNamedFromTar(tarPath, bestName, destPath)
+}
+
+// findBestTarMember returns the archive member path to extract for binaryName.
+func findBestTarMember(tarPath, binaryName string) (string, error) {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return "", err
+	}
+	defer gz.Close()
+
+	var bestName string
+	var bestSize int64 = -1
+	var bestInBin bool
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if strings.TrimSuffix(filepath.Base(hdr.Name), ".exe") != binaryName {
+			continue
+		}
+		inBin := strings.Contains(hdr.Name, "/bin/")
+		// Prefer larger files; on size ties prefer a /bin/ path (real binary over completion scripts).
+		if hdr.Size > bestSize || (hdr.Size == bestSize && inBin && !bestInBin) {
+			bestName = hdr.Name
+			bestSize = hdr.Size
+			bestInBin = inBin
+		}
+	}
+	if bestName == "" {
+		return "", fmt.Errorf("%s not found in archive", binaryName)
+	}
+	return bestName, nil
+}
+
+// extractNamedFromTar extracts a single named member from a .tar.gz to destPath.
+func extractNamedFromTar(tarPath, memberName, destPath string) error {
 	f, err := os.Open(tarPath)
 	if err != nil {
 		return err
@@ -362,22 +422,23 @@ func extractFromTar(tarPath, binaryName, destPath string) error {
 		if err != nil {
 			return err
 		}
-		if hdr.Typeflag == tar.TypeReg && strings.TrimSuffix(filepath.Base(hdr.Name), ".exe") == binaryName {
-			// Remove the old file before creating the new one.
-			// On Linux, overwriting a running executable in-place (os.Create/truncate)
-			// returns ETXTBSY. Unlinking first lets the kernel keep the old inode open
-			// while we write the replacement at a fresh inode.
-			_ = os.Remove(destPath)
-			out, err := os.Create(destPath)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return err
-			}
-			return out.Close()
+		if hdr.Name != memberName || hdr.Typeflag != tar.TypeReg {
+			continue
 		}
+		// Remove the old file before creating the new one.
+		// On Linux, overwriting a running executable in-place (os.Create/truncate)
+		// returns ETXTBSY. Unlinking first lets the kernel keep the old inode open
+		// while we write the replacement at a fresh inode.
+		_ = os.Remove(destPath)
+		out, err := os.Create(destPath)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return err
+		}
+		return out.Close()
 	}
-	return fmt.Errorf("%s not found in archive", binaryName)
+	return fmt.Errorf("%s not found in archive", memberName)
 }

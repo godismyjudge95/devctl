@@ -39,7 +39,32 @@ type ClickHouseInstaller struct {
 func (c *ClickHouseInstaller) ServiceID() string { return "clickhouse" }
 
 func (c *ClickHouseInstaller) IsInstalled() bool {
-	return fileExists(filepath.Join(paths.ServiceDir(c.serverRoot, "clickhouse"), "clickhouse"))
+	return isClickHouseBinaryOK(filepath.Join(paths.ServiceDir(c.serverRoot, "clickhouse"), "clickhouse"))
+}
+
+// isClickHouseBinaryOK reports whether path is a real ClickHouse multi-call
+// binary (not a bash-completion script that shares the same basename in the
+// upstream tarball).
+func isClickHouseBinaryOK(path string) bool {
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() {
+		return false
+	}
+	// Real binary is hundreds of MB; completion scripts are ~1 KB.
+	if st.Size() < 1<<20 {
+		return false
+	}
+	// ELF magic (Linux) — reject text/shell stubs.
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
 }
 
 func (c *ClickHouseInstaller) Install(ctx context.Context) error {
@@ -49,6 +74,10 @@ func (c *ClickHouseInstaller) Install(ctx context.Context) error {
 func (c *ClickHouseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if c.IsInstalled() {
 		fmt.Fprintln(w, "clickhouse: already installed")
+		// Ensure pg_clickhouse bridge if Postgres appeared later / files missing.
+		if err := EnsureClickHousePostgresBridge(ctx, w, c.serverRoot, c.siteUser); err != nil {
+			return fmt.Errorf("clickhouse: pg bridge: %w", err)
+		}
 		return nil
 	}
 
@@ -146,6 +175,12 @@ func (c *ClickHouseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("clickhouse: chown: %w\n%s", err, out)
 		}
+	}
+
+	// 8. If PostgreSQL is already installed, install/wire pg_clickhouse.
+	fmt.Fprintln(w, "clickhouse: ensuring pg_clickhouse bridge...")
+	if err := EnsureClickHousePostgresBridge(ctx, w, c.serverRoot, c.siteUser); err != nil {
+		return fmt.Errorf("clickhouse: pg bridge: %w", err)
 	}
 
 	fmt.Fprintln(w, "clickhouse: install complete")

@@ -216,7 +216,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 | Caddy | `:80`, `:443`, `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
 | DNS Server | `127.0.0.1:5354` (UDP+TCP) | — | Embedded goroutine (no download) | — |
 | Valkey (Redis-compatible) | `127.0.0.1:6379` | — | [download.valkey.io](https://download.valkey.io/releases/) | `{serverRoot}/valkey/valkey.conf` |
-| PostgreSQL + TimescaleDB | `127.0.0.1:5432` | — | [Percona PG tarball](https://downloads.percona.com/downloads/postgresql-distribution-18/) + [TimescaleDB OSS `.deb`](https://packagecloud.io/timescale/timescaledb) (extracted in-place) | `{serverRoot}/postgres/data/postgresql.conf` |
+| PostgreSQL + extensions | `127.0.0.1:5432` | — | [Percona PG tarball](https://downloads.percona.com/downloads/postgresql-distribution-18/) + [TimescaleDB Community `.deb`](https://packagecloud.io/timescale/timescaledb) + [pgvector](https://github.com/pgvector/pgvector) (portable rebuild) + [pg_clickhouse `.deb`](https://github.com/ClickHouse/pg_clickhouse/releases) (extracted in-place) | `{serverRoot}/postgres/data/postgresql.conf` |
 | MySQL | `127.0.0.1:3306` | — | [repo.mysql.com/apt](https://repo.mysql.com/apt/) (Ubuntu `.deb` packages, extracted in-place) | `{serverRoot}/mysql/my.cnf` |
 | Meilisearch | `127.0.0.1:7700` | `meilisearch.test` | [github.com/meilisearch/meilisearch](https://github.com/meilisearch/meilisearch/releases) | `{serverRoot}/meilisearch/config.toml` |
 | Typesense | `127.0.0.1:8108` | `typesense.test` | [dl.typesense.org](https://dl.typesense.org/releases/) | `{serverRoot}/typesense/typesense.ini` |
@@ -231,7 +231,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 
 - Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
 - PostgreSQL and ClickHouse run as supervised child processes but drop privileges to `DEVCTL_SITE_USER` (both refuse to start as root against non-root data).
-- PostgreSQL installs [TimescaleDB Apache 2 Edition](https://github.com/timescale/timescaledb) as an extension (`.deb` files downloaded from packagecloud and extracted into the Percona tree — no APT). `shared_preload_libraries` is set automatically and `CREATE EXTENSION timescaledb` is applied to the default `postgres` database after start.
+- PostgreSQL manages extensions via a small registry: [TimescaleDB Community Edition](https://github.com/timescale/timescaledb), [pgvector](https://github.com/pgvector/pgvector) (rebuilt from source with `OPTFLAGS=""` so Percona's `-march=native` AVX-512 binary is replaced with a portable build), and [pg_clickhouse](https://github.com/ClickHouse/pg_clickhouse) (Timescale + pg_clickhouse extracted from `.deb` files into the Percona tree — no APT). Timescale sets `shared_preload_libraries` and runs `CREATE EXTENSION` on the default `postgres` database. When ClickHouse is also installed (either install order), `pg_clickhouse` is wired into **`template1`** only (`CREATE EXTENSION` + foreign server `clickhouse` + user mapping for the superuser), so new databases inherit the FDW. Status: Services → PostgreSQL → Settings, or `devctl postgres:extensions`.
 - Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
 - Config files are written once on install and never overwritten on restart. User edits are preserved.
 - Mailpit is configured via `MP_*` environment variables in `config.env` rather than a native config file.
@@ -642,6 +642,8 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | `php` | `php:versions` | List installed PHP versions and their FPM status |
 | | `php:settings` | Show current PHP ini settings (applies to all versions) |
 | | `php:set <key=value>...` | Update PHP ini settings |
+| `postgres` | `postgres:extensions` | List managed PostgreSQL extensions and status |
+| | `postgres:extensions:ensure` | Install missing extension files and wire SQL objects |
 | `logs` | `logs:list` | List available log files |
 | | `logs:tail <id> [--bytes=N] [--follow]` | Show the tail of a log file; `--follow` streams live |
 | | `logs:clear <id>` | Clear (truncate) a log file |

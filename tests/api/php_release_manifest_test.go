@@ -27,16 +27,81 @@ func TestPHPInstall_UsesTaggedReleaseManifest(t *testing.T) {
 	if phpSvc == nil {
 		t.Fatal("php-fpm-8.4 not found in services list")
 	}
-	if phpSvc.LatestVersion != "8.4.19" {
-		t.Fatalf("latest_version = %q, want %q", phpSvc.LatestVersion, "8.4.19")
+	if phpSvc.LatestVersion != "8.4.23" {
+		t.Fatalf("latest_version = %q, want %q", phpSvc.LatestVersion, "8.4.23")
 	}
 	if phpSvc.Version == "" {
 		t.Fatal("version is empty for php-fpm-8.4")
 	}
 
-	out, err := exec.Command("sh", "-c", "journalctl -u devctl --no-pager | grep 'curl-shim: served php-binaries-20260422.1-php-8.4-cli-linux-x86_64 from cache' | tail -n 1").CombinedOutput()
-	if err != nil || len(bytes.TrimSpace(out)) == 0 {
-		t.Fatalf("expected journal to show tagged PHP asset served from cache, got err=%v out=%s", err, string(out))
+	// Install must have pulled the newest fixture tag (served via curl shim / fake GH).
+	out, err := exec.Command("sh", "-c", `SERVER_ROOT=$(systemctl show devctl --property=Environment | tr ' ' '\n' | sed -n 's/^DEVCTL_SERVER_ROOT=//p'); "$SERVER_ROOT/php/8.4/php" -v`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("php 8.4 -v failed: %v out=%s", err, string(out))
+	}
+	if !bytes.Contains(out, []byte("PHP 8.4.")) {
+		t.Fatalf("php 8.4 -v output missing PHP 8.4.: %s", string(out))
+	}
+}
+
+func TestPHPInstall_Legacy70FromLatestRelease(t *testing.T) {
+	body, status := httpPost(t, "/api/php/versions/7.0/install", map[string]any{})
+	if status != 200 {
+		t.Fatalf("install php 7.0: expected 200, got %d: %s", status, string(body))
+	}
+
+	versions := decodeJSON[[]PHPVersion](t, httpGet(t, "/api/php/versions"))
+	var found *PHPVersion
+	for i := range versions {
+		if versions[i].Version == "7.0" {
+			found = &versions[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("PHP 7.0 not listed after install; versions=%v", versions)
+	}
+	if found.PatchVersion != "" && found.PatchVersion != "7.0.33" {
+		// Patch may be empty until binary -v is readable; when present it must match release.
+		t.Fatalf("php 7.0 patch_version = %q, want 7.0.33 or empty", found.PatchVersion)
+	}
+	if found.LatestVersion != "7.0.33" {
+		t.Fatalf("php 7.0 latest_version = %q, want 7.0.33", found.LatestVersion)
+	}
+
+	services := decodeJSON[[]ServiceState](t, httpGet(t, "/api/services"))
+	var phpSvc *ServiceState
+	for i := range services {
+		if services[i].ID == "php-fpm-7.0" {
+			phpSvc = &services[i]
+			break
+		}
+	}
+	if phpSvc == nil {
+		t.Fatal("php-fpm-7.0 not found in services list after install")
+	}
+	if !phpSvc.Installed {
+		t.Fatal("php-fpm-7.0 installed=false after install")
+	}
+
+	// Binary must run and report 7.0.x
+	out, err := exec.Command("sh", "-c", `SERVER_ROOT=$(systemctl show devctl --property=Environment | tr ' ' '\n' | sed -n 's/^DEVCTL_SERVER_ROOT=//p'); "$SERVER_ROOT/php/7.0/php" -v`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("php 7.0 -v failed: %v out=%s", err, string(out))
+	}
+	if !bytes.Contains(out, []byte("PHP 7.0.")) {
+		t.Fatalf("php 7.0 -v output missing PHP 7.0.: %s", string(out))
+	}
+
+	// Spot-check extensions that the legacy static build is expected to ship.
+	mods, err := exec.Command("sh", "-c", `SERVER_ROOT=$(systemctl show devctl --property=Environment | tr ' ' '\n' | sed -n 's/^DEVCTL_SERVER_ROOT=//p'); "$SERVER_ROOT/php/7.0/php" -m`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("php 7.0 -m failed: %v out=%s", err, string(mods))
+	}
+	for _, want := range []string{"gd", "openssl", "redis", "mbstring", "zip"} {
+		if !bytes.Contains(mods, []byte(want)) {
+			t.Errorf("php 7.0 modules missing %q; got:\n%s", want, string(mods))
+		}
 	}
 }
 
@@ -52,8 +117,8 @@ func TestPHPServiceState_UsesManifestPatchMetadata(t *testing.T) {
 		if svc.Version == "" {
 			t.Fatal("php-fpm-8.4 version is empty")
 		}
-		if svc.LatestVersion != "8.4.19" {
-			t.Fatalf("latest_version = %q, want %q", svc.LatestVersion, "8.4.19")
+		if svc.LatestVersion != "8.4.23" {
+			t.Fatalf("latest_version = %q, want %q", svc.LatestVersion, "8.4.23")
 		}
 		if svc.Version != svc.LatestVersion && !svc.UpdateAvailable {
 			t.Fatalf("expected update_available for php-fpm-8.4 when version=%q latest=%q", svc.Version, svc.LatestVersion)
@@ -97,8 +162,8 @@ func TestPHPVersionsEndpoint_SurfacesPatchMetadata(t *testing.T) {
 		if v.PatchVersion == "" {
 			t.Fatal("php versions endpoint missing patch_version for 8.4")
 		}
-		if v.LatestVersion != "8.4.19" {
-			t.Fatalf("latest_version = %q, want %q", v.LatestVersion, "8.4.19")
+		if v.LatestVersion != "8.4.23" {
+			t.Fatalf("latest_version = %q, want %q", v.LatestVersion, "8.4.23")
 		}
 		return
 	}

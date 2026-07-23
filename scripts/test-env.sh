@@ -196,7 +196,7 @@ from pathlib import Path
 CACHE_DIR = Path('/var/cache/devctl-artifacts')
 RELEASES = [
     'php-binaries-20260421.1',
-    'php-binaries-20260422.1',
+    'php-binaries-20260723.24',
 ]
 
 class Handler(BaseHTTPRequestHandler):

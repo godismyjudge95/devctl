@@ -712,6 +712,45 @@ func (c *Client) DeleteAllMail() error {
 	return c.delete("/api/mail/api/v1/messages")
 }
 
+// PostgresExtensionStatus mirrors install.ExtensionStatus for CLI display.
+type PostgresExtensionStatus struct {
+	ID                string `json:"id"`
+	Label             string `json:"label"`
+	FilesInstalled    bool   `json:"files_installed"`
+	PreloadConfigured bool   `json:"preload_configured"`
+	Wired             bool   `json:"wired"`
+	Ready             bool   `json:"ready"`
+	Version           string `json:"version,omitempty"`
+	Note              string `json:"note,omitempty"`
+	RequiresPeer      string `json:"requires_peer,omitempty"`
+}
+
+// ListPostgresExtensions calls GET /api/postgres/extensions.
+func (c *Client) ListPostgresExtensions() ([]PostgresExtensionStatus, error) {
+	var out []PostgresExtensionStatus
+	return out, c.get("/api/postgres/extensions", &out)
+}
+
+// EnsurePostgresExtensions calls POST /api/postgres/extensions/ensure.
+// Uses a long timeout because compiling pg_clickhouse can take several minutes.
+func (c *Client) EnsurePostgresExtensions() (map[string]any, error) {
+	var out map[string]any
+	long := &http.Client{Timeout: 15 * time.Minute}
+	resp, err := long.Post(c.base+"/api/postgres/extensions/ensure", "application/json", nil)
+	if err != nil {
+		return nil, fmt.Errorf("POST /api/postgres/extensions/ensure: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%s", strings.TrimSpace(string(b)))
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FormatAddress formats a MailAddress for display.
 func FormatAddress(a MailAddress) string {
 	if a.Name != "" {

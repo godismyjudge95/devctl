@@ -59,7 +59,9 @@ func LatestReleaseTag(ctx context.Context) (string, error) {
 		}
 	}
 	if len(versioned) > 0 {
-		sort.Strings(versioned)
+		sort.Slice(versioned, func(i, j int) bool {
+			return comparePHPReleaseTags(versioned[i], versioned[j]) < 0
+		})
 		return versioned[len(versioned)-1], nil
 	}
 	if len(legacy) > 0 {
@@ -72,11 +74,57 @@ func LatestReleaseTag(ctx context.Context) (string, error) {
 // isVersionedPHPReleaseTag reports whether tag is an immutable dated release
 // such as php-binaries-20260422.1 (as opposed to php-binaries-latest).
 func isVersionedPHPReleaseTag(tag string) bool {
+	_, _, ok := parsePHPReleaseTag(tag)
+	return ok
+}
+
+// parsePHPReleaseTag extracts YYYYMMDD and N from php-binaries-YYYYMMDD.N.
+func parsePHPReleaseTag(tag string) (date int, n int, ok bool) {
 	rest := strings.TrimPrefix(tag, releaseTagPrefix)
 	if rest == "" || rest == tag {
-		return false
+		return 0, 0, false
 	}
-	return rest[0] >= '0' && rest[0] <= '9'
+	parts := strings.Split(rest, ".")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	for _, ch := range parts[0] {
+		if ch < '0' || ch > '9' {
+			return 0, 0, false
+		}
+	}
+	for _, ch := range parts[1] {
+		if ch < '0' || ch > '9' {
+			return 0, 0, false
+		}
+	}
+	if _, err := fmt.Sscanf(parts[0], "%d", &date); err != nil || date <= 0 {
+		return 0, 0, false
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &n); err != nil || n < 0 {
+		return 0, 0, false
+	}
+	return date, n, true
+}
+
+// comparePHPReleaseTags orders php-binaries-YYYYMMDD.N tags by date then N.
+// Lexicographic string sort is wrong: php-binaries-20260723.9 > .24 as strings.
+func comparePHPReleaseTags(a, b string) int {
+	da, na, aOK := parsePHPReleaseTag(a)
+	db, nb, bOK := parsePHPReleaseTag(b)
+	switch {
+	case aOK && bOK:
+		if da != db {
+			return da - db
+		}
+		return na - nb
+	case aOK:
+		return 1
+	case bOK:
+		return -1
+	default:
+		return strings.Compare(a, b)
+	}
 }
 
 func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, error) {

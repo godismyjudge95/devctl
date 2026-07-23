@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v0.11.0 — 2026-07-23
+
+- Fixed **pgvector portability**: Percona's bundled `vector.so` is built with `-march=native` (AVX-512) and can `SIGILL` on CPUs without AVX-512 (e.g. Zen 2 / WSL2). PostgreSQL install/update/ensure now rebuilds [pgvector](https://github.com/pgvector/pgvector) `0.8.2` with `OPTFLAGS=""` into the Percona tree.
+- Fixed **ClickHouse install/update** extracting the bash-completion script named `clickhouse` instead of the real `usr/bin/clickhouse` binary (tar member selection now prefers the largest `/bin/` match). `IsInstalled` rejects non-ELF stubs so a broken install can re-download cleanly.
+- Added **managed PostgreSQL extensions registry** (TimescaleDB + pgvector + pg_clickhouse) with shared install/wire steps.
+- PostgreSQL install now extracts **[pg_clickhouse](https://github.com/ClickHouse/pg_clickhouse)** into the Percona tree; when ClickHouse is also installed (either order), wires `template1` with the extension, a local `clickhouse` foreign server, and a superuser mapping.
+- Added `devctl postgres:extensions` and `devctl postgres:extensions:ensure` (JSON-friendly for agents).
+- PostgreSQL **Settings** dialog lists managed extension status (files / wired / ready).
+
 ## v0.10.0 — 2026-07-16
 
 - **Mostly rootless daemon with elevation**: the systemd unit now runs the daemon as the site user (`User=`) with `AmbientCapabilities=CAP_NET_BIND_SERVICE` so Caddy can bind ports 80/443 without root and without re-running elevate after Caddy updates. The daemon refuses to start as root.

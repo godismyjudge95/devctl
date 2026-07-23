@@ -12,8 +12,10 @@ import (
 	"github.com/danielgormly/devctl/internal/runuser"
 )
 
-// TimescaleDB Apache 2 Edition (OSS) is shipped as PostgreSQL extension files
+// TimescaleDB Community Edition is shipped as PostgreSQL extension files
 // extracted from packagecloud .deb packages — no APT, no install scripts.
+// Community (TSL) includes compression, continuous aggregates, and other
+// features not present in the Apache 2 OSS builds.
 //
 // Package source: https://packagecloud.io/timescale/timescaledb
 // We pin jammy (ubuntu22.04) builds; they run on newer Ubuntu with libc6 ≥ 2.17.
@@ -27,11 +29,14 @@ const (
 	timescaledbDist = "jammy"
 )
 
-// isTimescaleInstalled reports whether the loader + extension files are present.
+// isTimescaleInstalled reports whether the Community Edition files are present
+// (loader + versioned core .so + TSL .so + control file).
 func isTimescaleInstalled(pgDir string) bool {
-	return fileExists(filepath.Join(pgDir, "lib", "timescaledb.so")) &&
+	lib := filepath.Join(pgDir, "lib")
+	return fileExists(filepath.Join(lib, "timescaledb.so")) &&
 		fileExists(filepath.Join(pgDir, "share", "extension", "timescaledb.control")) &&
-		fileExists(filepath.Join(pgDir, "lib", "timescaledb-"+timescaledbVersion+".so"))
+		fileExists(filepath.Join(lib, "timescaledb-"+timescaledbVersion+".so")) &&
+		fileExists(filepath.Join(lib, "timescaledb-tsl-"+timescaledbVersion+".so"))
 }
 
 // timescaleDebArch maps GOARCH to Debian package arch.
@@ -42,34 +47,55 @@ func timescaleDebArch() string {
 	return "amd64"
 }
 
+// timescaleLoaderDebName is the loader package basename (curl-shim cache key).
+func timescaleLoaderDebName() string {
+	return fmt.Sprintf("timescaledb-2-loader-postgresql-%s_%s_%s.deb",
+		postgresMajor, timescaledbPkgTag, timescaleDebArch())
+}
+
+// timescaleCommunityDebName is the Community Edition package basename.
+func timescaleCommunityDebName() string {
+	return fmt.Sprintf("timescaledb-2-%s-postgresql-%s_%s_%s.deb",
+		timescaledbVersion, postgresMajor, timescaledbPkgTag, timescaleDebArch())
+}
+
 // timescaleLoaderDebURL returns the packagecloud pool URL for the loader deb.
-// The loader is versioned with the community package directory but is required
-// by the OSS package as well (Provides timescaledb.so + timescaledb.control).
+// Provides timescaledb.so + timescaledb.control.
 func timescaleLoaderDebURL() string {
-	arch := timescaleDebArch()
-	name := fmt.Sprintf("timescaledb-2-loader-postgresql-%s_%s_%s.deb",
-		postgresMajor, timescaledbPkgTag, arch)
 	return fmt.Sprintf(
 		"https://packagecloud.io/timescale/timescaledb/ubuntu/pool/%s/main/t/timescaledb-2-%s-postgresql-%s/%s",
-		timescaledbDist, timescaledbVersion, postgresMajor, name,
+		timescaledbDist, timescaledbVersion, postgresMajor, timescaleLoaderDebName(),
 	)
 }
 
-// timescaleOSSDebURL returns the packagecloud pool URL for the OSS extension deb
-// (single-version package — not the multi-version meta package).
-func timescaleOSSDebURL() string {
-	arch := timescaleDebArch()
-	name := fmt.Sprintf("timescaledb-2-oss-%s-postgresql-%s_%s_%s.deb",
-		timescaledbVersion, postgresMajor, timescaledbPkgTag, arch)
+// timescaleCommunityDebURL returns the packagecloud pool URL for the Community
+// Edition extension deb (single-version package — not the multi-version meta package).
+// Includes timescaledb-<ver>.so and timescaledb-tsl-<ver>.so.
+func timescaleCommunityDebURL() string {
 	return fmt.Sprintf(
-		"https://packagecloud.io/timescale/timescaledb/ubuntu/pool/%s/main/t/timescaledb-2-oss-%s-postgresql-%s/%s",
-		timescaledbDist, timescaledbVersion, postgresMajor, name,
+		"https://packagecloud.io/timescale/timescaledb/ubuntu/pool/%s/main/t/timescaledb-2-%s-postgresql-%s/%s",
+		timescaledbDist, timescaledbVersion, postgresMajor, timescaleCommunityDebName(),
 	)
 }
 
-// installTimescaleOSS downloads and extracts TimescaleDB Apache 2 Edition into
+func timescaleDebs() []struct {
+	url  string
+	name string
+	desc string
+} {
+	return []struct {
+		url  string
+		name string
+		desc string
+	}{
+		{timescaleLoaderDebURL(), timescaleLoaderDebName(), "TimescaleDB loader"},
+		{timescaleCommunityDebURL(), timescaleCommunityDebName(), "TimescaleDB Community"},
+	}
+}
+
+// installTimescale downloads and extracts TimescaleDB Community Edition into
 // the Percona PostgreSQL tree, then enables shared_preload_libraries.
-func installTimescaleOSS(ctx context.Context, w io.Writer, pgDir string) error {
+func installTimescale(ctx context.Context, w io.Writer, pgDir string) error {
 	if isTimescaleInstalled(pgDir) {
 		fmt.Fprintln(w, "postgres: TimescaleDB already installed")
 		if err := ensureTimescalePreload(pgDir); err != nil {
@@ -87,19 +113,10 @@ func installTimescaleOSS(ctx context.Context, w io.Writer, pgDir string) error {
 		return fmt.Errorf("postgres: timescale extension dir: %w", err)
 	}
 
-	debs := []struct {
-		url  string
-		name string // basename used for /tmp dest (curl-shim cache key)
-		desc string
-	}{
-		{timescaleLoaderDebURL(), fmt.Sprintf("timescaledb-2-loader-postgresql-%s_%s_%s.deb", postgresMajor, timescaledbPkgTag, timescaleDebArch()), "TimescaleDB loader"},
-		{timescaleOSSDebURL(), fmt.Sprintf("timescaledb-2-oss-%s-postgresql-%s_%s_%s.deb", timescaledbVersion, postgresMajor, timescaledbPkgTag, timescaleDebArch()), "TimescaleDB Apache 2"},
-	}
-
-	for _, d := range debs {
+	for _, d := range timescaleDebs() {
 		tmpDeb := filepath.Join(os.TempDir(), d.name)
-		// Keep the cached artifact name stable; remove after extract so re-runs
-		// re-fetch if needed. The test curl shim serves by basename of DEST.
+		// Basename of DEST must match scripts/download-artifacts.sh so the
+		// test curl shim can serve cached packages.
 		fmt.Fprintf(w, "postgres: downloading %s...\n", d.desc)
 		if err := curlDownloadW(ctx, w, d.url, tmpDeb); err != nil {
 			os.Remove(tmpDeb)
@@ -117,18 +134,19 @@ func installTimescaleOSS(ctx context.Context, w io.Writer, pgDir string) error {
 		return err
 	}
 
-	fmt.Fprintf(w, "postgres: TimescaleDB %s (Apache 2 Edition) installed\n", timescaledbVersion)
+	fmt.Fprintf(w, "postgres: TimescaleDB %s (Community Edition) installed\n", timescaledbVersion)
 	return nil
 }
 
-// updateTimescaleOSS re-downloads and extracts TimescaleDB over an existing
-// Postgres install. Safe when Timescale was not previously installed.
-func updateTimescaleOSS(ctx context.Context, w io.Writer, pgDir string) error {
-	// Force re-extract by removing the versioned .so marker first if present.
-	// Loader + control stay until replaced by the new debs.
-	_ = os.Remove(filepath.Join(pgDir, "lib", "timescaledb-"+timescaledbVersion+".so"))
-
+// updateTimescale re-downloads and extracts TimescaleDB Community Edition over
+// an existing Postgres install. Safe when Timescale was not previously installed
+// (including upgrades from Apache OSS builds that lack the TSL library).
+func updateTimescale(ctx context.Context, w io.Writer, pgDir string) error {
+	// Force re-extract of versioned libraries (core + TSL).
 	libDir := filepath.Join(pgDir, "lib")
+	_ = os.Remove(filepath.Join(libDir, "timescaledb-"+timescaledbVersion+".so"))
+	_ = os.Remove(filepath.Join(libDir, "timescaledb-tsl-"+timescaledbVersion+".so"))
+
 	extDir := filepath.Join(pgDir, "share", "extension")
 	if err := os.MkdirAll(libDir, 0755); err != nil {
 		return fmt.Errorf("postgres: timescale lib dir: %w", err)
@@ -137,16 +155,7 @@ func updateTimescaleOSS(ctx context.Context, w io.Writer, pgDir string) error {
 		return fmt.Errorf("postgres: timescale extension dir: %w", err)
 	}
 
-	debs := []struct {
-		url  string
-		name string
-		desc string
-	}{
-		{timescaleLoaderDebURL(), fmt.Sprintf("timescaledb-2-loader-postgresql-%s_%s_%s.deb", postgresMajor, timescaledbPkgTag, timescaleDebArch()), "TimescaleDB loader"},
-		{timescaleOSSDebURL(), fmt.Sprintf("timescaledb-2-oss-%s-postgresql-%s_%s_%s.deb", timescaledbVersion, postgresMajor, timescaledbPkgTag, timescaleDebArch()), "TimescaleDB Apache 2"},
-	}
-
-	for _, d := range debs {
+	for _, d := range timescaleDebs() {
 		tmpDeb := filepath.Join(os.TempDir(), d.name)
 		fmt.Fprintf(w, "postgres: downloading %s...\n", d.desc)
 		if err := curlDownloadW(ctx, w, d.url, tmpDeb); err != nil {
@@ -165,7 +174,7 @@ func updateTimescaleOSS(ctx context.Context, w io.Writer, pgDir string) error {
 		return err
 	}
 
-	fmt.Fprintf(w, "postgres: TimescaleDB updated to %s (Apache 2 Edition)\n", timescaledbVersion)
+	fmt.Fprintf(w, "postgres: TimescaleDB updated to %s (Community Edition)\n", timescaledbVersion)
 	return nil
 }
 
@@ -280,7 +289,7 @@ func mergeSharedPreloadLibraries(conf, name string) (string, bool) {
 
 	if !found {
 		// Append under a small marker block.
-		extra := "\n# devctl: TimescaleDB (Apache 2 Edition)\nshared_preload_libraries = '" + name + "'\n"
+		extra := "\n# devctl: TimescaleDB (Community Edition)\nshared_preload_libraries = '" + name + "'\n"
 		if !strings.HasSuffix(conf, "\n") {
 			extra = "\n" + extra
 		}

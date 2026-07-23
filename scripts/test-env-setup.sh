@@ -46,6 +46,7 @@ info "Installing base prerequisites (curl, jq, runtime libs for devctl services)
 incus exec "$BUILDER" -- apt-get update -qq
 incus exec "$BUILDER" -- apt-get install -y -qq \
   curl jq \
+  build-essential \
   libnuma1 \
   libaio1t64 \
   libreadline-dev

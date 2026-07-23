@@ -14,9 +14,10 @@ import (
 
 // Allowed apt packages that may be installed via helper apt-install.
 var allowedAptPackages = map[string]struct{}{
-	"libnss3-tools":  {},
+	"libnss3-tools":   {},
 	"libreadline-dev": {},
-	"libnuma1":       {},
+	"libnuma1":        {},
+	"build-essential": {},
 }
 
 // pinnedPATH is used for all helper subprocesses.

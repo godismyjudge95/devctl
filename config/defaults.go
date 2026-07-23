@@ -65,7 +65,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 		{
 			ID:                    "postgres",
 			Label:                 "PostgreSQL",
-			Description:           "PostgreSQL with TimescaleDB (Apache 2 Edition)",
+			Description:           "PostgreSQL with TimescaleDB (Community Edition)",
 			InstallVersion:        "18.4",
 			Installable:           true,
 			HasCredentials:        true,

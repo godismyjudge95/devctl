@@ -142,12 +142,22 @@ func Uninstall(ctx context.Context, ver string, serverRoot string) error {
 
 // curlDownload fetches url and writes it to dest using curl.
 // Follows redirects (-L) and fails on HTTP errors (-f).
+// Downloads to a sibling temp file then renames into place so a running
+// binary (e.g. php-fpm) can be replaced without curl exit 23 / ETXTBSY.
 func curlDownload(ctx context.Context, url, dest string) error {
 	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return fmt.Errorf("curl %s: create dest dir: %w", url, err)
+	}
+
+	tmp := dest + ".download"
+	_ = os.Remove(tmp)
+	defer os.Remove(tmp)
+
 	done := httplog.LogGitHubCurlDownloadStart(url)
-	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", dest, url)
+	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", tmp, url)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
@@ -156,6 +166,16 @@ func curlDownload(ctx context.Context, url, dest string) error {
 		return fmt.Errorf("curl %s: %w\n%s", url, err, buf.String())
 	}
 	done(nil)
+
+	// Rename replaces the directory entry even when dest is a running
+	// executable; writing to dest in-place would fail with ETXTBSY.
+	if err := os.Rename(tmp, dest); err != nil {
+		// Fallback: remove dest then rename (covers odd filesystems).
+		_ = os.Remove(dest)
+		if err2 := os.Rename(tmp, dest); err2 != nil {
+			return fmt.Errorf("curl %s: install download: %w", url, err2)
+		}
+	}
 	return nil
 }
 

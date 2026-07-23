@@ -131,6 +131,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/services/{id}/details", s.handleGetServiceDetails)
 	s.mux.HandleFunc("GET /api/services/{id}/settings", s.handleGetServiceSettings)
 	s.mux.HandleFunc("PUT /api/services/{id}/settings", s.handlePutServiceSettings)
+	s.mux.HandleFunc("GET /api/postgres/extensions", s.handleGetPostgresExtensions)
+	s.mux.HandleFunc("POST /api/postgres/extensions/ensure", s.handleEnsurePostgresExtensions)
 	s.mux.HandleFunc("GET /api/services/{id}/config/{file}", s.handleGetServiceConfig)
 	s.mux.HandleFunc("PUT /api/services/{id}/config/{file}", s.handlePutServiceConfig)
 	s.mux.HandleFunc("POST /api/services/{id}/update", s.handleServiceUpdate)

@@ -221,7 +221,7 @@ async function openDbClientForService(id: string, label: string) {
 
 // --- Settings gear visibility ---
 function hasSettingsGear(id: string) {
-  return id === 'mailpit' || id === 'mysql' || id === 'meilisearch' || id === 'dns' || id.startsWith('php-fpm-')
+  return id === 'mailpit' || id === 'mysql' || id === 'meilisearch' || id === 'dns' || id === 'postgres' || id.startsWith('php-fpm-')
 }
 
 // --- Config editor button visibility ---

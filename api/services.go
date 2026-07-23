@@ -335,8 +335,16 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 		}
 		if id == "postgres" {
 			go func() {
-				if err := install.EnsureTimescaleAfterStart(s.serverRoot, s.siteUser); err != nil {
-					log.Printf("install: timescale extension: %v", err)
+				if err := install.EnsurePostgresExtensionsAfterStart(s.serverRoot, s.siteUser); err != nil {
+					log.Printf("install: postgres extensions: %v", err)
+				}
+			}()
+		}
+		if id == "clickhouse" {
+			go func() {
+				// Bridge may have been installed during clickhouse InstallW; re-wire if PG is up.
+				if err := install.EnsurePostgresExtensionsAfterStart(s.serverRoot, s.siteUser); err != nil {
+					log.Printf("install: clickhouse pg bridge: %v", err)
 				}
 			}()
 		}
@@ -782,8 +790,8 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if id == "postgres" {
 			go func() {
-				if err := install.EnsureTimescaleAfterStart(s.serverRoot, s.siteUser); err != nil {
-					log.Printf("update: timescale extension: %v", err)
+				if err := install.EnsurePostgresExtensionsAfterStart(s.serverRoot, s.siteUser); err != nil {
+					log.Printf("update: postgres extensions: %v", err)
 				}
 			}()
 		}
@@ -838,15 +846,19 @@ func (s *Server) handlePHPServiceUpdate(w http.ResponseWriter, r *http.Request, 
 	}
 
 	sendSSE(w, flusher, "output", fmt.Sprintf("Updating PHP %s from %s to %s\n", ver, current, latest))
+	// Stop FPM before replacing binaries so workers are not mid-request and
+	// the running executable is not held open (curl ETXTBSY / exit 23).
+	id := php.FPMServiceID(ver)
+	_ = s.supervisor.Stop(id)
 	if err := php.Install(r.Context(), ver, s.serverRoot, s.siteUser, s.siteHome); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
 	}
 	def := s.phpFPMServiceDef(ver)
 	s.registry.Register(def)
-	s.SetLatestVersion(php.FPMServiceID(ver), latest)
-	if err := s.supervisor.Restart(def); err != nil {
-		log.Printf("update: restart php-fpm-%s: %v", ver, err)
+	s.SetLatestVersion(id, latest)
+	if err := s.supervisor.Start(def); err != nil {
+		log.Printf("update: start php-fpm-%s: %v", ver, err)
 	}
 	go s.poller.Poll()
 	sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
