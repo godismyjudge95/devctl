@@ -63,13 +63,26 @@ while true; do
     | "\(.status)/\(.conclusion // "-")\t\(.name)"
   ' | sed "s/^/  /"
 
-  # Any hard failures?
-  failed=$(echo "$json" | jq -c '[.jobs[] | select(.conclusion == "failure")]')
+  # Failures that should trigger early exit / cancel.
+  # Ignore already-known flaky package jobs when legacy builds are still running
+  # so a static-php.dev 500 does not abort watching PHP 7.x compile progress.
+  # Set EARLY_FAIL_JOB_REGEX to override (default: any job).
+  regex="${EARLY_FAIL_JOB_REGEX:-.}"
+  failed=$(echo "$json" | jq -c --arg re "$regex" \
+    '[.jobs[] | select(.conclusion == "failure" and (.name | test($re)))]')
   fail_count=$(echo "$failed" | jq 'length')
+
+  # Still surface non-matching failures without aborting.
+  other_failed=$(echo "$json" | jq -c --arg re "$regex" \
+    '[.jobs[] | select(.conclusion == "failure" and (.name | test($re) | not))]')
+  other_count=$(echo "$other_failed" | jq 'length')
+  if [[ "$other_count" -gt 0 ]]; then
+    echo "  (ignoring $other_count non-matching failure(s) for early-exit: $(echo "$other_failed" | jq -r '.[].name' | tr '\n' ' '))"
+  fi
 
   if [[ "$fail_count" -gt 0 ]]; then
     echo
-    echo "EARLY FAIL: $fail_count job(s) failed"
+    echo "EARLY FAIL: $fail_count job(s) failed (regex=$regex)"
     echo "$failed" | jq -r '.[] | "  - \(.name) (id=\(.databaseId))"'
 
     # Dump log for the first failure (enough to start fixing)
