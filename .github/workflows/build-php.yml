@@ -143,7 +143,8 @@ jobs:
           # Force image rebuild name so we never reuse a stale cwcc-spc image.
           sed -i 's/cwcc-spc-/cwcc-spc-a317-/g' bin/spc-alpine-docker
           echo "---- patched spc-alpine-docker (image + php packages) ----"
-          rg -n "ALPINE_FROM|php81|php82|cwcc-spc" bin/spc-alpine-docker | head -40
+          # GHA runners do not ship ripgrep; use grep.
+          grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
 
       - name: Cache downloaded sources
         uses: actions/cache@v4
