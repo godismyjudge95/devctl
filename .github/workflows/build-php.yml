@@ -182,11 +182,13 @@ jobs:
             7.0)
               # sodium is 7.2+; ffi is 7.4+
               # intl dropped: PHP 7.0 intl is incompatible with modern ICU (icu_77::)
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              # hash required on PHP < 7.4 (else redis fails to link php_hash_fetch_ops)
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,hash,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.2)
               # intl dropped: PHP 7.2 intl fails vs modern ICU (TRUE/FALSE + C++ API)
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              # hash required on PHP < 7.4 (else redis fails to link php_hash_fetch_ops)
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,hash,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.4)
               LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
@@ -209,13 +211,16 @@ jobs:
           OPENSSL_URL="https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz"
           CURL_URL="https://curl.se/download/curl-7.88.1.tar.gz"
           LIBICONV_URL="https://ftpmirror.gnu.org/libiconv/libiconv-1.19.tar.gz"
+          # PHP 7.0 mbregex breaks on newest oniguruma (incomplete php_mb_regex_t)
+          ONIG_URL="https://github.com/kkos/oniguruma/releases/download/v6.9.4/onig-6.9.4.tar.gz"
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.php }} \
             --for-extensions=${{ steps.exts.outputs.list }} \
             --custom-url "openssl:${OPENSSL_URL}" \
             --custom-url "curl:${CURL_URL}" \
             --custom-url "libiconv:${LIBICONV_URL}" \
-            --ignore-cache-sources=php-src,openssl,curl,libiconv \
+            --custom-url "onig:${ONIG_URL}" \
+            --ignore-cache-sources=php-src,openssl,curl,libiconv,onig \
             --retry=5
 
       - name: Build PHP CLI and FPM

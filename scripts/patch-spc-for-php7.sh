@@ -185,6 +185,22 @@ else:
     print("WARNING: could not find xml.php --with-libxml line to patch")
 PY
 
+# 4d) PHP < 7.4 needs explicit --enable-hash (built-in from 7.4). Without it,
+#     redis fails at link with undefined reference to php_hash_fetch_ops.
+#     spc 2.3.0 ext.json has no "hash" entry.
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path("config/ext.json")
+d = json.loads(p.read_text())
+if "hash" in d:
+    print("ext.json already has hash")
+else:
+    d["hash"] = {"type": "builtin"}
+    p.write_text(json.dumps(d, indent=4) + "\n")
+    print("added hash builtin to ext.json for PHP < 7.4")
+PY
+
 # 5) If license dump still fails for any source, don't abort a finished build.
 #    Soften LicenseDumper to warn instead of throw on missing license files.
 if [[ -f src/SPC/util/LicenseDumper.php ]]; then
