@@ -228,6 +228,48 @@ else:
     print("WARNING: could not find gd.php getUnixConfigureArg")
 PY
 
+# 4e2) PHP < 7.4 GD configure does AC_CHECK_LIB(png, png_write_image). Static
+#     libpng installs as libpng16.a (no libpng.a) and the probe often fails to
+#     pull in -lz. Symlink libpng.a and skip the probe (EXTRA_LIBS already links).
+python3 - <<'PY'
+from pathlib import Path
+
+# Symlink after libpng install
+p = Path("src/SPC/builder/linux/library/libpng.php")
+t = p.read_text()
+if "ln -sfn libpng16.a" in t:
+    print("libpng.php already creates libpng.a symlink")
+elif "->exec('make install-libLTLIBRARIES install-data-am DESTDIR=' . BUILD_ROOT_PATH);" in t:
+    old = "->exec('make install-libLTLIBRARIES install-data-am DESTDIR=' . BUILD_ROOT_PATH);"
+    new = (
+        "->exec('make install-libLTLIBRARIES install-data-am DESTDIR=' . BUILD_ROOT_PATH)\n"
+        "            // PHP < 7.4 GD looks for -lpng; install only ships libpng16.a\n"
+        "            ->exec('ln -sfn libpng16.a ' . BUILD_LIB_PATH . '/libpng.a');"
+    )
+    p.write_text(t.replace(old, new, 1))
+    print("patched libpng.php to symlink libpng.a -> libpng16.a")
+else:
+    print("WARNING: could not find libpng install line to add symlink")
+
+# Skip AC_CHECK_LIB(png) when static link probe is flaky
+p = Path("src/SPC/builder/linux/LinuxBuilder.php")
+t = p.read_text()
+if "ac_cv_lib_png_png_write_image" in t:
+    print("ac_cv_lib_png_png_write_image already present")
+elif "'php_cv_libxml_build_works' => 'yes'," in t:
+    t = t.replace(
+        "'php_cv_libxml_build_works' => 'yes',\n",
+        "'php_cv_libxml_build_works' => 'yes',\n"
+        "            // PHP < 7.4 GD: static AC_CHECK_LIB(png) often fails (libpng16 / -lz).\n"
+        "            'ac_cv_lib_png_png_write_image' => 'yes',\n",
+        1,
+    )
+    p.write_text(t)
+    print("patched LinuxBuilder with ac_cv_lib_png_png_write_image=yes")
+else:
+    print("WARNING: could not inject ac_cv_lib_png into LinuxBuilder")
+PY
+
 # 4f) PHP < 7.4 zip uses --enable-zip/--with-libzip; 7.4+ uses --with-zip.
 #     spc emits --with-zip which configure ignores → zip never built.
 python3 - <<'PY'
