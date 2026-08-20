@@ -219,13 +219,6 @@ download "Typesense ${TYPESENSE_VERSION}" \
   "https://dl.typesense.org/releases/${TYPESENSE_VERSION}/typesense-server-${TYPESENSE_VERSION}-linux-amd64.tar.gz" \
   "typesense-server-${TYPESENSE_VERSION}-linux-amd64.tar.gz"
 
-# ─── WhoDB ────────────────────────────────────────────────────────────────────
-WHODB_VERSION="0.100.0"
-# Installer downloads directly to {whodbDir}/whodb (basename: whodb).
-download "WhoDB ${WHODB_VERSION}" \
-  "https://github.com/clidey/whodb/releases/download/${WHODB_VERSION}/whodb-${WHODB_VERSION}-linux-amd64" \
-  "whodb"
-
 # ─── MaxIO ────────────────────────────────────────────────────────────────────
 # The GitHub asset is named maxio-linux-amd64-{version}.tar.gz but the installer
 # downloads to /tmp/maxio-{version}-linux-amd64.tar.gz, so the cached filename

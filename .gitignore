@@ -32,4 +32,5 @@ home/
 *.swo
 .idea/
 .vscode/
+.superpowers/
 *.test

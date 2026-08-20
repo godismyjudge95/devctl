@@ -41,7 +41,6 @@ The demo container exposes two ports on the host:
 | Host port | Container port | Purpose |
 |---|---|---|
 | `4001` | `4000` | devctl dashboard — all API calls and the Vue SPA |
-| `8161` | `8161` | WhoDB — required because `WhoDBView.vue` hardcodes `http://127.0.0.1:8161` in the iframe src |
 
 `BASE_URL=http://127.0.0.1:4001` is passed to `screenshots.js` by `demo.sh`. Standalone use defaults to `http://127.0.0.1:4000`.
 

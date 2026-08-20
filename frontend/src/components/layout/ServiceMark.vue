@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { Database, Globe, HardDrive, Server } from 'lucide-vue-next'
+import { Globe, HardDrive, Server } from 'lucide-vue-next'
 import caddySvg from '@/assets/services/caddy.svg?raw'
 import valkeySvg from '@/assets/services/valkey.svg?raw'
 import postgresSvg from '@/assets/services/postgres.svg?raw'
@@ -31,7 +31,6 @@ const ICONS: Record<string, string> = {
 
 const FALLBACK: Record<string, Component> = {
   dns: Globe,
-  whodb: Database,
   maxio: HardDrive,
 }
 

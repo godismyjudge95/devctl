@@ -5,7 +5,7 @@ import { test, expect, type Page } from '@playwright/test'
  *
  * Verifies that every route in the Vue SPA loads without uncaught JS errors and
  * renders some visible content. Routes that embed third-party iframes (mail,
- * whodb, maxio, spx) are only checked for the wrapper rendering — the iframe
+ * maxio, spx) are only checked for the wrapper rendering — the iframe
  * content itself may not load in the test environment.
  */
 
@@ -18,11 +18,13 @@ const routes = [
   '/sites/new',
   '/dumps',
   '/logs',
+  '/helpers',
+  '/helpers/install',
   '/settings',
   // iframe-heavy views — assert wrapper renders, not iframe content
   '/mail',
   '/spx',
-  '/whodb',
+  '/databases',
   '/maxio',
 ]
 
@@ -36,7 +38,7 @@ function collectPageErrors(page: Page): () => Error[] {
 // Routes that proxy to optional external services — these may emit "Bad Gateway"
 // or similar network errors when the service is not installed. We still verify
 // the Vue wrapper renders; we just skip the no-JS-errors assertion for them.
-const proxyRoutes = new Set(['/mail', '/spx', '/whodb', '/maxio'])
+const proxyRoutes = new Set(['/mail', '/spx', '/maxio'])
 
 for (const route of routes) {
   test(`${route} — loads without JS errors`, async ({ page }) => {

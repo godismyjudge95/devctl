@@ -5,12 +5,13 @@ import { EditorState } from '@codemirror/state'
 import { StreamLanguage } from '@codemirror/language'
 import { properties } from '@codemirror/legacy-modes/mode/properties'
 import { toml } from '@codemirror/legacy-modes/mode/toml'
+import { standardSQL } from '@codemirror/legacy-modes/mode/sql'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { useDarkMode } from '@/composables/useDarkMode'
 
 const props = defineProps<{
   modelValue: string
-  language?: 'ini' | 'toml' | 'text'
+  language?: 'ini' | 'toml' | 'text' | 'sql'
   readonly?: boolean
 }>()
 
@@ -29,6 +30,8 @@ function buildExtensions() {
     exts.push(StreamLanguage.define(properties))
   } else if (props.language === 'toml') {
     exts.push(StreamLanguage.define(toml))
+  } else if (props.language === 'sql') {
+    exts.push(StreamLanguage.define(standardSQL))
   }
 
   if (isDark.value) {

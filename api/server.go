@@ -12,9 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danielgormly/devctl/database"
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/internal/versioncache"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
@@ -32,7 +34,6 @@ type Server struct {
 	caddy       *sites.CaddyClient
 	siteManager *sites.Manager
 	installers  map[string]install.Installer
-	hooks       *install.HookRegistry
 	serverRoot  string // absolute path to the devctl server directory
 	siteUser    string // OS username of the non-root site user (e.g. "daniel")
 	siteHome    string // home directory of the non-root site user (e.g. "/home/daniel")
@@ -40,10 +41,9 @@ type Server struct {
 	mux         *http.ServeMux
 	uiFS        embed.FS
 
-	// latestVersions caches the most recently fetched latest version string for
-	// each installer, keyed by service ID. Protected by latestVersionsMu.
-	latestVersionsMu sync.RWMutex
-	latestVersions   map[string]string
+	// versions caches the most recently fetched latest version string for
+	// services and helpers, keyed by ID.
+	versions *versioncache.Cache
 
 	// selfVersion is the version compiled into this binary (e.g. "v0.3.0" or "dev").
 	selfVersion string
@@ -55,6 +55,8 @@ type Server struct {
 
 	phpManifestMu sync.RWMutex
 	phpManifest   *php.ReleaseManifest
+
+	dbPool *database.Pool
 }
 
 // NewServer creates and configures the HTTP server.
@@ -68,7 +70,6 @@ func NewServer(
 	caddyClient *sites.CaddyClient,
 	siteManager *sites.Manager,
 	installers map[string]install.Installer,
-	hooks *install.HookRegistry,
 	uiFS embed.FS,
 	serverRoot string,
 	siteUser string,
@@ -87,15 +88,15 @@ func NewServer(
 		caddy:          caddyClient,
 		siteManager:    siteManager,
 		installers:     installers,
-		hooks:          hooks,
 		serverRoot:     serverRoot,
 		siteUser:       siteUser,
 		siteHome:       siteHome,
 		devctlAddr:     devctlAddr,
-		mux:            http.NewServeMux(),
-		uiFS:           uiFS,
-		latestVersions: make(map[string]string),
-		selfVersion:    selfVersion,
+		mux:         http.NewServeMux(),
+		uiFS:        uiFS,
+		versions:    versioncache.New(),
+		selfVersion: selfVersion,
+		dbPool:         database.NewPool(),
 	}
 	s.registerRoutes()
 	return s
@@ -137,6 +138,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/services/{id}/config/{file}", s.handlePutServiceConfig)
 	s.mux.HandleFunc("POST /api/services/{id}/update", s.handleServiceUpdate)
 	s.mux.HandleFunc("GET /api/services/events", s.handleServiceEvents)
+
+	// Helpers (downloaded CLI binaries)
+	s.mux.HandleFunc("GET /api/helpers", s.handleGetHelpers)
+	s.mux.HandleFunc("POST /api/helpers/{id}/install", s.handleHelperInstall)
+	s.mux.HandleFunc("POST /api/helpers/{id}/update", s.handleHelperUpdate)
+	s.mux.HandleFunc("DELETE /api/helpers/{id}", s.handleHelperUninstall)
 
 	// Logs
 	s.mux.HandleFunc("GET /api/logs", s.handleGetLogs)
@@ -207,6 +214,31 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/mail/", s.handleMailProxy)
 	s.mux.HandleFunc("GET /ws/mail", s.handleMailWS)
 
+	// Databases — built-in explorer.
+	s.mux.HandleFunc("GET /api/databases", s.handleListDBEngines)
+	s.mux.HandleFunc("GET /api/databases/{engine}/databases", s.handleListDBCatalogs)
+	s.mux.HandleFunc("POST /api/databases/{engine}/databases", s.handleCreateDBCatalog)
+	s.mux.HandleFunc("DELETE /api/databases/{engine}/databases/{name}", s.handleDropDBCatalog)
+	s.mux.HandleFunc("GET /api/databases/{engine}/tables", s.handleListDBTables)
+	s.mux.HandleFunc("POST /api/databases/{engine}/tables", s.handleCreateDBTable)
+	s.mux.HandleFunc("DELETE /api/databases/{engine}/tables", s.handleDropDBTable)
+	s.mux.HandleFunc("GET /api/databases/{engine}/structure", s.handleDBStructure)
+	s.mux.HandleFunc("GET /api/databases/{engine}/rows", s.handleDBRows)
+	s.mux.HandleFunc("POST /api/databases/{engine}/rows", s.handleInsertDBRow)
+	s.mux.HandleFunc("PUT /api/databases/{engine}/rows", s.handleUpdateDBRow)
+	s.mux.HandleFunc("DELETE /api/databases/{engine}/rows", s.handleDeleteDBRows)
+	s.mux.HandleFunc("POST /api/databases/{engine}/truncate", s.handleTruncateDBTable)
+	s.mux.HandleFunc("POST /api/databases/{engine}/query", s.handleDBQuery)
+	s.mux.HandleFunc("POST /api/databases/{engine}/databases/rename", s.handleRenameDBCatalog)
+	s.mux.HandleFunc("POST /api/databases/{engine}/databases/duplicate", s.handleDuplicateDBCatalog)
+	s.mux.HandleFunc("POST /api/databases/{engine}/tables/rename", s.handleRenameDBTable)
+	s.mux.HandleFunc("POST /api/databases/{engine}/tables/duplicate", s.handleDuplicateDBTable)
+	s.mux.HandleFunc("POST /api/databases/{engine}/columns", s.handleAddDBColumn)
+	s.mux.HandleFunc("PUT /api/databases/{engine}/columns", s.handleAlterDBColumn)
+	s.mux.HandleFunc("DELETE /api/databases/{engine}/columns", s.handleDropDBColumn)
+	s.mux.HandleFunc("POST /api/databases/{engine}/columns/rename", s.handleRenameDBColumn)
+	s.mux.HandleFunc("POST /api/databases/{engine}/export", s.handleExportDB)
+
 	// MaxIO — presign must be registered before the catch-all proxy.
 	s.mux.HandleFunc("GET /api/maxio/presign", s.handleMaxIOPresign)
 	s.mux.HandleFunc("POST /api/maxio/cors/sync", s.handleMaxIOCORSSync)
@@ -223,6 +255,7 @@ func (s *Server) registerRoutes() {
 	// external services (e.g. fake a newer upstream version to trigger update_available).
 	if os.Getenv("DEVCTL_TESTING") == "true" {
 		s.mux.HandleFunc("POST /_testing/services/{id}/latest-version", s.handleTestingSetLatestVersion)
+		s.mux.HandleFunc("POST /_testing/helpers/{id}/latest-version", s.handleTestingSetLatestVersion)
 		s.mux.HandleFunc("POST /_testing/self/latest-version", s.handleTestingSetSelfLatestVersion)
 	}
 

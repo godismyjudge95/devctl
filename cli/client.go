@@ -172,6 +172,19 @@ type ServiceState struct {
 	UpdateAvailable bool   `json:"update_available"`
 }
 
+type HelperState struct {
+	ID              string   `json:"id"`
+	Label           string   `json:"label"`
+	Description     string   `json:"description"`
+	Homepage        string   `json:"homepage"`
+	Aliases         []string `json:"aliases"`
+	Installed       bool     `json:"installed"`
+	Default         bool     `json:"default"`
+	Version         string   `json:"version"`
+	LatestVersion   string   `json:"latest_version"`
+	UpdateAvailable bool     `json:"update_available"`
+}
+
 type PHPVersion struct {
 	Version   string `json:"version"`
 	FPMSocket string `json:"fpm_socket"`
@@ -294,6 +307,23 @@ func (c *Client) ListServices() ([]ServiceState, error) {
 	return out, c.get("/api/services", &out)
 }
 
+func (c *Client) ListHelpers() ([]HelperState, error) {
+	var out []HelperState
+	return out, c.get("/api/helpers", &out)
+}
+
+func (c *Client) InstallHelperSSE(id string, onOutput func(line string)) error {
+	return c.postSSE("/api/helpers/"+id+"/install", "install "+id, onOutput)
+}
+
+func (c *Client) UpdateHelperSSE(id string, onOutput func(line string)) error {
+	return c.postSSE("/api/helpers/"+id+"/update", "update "+id, onOutput)
+}
+
+func (c *Client) UninstallHelper(id string) error {
+	return c.delete("/api/helpers/" + id)
+}
+
 func (c *Client) RestartService(id string) error {
 	return c.post("/api/services/"+id+"/restart", nil, nil)
 }
@@ -319,16 +349,20 @@ func (c *Client) GetServiceCredentials(id string) (map[string]string, error) {
 // A dedicated long-timeout HTTP client is used because installs can take several
 // minutes — the regular 15-second client would time out mid-stream.
 func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error {
+	return c.postSSE("/api/services/"+id+"/install", "install "+id, onOutput)
+}
+
+func (c *Client) postSSE(path, action string, onOutput func(line string)) error {
 	longClient := &http.Client{Timeout: 10 * time.Minute}
 
-	req, err := http.NewRequest(http.MethodPost, c.base+"/api/services/"+id+"/install", nil)
+	req, err := http.NewRequest(http.MethodPost, c.base+path, nil)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 
 	resp, err := longClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST /api/services/%s/install: %w", id, err)
+		return fmt.Errorf("POST %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 
@@ -349,10 +383,8 @@ func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error 
 		} else if line == "" && currentEvent != "" {
 			switch currentEvent {
 			case "output":
-				// data is a JSON-encoded string — decode it.
 				var text string
 				if err := json.Unmarshal([]byte(currentData), &text); err != nil {
-					// Fall back to raw data if it's not a JSON string.
 					text = currentData
 				}
 				if onOutput != nil {
@@ -365,9 +397,9 @@ func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error 
 					Error string `json:"error"`
 				}
 				if err := json.Unmarshal([]byte(currentData), &payload); err != nil {
-					return fmt.Errorf("install %s failed: %s", id, currentData)
+					return fmt.Errorf("%s failed: %s", action, currentData)
 				}
-				return fmt.Errorf("install %s failed: %s", id, payload.Error)
+				return fmt.Errorf("%s failed: %s", action, payload.Error)
 			}
 			currentEvent = ""
 			currentData = ""
@@ -377,7 +409,7 @@ func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("reading SSE stream: %w", err)
 	}
-	return fmt.Errorf("install %s: stream ended without a done or error event", id)
+	return fmt.Errorf("%s: stream ended without a done or error event", action)
 }
 
 // UpdateServiceSSE POSTs to /api/services/{id}/update and streams the SSE
@@ -385,63 +417,7 @@ func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error 
 // Returns nil on a "done" event, or an error on an "error" event or unexpected
 // stream close. A long timeout is used because updates can take several minutes.
 func (c *Client) UpdateServiceSSE(id string, onOutput func(line string)) error {
-	longClient := &http.Client{Timeout: 10 * time.Minute}
-
-	req, err := http.NewRequest(http.MethodPost, c.base+"/api/services/"+id+"/update", nil)
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-
-	resp, err := longClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST /api/services/%s/update: %w", id, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s", strings.TrimSpace(string(b)))
-	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	var currentEvent, currentData string
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "event: ") {
-			currentEvent = strings.TrimPrefix(line, "event: ")
-		} else if strings.HasPrefix(line, "data: ") {
-			currentData = strings.TrimPrefix(line, "data: ")
-		} else if line == "" && currentEvent != "" {
-			switch currentEvent {
-			case "output":
-				var text string
-				if err := json.Unmarshal([]byte(currentData), &text); err != nil {
-					text = currentData
-				}
-				if onOutput != nil {
-					onOutput(text)
-				}
-			case "done":
-				return nil
-			case "error":
-				var payload struct {
-					Error string `json:"error"`
-				}
-				if err := json.Unmarshal([]byte(currentData), &payload); err != nil {
-					return fmt.Errorf("update %s failed: %s", id, currentData)
-				}
-				return fmt.Errorf("update %s failed: %s", id, payload.Error)
-			}
-			currentEvent = ""
-			currentData = ""
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("reading SSE stream: %w", err)
-	}
-	return fmt.Errorf("update %s: stream ended without a done or error event", id)
+	return c.postSSE("/api/services/"+id+"/update", "update "+id, onOutput)
 }
 
 func (c *Client) ListPHPVersions() ([]PHPVersion, error) {

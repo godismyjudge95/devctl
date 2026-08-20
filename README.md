@@ -6,7 +6,7 @@
 
 A local PHP development environment dashboard for Linux. Runs as a **non-root** systemd service (with ambient capabilities for ports 80/443) and serves a browser UI at `http://127.0.0.1:4000`.
 
-devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, WhoDB, MaxIO, ClickHouse) — all from a single dashboard without touching config files.
+devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, MaxIO, ClickHouse) — all from a single dashboard without touching config files.
 
 ![Services page showing Caddy running and available services](docs/screenshot-services.png)
 
@@ -22,6 +22,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
   - [From source](#from-source)
 - [Uninstall](#uninstall)
 - [Services](#services)
+- [Helpers](#helpers)
 - [PHP](#php)
 - [DNS](#dns)
 - [Sites](#sites)
@@ -84,7 +85,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | Object storage (S3) | ❌ | ✅ (RustFS) | ❌ | ✅ (MaxIO) |
 | Mail capture | ✅ (Pro) | ✅ | ✅ | ✅ (Mailpit) |
 | WebSockets (Reverb) | ✅ (Pro) | ✅ | ❌ | ✅ |
-| Database GUI | ❌ | ✅ | ❌ | ✅ (WhoDB) |
+| Database GUI | ❌ | ✅ | ❌ | ✅ (built-in) |
 | Variable dump inspector | ✅ (Pro) | ✅ | ✅ | ✅ (`php_dd`) |
 | Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ❌ |
 | SPX profiler | ❌ | ✅ | ❌ | ✅ |
@@ -222,14 +223,13 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 | Typesense | `127.0.0.1:8108` | `typesense.test` | [dl.typesense.org](https://dl.typesense.org/releases/) | `{serverRoot}/typesense/typesense.ini` |
 | Mailpit | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) | — | [github.com/axllent/mailpit](https://github.com/axllent/mailpit/releases) | `{serverRoot}/mailpit/config.env` (env vars) |
 | Laravel Reverb | `127.0.0.1:7383` | `reverb.test` | [packagist.org/laravel/reverb](https://packagist.org/packages/laravel/reverb) (via Composer) | `{serverRoot}/reverb/.env` |
-| WhoDB | `127.0.0.1:8161` | `whodb.test` | [github.com/clidey/whodb](https://github.com/clidey/whodb/releases) | `{serverRoot}/whodb/config.env` |
 | MaxIO | `127.0.0.1:9900` (S3 API) | `maxio.test`, `s3.maxio.test` | [github.com/coollabsio/maxio](https://github.com/coollabsio/maxio/releases) (always latest) | `{serverRoot}/maxio/config.env` |
 | ClickHouse | `127.0.0.1:8123` (HTTP), `127.0.0.1:9000` (native TCP) | — | [packages.clickhouse.com/tgz](https://packages.clickhouse.com/tgz/stable/) (binary only) | `{serverRoot}/clickhouse/config.xml` |
 | PHP-FPM (per version) | Unix socket | — | [static-php-cli](https://github.com/crazywhalecc/static-php-cli) | `{serverRoot}/php/{version}/php.ini` |
 
 **Notes:**
 
-- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, WhoDB, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
+- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
 - PostgreSQL and ClickHouse run as supervised child processes but drop privileges to `DEVCTL_SITE_USER` (both refuse to start as root against non-root data).
 - PostgreSQL manages extensions via a small registry: [TimescaleDB Community Edition](https://github.com/timescale/timescaledb), [pgvector](https://github.com/pgvector/pgvector) (rebuilt from source with `OPTFLAGS=""` so Percona's `-march=native` AVX-512 binary is replaced with a portable build), and [pg_clickhouse](https://github.com/ClickHouse/pg_clickhouse) (Timescale + pg_clickhouse extracted from `.deb` files into the Percona tree — no APT). Timescale sets `shared_preload_libraries` and runs `CREATE EXTENSION` on the default `postgres` database. When ClickHouse is also installed (either install order), `pg_clickhouse` is wired into **`template1`** only (`CREATE EXTENSION` + foreign server `clickhouse` + user mapping for the superuser), so new databases inherit the FDW. Status: Services → PostgreSQL → Settings, or `devctl postgres:extensions`.
 - Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
@@ -239,18 +239,17 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 - Reverb exposes a Laravel-ready credentials block in the Services view: `REVERB_APP_ID=1001`, `REVERB_APP_KEY=DEVCTL`, `REVERB_APP_SECRET=DEVCTL`, `REVERB_HOST=reverb.test`, `REVERB_PORT=443`, `REVERB_SCHEME=https`.
 - ClickHouse is installed as a single multi-call binary (no APT/Docker). CLI tools (`clickhouse-client`, `clickhouse-local`, …) are symlinked into `{serverRoot}/bin`. It uses the upstream default ports (`8123` HTTP, `9000` native TCP). The process runs as `DEVCTL_SITE_USER` because ClickHouse refuses to start as root against a non-root data directory.
 
-### WhoDB
+### Databases
 
-![WhoDB database explorer](docs/screenshot-whodb.png)
+![Databases explorer](docs/screenshot-whodb.png)
 
-[WhoDB](https://github.com/clidey/whodb) is a lightweight database explorer with a web UI, embedded in the devctl sidebar. Install it from the Services tab. devctl automatically configures pre-populated connection profiles for any installed database service (MySQL, PostgreSQL, Valkey/Redis).
+The **Databases** sidebar opens a built-in explorer (not an iframe) for every local engine that is installed and running:
 
-A **WhoDB** section in Settings lets you:
-- Toggle the credential entry form (`WHODB_DISABLE_CREDENTIAL_FORM`)
-- View auto-detected connections (read-only)
-- Add, edit, and delete manual connections
+- **MySQL** and **PostgreSQL** — full catalog/table browser, inline cell edit, insert/delete rows, create/drop databases and tables
+- **ClickHouse** — browse databases/tables and run SQL (row-level edits are not supported)
+- **SQLite** — auto-discovers Laravel-style `{site}/database/database.sqlite` files under the sites directory
 
-Connections are stored in the devctl SQLite database and applied immediately.
+The layout follows TablePlus: engines and databases on the left, tables in the middle, and a Data / Structure / Query pane on the right. Shift-click selects a range and Ctrl/⌘-click toggles individual databases, tables, or rows. Double-click a cell to edit (when the table has a primary key). The query editor runs SQL against the selected database; Ctrl/⌘+Enter executes.
 
 ### MaxIO
 
@@ -262,6 +261,32 @@ For Laravel, copy the generated `connection.env` values into your `.env`:
 
 ```env
 AWS_ENDPOINT=https://s3.maxio.test
+```
+
+---
+
+## Helpers
+
+Helpers are optional CLI binaries downloaded into `{serverRoot}/bin/` (on `PATH`). They are not supervised services — no start/stop, just install / update / uninstall.
+
+sqlite3 is installed by default. Everything else is opt-in from the **Helpers** page or the CLI.
+
+| Helper | Source | Notes |
+|---|---|---|
+| `sqlite3` | [sqlite.org](https://www.sqlite.org/download.html) | Default. Cannot be uninstalled. |
+| `mago` | [carthage-software/mago](https://github.com/carthage-software/mago) | PHP linter / formatter / analyzer |
+| `phpantom_lsp` | [PHPantom-dev/phpantom_lsp](https://github.com/PHPantom-dev/phpantom_lsp) | PHP language server |
+| `fnm` | [Schniz/fnm](https://github.com/Schniz/fnm) | Fast Node Manager, also linked as `nvm` |
+| `yq` | [mikefarah/yq](https://github.com/mikefarah/yq) | YAML / JSON / XML processor |
+
+devctl checks GitHub (or sqlite.org) daily for newer releases, the same way it does for managed services. An update badge appears in the dashboard when a newer version is available.
+
+```sh
+devctl helpers:list
+devctl helpers:available
+devctl helpers:install mago
+devctl helpers:update mago
+devctl helpers:uninstall mago
 ```
 
 ---
@@ -316,12 +341,7 @@ devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the
 
 devctl also prepends the Composer global bin directory to PATH for every command it runs internally as the site user, so framework tools are accessible in the context of site commands regardless of the shell configuration.
 
-**Dev tools in `{serverRoot}/bin/`:** During install and after a self-update, devctl automatically downloads the latest versions of useful CLI tools into the shared bin directory so they are immediately available in your terminal:
-
-| Tool | Description |
-|---|---|
-| `sqlite3` | Official SQLite CLI for inspecting `.db` files |
-| `fnm` / `nvm` | Fast Node Manager (fnm) with an `nvm` alias — manage Node.js versions |
+**Helpers in `{serverRoot}/bin/`:** sqlite3 is downloaded on install (and kept up to date). Other CLI helpers (mago, phpantom_lsp, fnm, yq) are opt-in — see [Helpers](#helpers). Already-installed helpers are updated after a self-update.
 
 ---
 
@@ -603,6 +623,8 @@ devctl logs:tail caddy --follow   # stream the tail of a log live
 devctl mail:list                  # list captured emails
 devctl settings:get               # show all settings
 devctl settings:set devctl_port=4001  # change a setting (key=value)
+devctl helpers:list               # list installed CLI helpers
+devctl helpers:install mago       # download mago into the shared bin dir
 devctl php:settings               # show PHP ini settings
 devctl php:set memory_limit=512M  # update a PHP ini setting
 devctl dns:status                 # check systemd-resolved DNS setup
@@ -639,6 +661,11 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `sites:php <domain> <version>` | Switch the PHP version for a site |
 | | `sites:spx <domain> enable\|disable` | Enable or disable the SPX profiler for a site |
 | | `sites:cors <domain> enable\|disable` | Enable or disable Caddy CORS header injection for a site |
+| `helpers` | `helpers:list` | List installed CLI helpers and versions |
+| | `helpers:available` | List helpers that can be installed |
+| | `helpers:install <id>` | Download and install a helper |
+| | `helpers:update <id>` | Update a helper to the latest version |
+| | `helpers:uninstall <id>` | Remove an installed helper |
 | `php` | `php:versions` | List installed PHP versions and their FPM status |
 | | `php:settings` | Show current PHP ini settings (applies to all versions) |
 | | `php:set <key=value>...` | Update PHP ini settings |
@@ -692,7 +719,6 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 | `127.0.0.1:8025` | Mailpit web UI | Yes |
 | `127.0.0.1:1025` | Mailpit SMTP | Yes |
 | `127.0.0.1:7383` | Laravel Reverb | No |
-| `127.0.0.1:8161` | WhoDB | No |
 | `127.0.0.1:9900` | MaxIO S3 API | No |
 | `127.0.0.1:8123` | ClickHouse HTTP | No |
 | `127.0.0.1:9000` | ClickHouse native TCP | No |
@@ -720,7 +746,6 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/typesense/` | Typesense binary, `typesense.ini`, data |
 | `{serverRoot}/mailpit/` | Mailpit binary, `config.env`, email storage |
 | `{serverRoot}/reverb/` | Laravel app that runs `php artisan reverb:start` |
-| `{serverRoot}/whodb/` | WhoDB binary, `config.env` |
 | `{serverRoot}/maxio/` | MaxIO binary, `config.env`, object data |
 | `{serverRoot}/clickhouse/` | ClickHouse binary, `config.xml`, `users.xml`, data |
 | `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
@@ -793,7 +818,7 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
   <img src="docs/screenshot-mobile-logs.png" width="200" alt="Logs page on mobile">
   <img src="docs/screenshot-mobile-settings.png" width="200" alt="Settings page on mobile">
   <img src="docs/screenshot-mobile-maxio.png" width="200" alt="MaxIO on mobile">
-  <img src="docs/screenshot-mobile-whodb.png" width="200" alt="WhoDB on mobile">
+  <img src="docs/screenshot-mobile-whodb.png" width="200" alt="Databases explorer on mobile">
 </p>
 
 Additional screenshots:

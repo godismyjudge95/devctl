@@ -30,6 +30,10 @@ var (
 // extracts the sqlite3 binary, and places it in the bin dir.
 var SQLite3 = Tool{
 	Name:             "sqlite3",
+	Label:            "SQLite",
+	Description:      "Official SQLite CLI for inspecting .db files",
+	Homepage:         "https://www.sqlite.org/",
+	Default:          true,
 	LatestRelease:    fetchSQLite3LatestRelease,
 	DownloadTo:       downloadSQLite3Binary,
 	InstalledVersion: installedSQLite3Version,

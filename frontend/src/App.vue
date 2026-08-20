@@ -10,8 +10,9 @@ import { useDumpNotifications } from '@/composables/useDumpNotifications'
 import { useMailNotifications } from '@/composables/useMailNotifications'
 import { usePwaInstall } from '@/composables/usePwaInstall'
 import { useUpdateStore } from '@/stores/update'
+import { useHelpersStore } from '@/stores/helpers'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Download } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Download, Wrench } from 'lucide-vue-next'
 import StatusDot from '@/components/layout/StatusDot.vue'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -46,6 +47,7 @@ const mailStore = useMailStore()
 const sitesStore = useSitesStore()
 const spxStore = useSpxStore()
 const updateStore = useUpdateStore()
+const helpersStore = useHelpersStore()
 
 const mobileNavOpen = ref(false)
 const updateDialogOpen = ref(false)
@@ -61,6 +63,7 @@ onMounted(() => {
   requestMailPermission()
   // Load sites so spxAvailable computed is populated.
   sitesStore.load()
+  helpersStore.fetchAll()
   // Check for a newer devctl release.
   updateStore.checkForUpdate()
   // Mail WS is connected reactively once Mailpit is known to be installed.
@@ -131,12 +134,7 @@ watch(() => servicesStore.mailpitInstalled, (installed) => {
 })
 
 
-// Redirect away from /whodb if WhoDB becomes uninstalled.
-watch(() => servicesStore.whodbInstalled, (installed) => {
-  if (!installed && route.path.startsWith('/whodb')) {
-    router.replace('/services')
-  }
-})
+
 
 // Redirect away from /maxio if MaxIO becomes uninstalled.
 watch(() => servicesStore.maxioInstalled, (installed) => {
@@ -172,8 +170,9 @@ const allNavItems = [
   { path: '/mail',      label: 'Mail',      icon: Mail,       group: 'Developer', requiresMailpit: true },
   { path: '/spx',       label: 'Profiler',  icon: Activity,   group: 'Developer', requiresSPX: true },
   { path: '/logs',      label: 'Logs',      icon: ScrollText, group: 'Developer' },
-  { path: '/whodb',     label: 'WhoDB',     icon: Database,   group: 'Tools', requiresWhoDB: true },
+  { path: '/databases', label: 'Databases', icon: Database,   group: 'Tools' },
   { path: '/maxio',     label: 'Storage',   icon: HardDrive,  group: 'Tools', requiresMaxIO: true },
+  { path: '/helpers',   label: 'Helpers',   icon: Wrench,     group: 'System' },
   { path: '/settings',  label: 'Settings',  icon: Settings,   group: 'System' },
 ]
 
@@ -181,7 +180,6 @@ const navItems = computed(() =>
   allNavItems.filter(item =>
     (!item.requiresMailpit || servicesStore.mailpitInstalled) &&
     (!item.requiresSPX || spxAvailable.value) &&
-    (!item.requiresWhoDB || servicesStore.whodbInstalled) &&
     (!(item as { requiresMaxIO?: boolean }).requiresMaxIO || servicesStore.maxioInstalled)
   )
 )
@@ -202,6 +200,7 @@ function navBadge(path: string): { value: number | string; tone: 'muted' | 'aler
   if (path === '/services' && servicesStore.stoppedCount > 0) return { value: servicesStore.stoppedCount, tone: 'alert' }
   if (path === '/mail' && mailStore.newMailCount > 0) return { value: mailStore.newMailCount, tone: 'live' }
   if (path === '/spx' && spxStore.newProfileCount > 0) return { value: spxStore.newProfileCount, tone: 'live' }
+  if (path === '/helpers' && helpersStore.updatesCount > 0) return { value: helpersStore.updatesCount, tone: 'alert' }
   return null
 }
 </script>

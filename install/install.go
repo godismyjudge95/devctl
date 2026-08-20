@@ -23,6 +23,7 @@ import (
 	"time"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/internal/githubapi"
 	"github.com/danielgormly/devctl/internal/httplog"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
@@ -85,51 +86,9 @@ type Installer interface {
 	UpdateW(ctx context.Context, w io.Writer) error
 }
 
-// ServiceEvent represents a lifecycle event for an installed service.
-type ServiceEvent int
-
-const (
-	// EventInstalled fires after a service is successfully installed.
-	EventInstalled ServiceEvent = iota
-	// EventPurged fires after a service is successfully purged.
-	EventPurged
-)
-
-// HookFunc is called when a service lifecycle event occurs.
-type HookFunc func(id string, event ServiceEvent)
-
-// HookRegistry is a simple registry of lifecycle hooks that are fired when
-// services are installed or purged. It is safe for concurrent registration
-// and dispatch.
-type HookRegistry struct {
-	hooks []HookFunc
-}
-
-// Register adds a hook function to the registry. It will be called for every
-// install/purge event.
-func (r *HookRegistry) Register(fn HookFunc) {
-	r.hooks = append(r.hooks, fn)
-}
-
-// Fire calls all registered hooks with the given service ID and event.
-func (r *HookRegistry) Fire(id string, event ServiceEvent) {
-	for _, fn := range r.hooks {
-		fn(id, event)
-	}
-}
-
-// NewHookRegistry creates an empty HookRegistry.
-func NewHookRegistry() *HookRegistry {
-	return &HookRegistry{}
-}
-
 // NewRegistry builds the full installer map, injecting dependencies into
-// installers that need them. It also wires up the WhoDB hook so that
-// WhoDB's config.env is regenerated whenever postgres, mysql, or redis
-// is installed or purged.
-func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, serverRoot, siteHome string) (map[string]Installer, *HookRegistry) {
-	hooks := NewHookRegistry()
-
+// installers that need them.
+func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *services.Supervisor, siteUser, serverRoot, siteHome string) map[string]Installer {
 	m := make(map[string]Installer)
 	m["postgres"] = &PostgresInstaller{
 		supervisor: supervisor,
@@ -173,15 +132,6 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		serverRoot: serverRoot,
 		siteUser:   siteUser,
 	}
-	whodb := &WhoDBInstaller{
-		siteManager: siteManager,
-		supervisor:  supervisor,
-		serverRoot:  serverRoot,
-		siteUser:    siteUser,
-		queries:     queries,
-		hooks:       hooks,
-	}
-	m["whodb"] = whodb
 	m["dns"] = &DNSInstaller{}
 	m["maxio"] = &MaxIOInstaller{
 		siteManager: siteManager,
@@ -195,19 +145,7 @@ func NewRegistry(siteManager *sites.Manager, queries *dbq.Queries, supervisor *s
 		siteUser:   siteUser,
 	}
 
-	// Register a hook: when postgres, mysql, or redis is installed/purged,
-	// regenerate WhoDB's config.env so pre-configured connections stay in sync.
-	hooks.Register(func(id string, _ ServiceEvent) {
-		switch id {
-		case "postgres", "mysql", "redis":
-			if err := whodb.RegenerateConfig(context.Background()); err != nil {
-				// Non-fatal: WhoDB may not be installed yet.
-				_ = err
-			}
-		}
-	})
-
-	return m, hooks
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -563,39 +501,7 @@ func removeAllExcept(dir string, keep ...string) error {
 // tag_name of the latest release for the given owner/repo (e.g. "caddyserver/caddy").
 // The returned string includes any "v" prefix present in the tag (e.g. "v2.10.0").
 func fetchGitHubLatestVersion(ctx context.Context, ownerRepo string) (string, error) {
-	url := "https://api.github.com/repos/" + ownerRepo + "/releases/latest"
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "devctl/1")
-
-	done := httplog.LogGitHubRequestStart(req.Method, url)
-	resp, err := http.DefaultClient.Do(req)
-	done(resp, err)
-	if err != nil {
-		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github version check %s: HTTP %d", ownerRepo, resp.StatusCode)
-	}
-
-	var payload struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("github version check %s: decode: %w", ownerRepo, err)
-	}
-	if payload.TagName == "" {
-		return "", fmt.Errorf("github version check %s: empty tag_name", ownerRepo)
-	}
-	return payload.TagName, nil
+	return githubapi.LatestTag(ctx, ownerRepo)
 }
 
 // fetchPackagistLatestVersion queries the Packagist API and returns the latest

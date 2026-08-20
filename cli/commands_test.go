@@ -57,6 +57,18 @@ func TestDNSTeardown_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "d
 // dumps
 // ---------------------------------------------------------------------------
 
+func TestHelpersList_IsRegistered(t *testing.T)       { assertCmd(t, cmdCheck{name: "helpers:list"}) }
+func TestHelpersAvailable_IsRegistered(t *testing.T)  { assertCmd(t, cmdCheck{name: "helpers:available"}) }
+func TestHelpersInstall_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "helpers:install", wantArgs: true})
+}
+func TestHelpersUpdate_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "helpers:update", wantArgs: true})
+}
+func TestHelpersUninstall_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "helpers:uninstall", wantArgs: true})
+}
+
 func TestDumpsList_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "dumps:list", wantFlag: "domain"})
 }

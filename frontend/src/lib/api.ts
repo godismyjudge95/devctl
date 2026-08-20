@@ -87,7 +87,28 @@ export type ServiceCredentials = Record<string, string>
 export type ServiceDetails = Record<string, string>
 
 // --- Services ---
+export interface HelperState {
+  id: string
+  label: string
+  description: string
+  homepage: string
+  aliases?: string[]
+  installed: boolean
+  default: boolean
+  version: string
+  latest_version: string
+  update_available: boolean
+}
+
 export const getServices = () => request<ServiceState[]>('GET', '/api/services')
+export const getHelpers = () => request<HelperState[]>('GET', '/api/helpers')
+export function installHelperStream(id: string, callbacks: StreamCallbacks): AbortController {
+  return runServiceStream('POST', `/api/helpers/${id}/install`, callbacks)
+}
+export function updateHelperStream(id: string, callbacks: StreamCallbacks): AbortController {
+  return runServiceStream('POST', `/api/helpers/${id}/update`, callbacks)
+}
+export const uninstallHelper = (id: string) => request<void>('DELETE', `/api/helpers/${id}`)
 export const startService = (id: string) => request<void>('POST', `/api/services/${id}/start`)
 export const stopService = (id: string) => request<void>('POST', `/api/services/${id}/stop`)
 export const restartService = (id: string) => request<void>('POST', `/api/services/${id}/restart`)
@@ -487,39 +508,6 @@ export interface LogFileInfo {
 export const getLogs = () => request<LogFileInfo[]>('GET', '/api/logs')
 export const clearLog = (id: string) => request<void>('DELETE', `/api/logs/${encodeURIComponent(id)}`)
 
-// --- WhoDB ---
-export interface WhoDBConnection {
-  alias: string
-  host?: string
-  port?: string
-  username?: string
-  password?: string
-  database?: string
-}
-
-export interface WhoDBManualConnection {
-  type: string  // 'postgres' | 'mysql' | 'redis'
-  conn: WhoDBConnection
-}
-
-export interface WhoDBAutoConnection {
-  source: string
-  type: string
-  conn: WhoDBConnection
-}
-
-export interface WhoDBSettings {
-  disable_credential_form: boolean
-  manual_connections: WhoDBManualConnection[]
-  auto_connections: WhoDBAutoConnection[]
-}
-
-export const getWhoDBSettings = () =>
-  request<WhoDBSettings>('GET', '/api/services/whodb/settings')
-
-export const putWhoDBSettings = (data: Pick<WhoDBSettings, 'disable_credential_form' | 'manual_connections'>) =>
-  request<{ status: string }>('PUT', '/api/services/whodb/settings', data)
-
 // --- MaxIO ---
 
 export interface MaxIOBucket {
@@ -715,6 +703,211 @@ export async function createFolder(bucket: string, key: string): Promise<void> {
 /** Same-origin S3 proxy path for a bucket object (avoids cross-origin CORS to s3.maxio.test). */
 export function maxioObjectPath(bucket: string, key: string): string {
   return `/api/maxio/s3/${encodeURIComponent(bucket)}/${key}`
+}
+
+// --- Databases ---
+
+export interface DatabaseCapabilities {
+  create_database: boolean
+  drop_database: boolean
+  create_table: boolean
+  drop_table: boolean
+  truncate: boolean
+  row_edit: boolean
+  row_insert: boolean
+  schemas: boolean
+  rename_database: boolean
+  duplicate_database: boolean
+  rename_table: boolean
+  duplicate_table: boolean
+  alter_table: boolean
+}
+
+export interface DatabaseEngine {
+  id: string
+  label: string
+  kind: string
+  installed: boolean
+  running: boolean
+  host?: string
+  port?: string
+  capabilities: DatabaseCapabilities
+}
+
+export interface DatabaseCatalog {
+  name: string
+  system: boolean
+}
+
+export interface DatabaseTable {
+  name: string
+  schema?: string
+  type: string
+  rows?: number | null
+  engine?: string
+  comment?: string
+  internal?: boolean
+}
+
+export interface DatabaseColumn {
+  name: string
+  type: string
+  nullable: boolean
+  default?: string | null
+  key?: string
+  extra?: string
+  comment?: string
+  primary_key: boolean
+  auto_increment: boolean
+}
+
+export interface DatabaseIndex {
+  name: string
+  unique: boolean
+  primary: boolean
+  columns: string[]
+  type?: string
+}
+
+export interface DatabaseStructure {
+  columns: DatabaseColumn[]
+  indexes: DatabaseIndex[]
+  create_sql?: string
+  primary_key: string[]
+}
+
+export interface DatabaseRowsResult {
+  columns: DatabaseColumn[]
+  rows: unknown[][]
+  total: number
+  estimated: boolean
+  limit: number
+  offset: number
+  primary_key: string[]
+  duration_ms: number
+}
+
+export interface DatabaseQueryResult {
+  columns: DatabaseColumn[]
+  rows: unknown[][]
+  rows_affected: number
+  limited: boolean
+  duration_ms: number
+  statement: string
+}
+
+export interface DatabaseColumnDef {
+  name: string
+  type: string
+  nullable: boolean
+  default?: string | null
+  primary_key: boolean
+  unique: boolean
+  auto_increment: boolean
+}
+
+export const listDatabaseEngines = () =>
+  request<{ engines: DatabaseEngine[] }>('GET', '/api/databases')
+
+export const listDatabaseCatalogs = (engine: string) =>
+  request<{ databases: DatabaseCatalog[] }>('GET', `/api/databases/${engine}/databases`)
+
+export const createDatabaseCatalog = (engine: string, name: string) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/databases`, { name })
+
+export const dropDatabaseCatalog = (engine: string, name: string) =>
+  request<{ status: string }>('DELETE', `/api/databases/${engine}/databases/${encodeURIComponent(name)}`)
+
+function dbQuery(params: Record<string, string | number | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === '') continue
+    q.set(k, String(v))
+  }
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
+
+export const listDatabaseTables = (engine: string, database: string) =>
+  request<{ tables: DatabaseTable[] }>('GET', `/api/databases/${engine}/tables${dbQuery({ database })}`)
+
+export const getDatabaseStructure = (engine: string, database: string, table: string, schema?: string) =>
+  request<DatabaseStructure>('GET', `/api/databases/${engine}/structure${dbQuery({ database, table, schema })}`)
+
+export const getDatabaseRows = (
+  engine: string,
+  opts: { database: string; table: string; schema?: string; limit?: number; offset?: number; sort?: string; dir?: string; where?: string },
+) =>
+  request<DatabaseRowsResult>('GET', `/api/databases/${engine}/rows${dbQuery(opts)}`)
+
+export const insertDatabaseRow = (engine: string, body: { database: string; schema?: string; table: string; values: Record<string, unknown> }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/rows`, body)
+
+export const updateDatabaseRow = (engine: string, body: { database: string; schema?: string; table: string; key: Record<string, unknown>; values: Record<string, unknown> }) =>
+  request<{ status: string }>('PUT', `/api/databases/${engine}/rows`, body)
+
+export const deleteDatabaseRows = (engine: string, body: { database: string; schema?: string; table: string; keys: Record<string, unknown>[] }) =>
+  request<{ status: string }>('DELETE', `/api/databases/${engine}/rows`, body)
+
+export const createDatabaseTable = (engine: string, body: { database: string; schema?: string; name: string; columns: DatabaseColumnDef[] }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/tables`, body)
+
+export const dropDatabaseTable = (engine: string, body: { database: string; schema?: string; table: string }) =>
+  request<{ status: string }>('DELETE', `/api/databases/${engine}/tables`, body)
+
+export const truncateDatabaseTable = (engine: string, body: { database: string; schema?: string; table: string }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/truncate`, body)
+
+export const runDatabaseQuery = (engine: string, body: { database: string; sql: string; limit?: number }) =>
+  request<DatabaseQueryResult>('POST', `/api/databases/${engine}/query`, body)
+
+export const renameDatabaseCatalog = (engine: string, from: string, to: string) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/databases/rename`, { from, to })
+
+export const duplicateDatabaseCatalog = (engine: string, from: string, to: string) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/databases/duplicate`, { from, to })
+
+export const renameDatabaseTable = (engine: string, body: { database: string; schema?: string; from: string; to: string }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/tables/rename`, body)
+
+export const duplicateDatabaseTable = (engine: string, body: { database: string; schema?: string; from: string; to: string }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/tables/duplicate`, body)
+
+export const addDatabaseColumn = (engine: string, body: { database: string; schema?: string; table: string; column: DatabaseColumnDef }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/columns`, body)
+
+export const dropDatabaseColumn = (engine: string, body: { database: string; schema?: string; table: string; column: string }) =>
+  request<{ status: string }>('DELETE', `/api/databases/${engine}/columns`, body)
+
+export const alterDatabaseColumn = (engine: string, body: { database: string; schema?: string; table: string; column: string; next: DatabaseColumnDef }) =>
+  request<{ status: string }>('PUT', `/api/databases/${engine}/columns`, body)
+
+export const renameDatabaseColumn = (engine: string, body: { database: string; schema?: string; table: string; from: string; to: string }) =>
+  request<{ status: string }>('POST', `/api/databases/${engine}/columns/rename`, body)
+
+export async function exportDatabaseTable(
+  engine: string,
+  body: { database: string; schema?: string; table: string; format: string; where?: string; sort?: string; dir?: string },
+): Promise<void> {
+  const res = await fetch(`/api/databases/${engine}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? res.statusText)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') ?? ''
+  const match = /filename="([^"]+)"/.exec(cd)
+  const filename = match?.[1] ?? `${body.table}.${body.format}`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 /** Fetch object bytes via the devctl S3 proxy (same-origin; no presigned URL / CORS). */

@@ -14,7 +14,6 @@
 #
 # Container: devctl-demo — destroyed and recreated on every full run.
 # Dashboard forwarded to: http://127.0.0.1:4001
-# WhoDB     forwarded to: http://127.0.0.1:8161 (must match WhoDBView.vue hardcode)
 
 set -euo pipefail
 
@@ -22,7 +21,6 @@ CONTAINER="devctl-demo"
 SERVER_ROOT="/home/testuser/ddev/sites/server"
 SITES_ROOT="/home/testuser/ddev/sites"
 DEMO_PORT="4001"   # host port → container:4000
-WHODB_PORT="8161"  # host port → container:8161 (iframe in WhoDBView.vue hardcodes this)
 
 # ─── Colour helpers ────────────────────────────────────────────────────────────
 if [ -t 1 ] && command -v tput &>/dev/null && tput colors &>/dev/null && [ "$(tput colors)" -ge 8 ]; then
@@ -306,7 +304,7 @@ create_site "statamic.test"  "${SITES_ROOT}/statamic.test"
 create_site "wordpress.test" "${SITES_ROOT}/wordpress.test"
 
 # ─── Install optional services ────────────────────────────────────────────────
-# Running: Valkey/Redis, Mailpit, MySQL, Meilisearch, WhoDB, MaxIO
+# Running: Valkey/Redis, Mailpit, MySQL, Meilisearch, MaxIO
 # Not installed (shown as installable): PostgreSQL, Typesense, Reverb
 
 install_service "redis"       "Valkey/Redis"  300
@@ -320,9 +318,6 @@ wait_running    "mysql"       "MySQL"         90
 
 install_service "meilisearch" "Meilisearch"   300
 wait_running    "meilisearch" "Meilisearch"   30
-
-install_service "whodb"       "WhoDB"         300
-wait_running    "whodb"       "WhoDB"         120
 
 install_service "maxio"       "MaxIO"         300
 wait_running    "maxio"       "MaxIO"         30
@@ -669,13 +664,9 @@ success "Demo data seeded."
 # ─── Set up port proxy devices ────────────────────────────────────────────────
 info "Setting up port forwarding..."
 incus config device remove "$CONTAINER" port4001 2>/dev/null || true
-incus config device remove "$CONTAINER" port8161 2>/dev/null || true
 
 incus config device add "$CONTAINER" port4001 proxy \
   listen="tcp:127.0.0.1:${DEMO_PORT}" connect="tcp:127.0.0.1:4000"
-
-incus config device add "$CONTAINER" port8161 proxy \
-  listen="tcp:127.0.0.1:${WHODB_PORT}" connect="tcp:127.0.0.1:${WHODB_PORT}"
 
 success "Port forwarding configured."
 
@@ -703,7 +694,6 @@ printf '%s───────────────────────�
 printf '%s devctl demo container ready%s\n'                              "${BOLD}" "${RESET}"
 printf ' Container : %s\n'                                               "${CONTAINER}"
 printf ' Dashboard : %shttp://127.0.0.1:%s%s\n'                         "${CYAN}" "${DEMO_PORT}" "${RESET}"
-printf ' WhoDB UI  : %shttp://127.0.0.1:%s%s\n'                         "${CYAN}" "${WHODB_PORT}" "${RESET}"
 printf '
  Re-run screenshots without rebuilding:
 '

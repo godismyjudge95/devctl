@@ -25,7 +25,6 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
 	postgresDir := paths.ServiceDir(serverRoot, "postgres")
 	reverbDir := paths.ServiceDir(serverRoot, "reverb")
-	whodbDir := paths.ServiceDir(serverRoot, "whodb")
 	maxioDir := paths.ServiceDir(serverRoot, "maxio")
 	clickhouseDir := paths.ServiceDir(serverRoot, "clickhouse")
 	return []services.Definition{
@@ -189,22 +188,6 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			},
 		},
 		{
-			ID:                    "whodb",
-			Label:                 "WhoDB",
-			Description:           "Lightweight database explorer with web UI",
-			InstallVersion:        "0.100.0",
-			Installable:           true,
-			Managed:               true,
-			ManagedCmd:            whodbDir + "/whodb",
-			ManagedArgs:           "",
-			ManagedDir:            whodbDir,
-			ManagedEnvFile:        whodbDir + "/config.env",
-			Log:                   paths.LogPath(serverRoot, "whodb"),
-			HealthCheck:           "curl -sf http://localhost:8161/",
-			HealthCheckRetries:    6,
-			HealthCheckRetryDelay: 500 * time.Millisecond,
-		},
-		{
 			ID:              "maxio",
 			Label:           "MaxIO",
 			Description:     "High-performance S3-compatible object storage",
@@ -223,20 +206,20 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			CredentialsFile: maxioDir + "/connection.env",
 		},
 		{
-			ID:                    "clickhouse",
-			Label:                 "ClickHouse",
-			Description:           "Fast open-source column-oriented analytics database",
-			InstallVersion:        "25.8.28.1",
-			Installable:           true,
-			HasCredentials:        true,
-			Managed:               true,
-			ManagedCmd:            clickhouseDir + "/clickhouse",
-			ManagedArgs:           "server --config-file=./config.xml",
-			ManagedDir:            clickhouseDir,
+			ID:             "clickhouse",
+			Label:          "ClickHouse",
+			Description:    "Fast open-source column-oriented analytics database",
+			InstallVersion: "25.8.28.1",
+			Installable:    true,
+			HasCredentials: true,
+			Managed:        true,
+			ManagedCmd:     clickhouseDir + "/clickhouse",
+			ManagedArgs:    "server --config-file=./config.xml",
+			ManagedDir:     clickhouseDir,
 			// ClickHouse refuses to run as root when the data dir is owned by
 			// another user (MISMATCHING_USERS_FOR_PROCESS_AND_DATA). Drop to the
 			// site user like PostgreSQL.
-			ManagedUser:           siteUser,
+			ManagedUser: siteUser,
 			// Disables the watchdog fork so the supervisor tracks a single process.
 			ManagedEnvFile:        clickhouseDir + "/clickhouse.env",
 			Version:               clickhouseDir + "/clickhouse --version",

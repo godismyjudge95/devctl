@@ -11,7 +11,8 @@ Commit all files to the repo BUT DO NOT PUSH
 # Backlog
 
 - set up a devctl.test proxy domain in caddy to the devctl dashboard so we can have https - still allow access on the raw 4000 port though
-- add yq from github releases to server binaries
+- recapture Databases screenshots (`screenshot-whodb.png` / `screenshot-mobile-whodb.png`) for the README now that WhoDB is gone and the explorer is custom
+- add Helpers page screenshot for the README
 
 # Feature ideas (notes from Yerd / Lerd comparison)
 
@@ -91,7 +92,7 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 - Lerd `db:move` (same-family service → service, repoint `.env`): https://lerd.sh/reference/commands
 - Lerd client shims (`mysqldump`, `pg_dump`, etc.) live in the same database doc: https://lerd.sh/usage/database
 
-**Notes:** Cross-engine transfer is harder than Lerd’s same-family `db:move` — plan for schema/type limitations, dump→transform→load, and clear failure UX. SQLite path is especially useful for Laravel default apps. WhoDB remains the browse UI; lifecycle is management/API/CLI.
+**Notes:** Cross-engine transfer is harder than Lerd’s same-family `db:move` — plan for schema/type limitations, dump→transform→load, and clear failure UX. SQLite path is especially useful for Laravel default apps. The Databases tab is the browse UI; lifecycle is management/API/CLI.
 
 ---
 
@@ -160,5 +161,7 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 
 # Completed
+
+- add yq from github releases to server binaries (2026-08-20) — shipped as an opt-in helper in the Helpers catalog
 
 

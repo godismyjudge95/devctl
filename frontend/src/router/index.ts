@@ -10,9 +10,11 @@ import DumpsView from '@/views/DumpsView.vue'
 import MailView from '@/views/MailView.vue'
 import SpxView from '@/views/SpxView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import HelpersView from '@/views/HelpersView.vue'
+import HelperInstallView from '@/views/HelperInstallView.vue'
 import LogsView from '@/views/LogsView.vue'
 import ConfigEditorView from '@/views/ConfigEditorView.vue'
-import WhoDBView from '@/views/WhoDBView.vue'
+import DatabasesView from '@/views/DatabasesView.vue'
 import MaxIOView from '@/views/MaxIOView.vue'
 
 const router = createRouter({
@@ -30,9 +32,12 @@ const router = createRouter({
     { path: '/dumps',     component: DumpsView },
     { path: '/mail',      component: MailView,    meta: { fullWidth: true } },
     { path: '/spx',       component: SpxView,     meta: { fullWidth: true } },
-    { path: '/whodb',     component: WhoDBView,   meta: { fullWidth: true } },
+    { path: '/databases', component: DatabasesView, meta: { fullWidth: true } },
+    { path: '/whodb',     redirect: '/databases' }, // leftover bookmark
     { path: '/maxio',     component: MaxIOView,   meta: { fullWidth: true } },
     { path: '/logs',      component: LogsView,    meta: { fullWidth: true } },
+    { path: '/helpers',   component: HelpersView },
+    { path: '/helpers/install', component: HelperInstallView },
     { path: '/settings',  component: SettingsView },
   ],
 })

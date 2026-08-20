@@ -28,22 +28,23 @@ The README must always contain a full TOC with anchor links. The sections must a
    - From source
 5. Uninstall
 6. Services
-7. PHP
-8. DNS
-9. Sites
-10. Git Worktrees
-11. PHP Dumps (`php_dd`)
-12. SPX Profiler
-13. Mail
-14. Config Editor
-15. Logs
-16. Browser Notifications
-17. PWA (Install as an App)
-18. CLI
-19. Ports
-20. Data Paths
-21. Contributing & Development
-22. License
+7. Helpers
+8. PHP
+9. DNS
+10. Sites
+11. Git Worktrees
+12. PHP Dumps (`php_dd`)
+13. SPX Profiler
+14. Mail
+15. Config Editor
+16. Logs
+17. Browser Notifications
+18. PWA (Install as an App)
+19. CLI
+20. Ports
+21. Data Paths
+22. Contributing & Development
+23. License
 
 Do not add, remove, or reorder sections without updating the TOC anchor links to match.
 
@@ -59,6 +60,7 @@ Cross-check these files when updating each section to ensure accuracy.
 | Installation | `selfinstall/selfinstall.go` (`--user`, `--sites-dir`, `--path`, `--yes` flags; default paths) |
 | Uninstall | `selfinstall/selfinstall.go` (`--yes`, `--purge-services` flags; what is removed) |
 | Services (table) | `config/defaults.go` (all service IDs, ports, config file paths); `install/*.go` (download URLs, binary locations) |
+| Helpers | `tools/` (AllTools, Default flag); `api/helpers.go` |
 | PHP | `install/php.go`, `php/php.go`; `config/defaults.go` (PHP FPM config path pattern) |
 | DNS | `dnsserver/` package; `api/` DNS settings handlers; `selfinstall/selfinstall.go` |
 | Sites | `sites/` package; `api/server.go` site routes |
@@ -85,7 +87,7 @@ The services table has five columns: **Service**, **Port(s)**, **`.test` vhost**
 - `.test` vhost: write the hostname (e.g. `meilisearch.test`) or `—` if the service has no vhost.
 - Download source: link the exact domain and path where the installer fetches the binary. Verify in `install/{service}.go`.
 - Config file: use `{serverRoot}/...` notation. Verify the exact path in `config/defaults.go`.
-- Rows appear in this order: Caddy, DNS Server, Valkey, PostgreSQL, MySQL, Meilisearch, Typesense, Mailpit, Laravel Reverb, WhoDB, RustFS, PHP-FPM.
+- Rows appear in this order: Caddy, DNS Server, Valkey, PostgreSQL, MySQL, Meilisearch, Typesense, Mailpit, Laravel Reverb, MaxIO, ClickHouse, PHP-FPM.
 - Services notes after the table must mention:
   - Supervised vs PostgreSQL privilege drop
   - Valkey's service ID `redis` (for Laravel compatibility)

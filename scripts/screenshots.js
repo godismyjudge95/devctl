@@ -152,13 +152,11 @@ const PAGES = [
     extraWait:  1000,
   },
   {
-    // WhoDB: embeds an iframe at http://127.0.0.1:8161.
-    // The demo.sh proxy device forwards host:8161 → container:8161 so the
-    // iframe loads correctly when running against the demo container.
-    route:      "/whodb",
+    // Databases: built-in TablePlus-style explorer.
+    route:      "/databases",
     desktop:    "screenshot-whodb.png",
     mobile:     "screenshot-mobile-whodb.png",
-    extraWait:  4000,   // allow the iframe time to fully render
+    extraWait:  1000,
   },
 ];
 

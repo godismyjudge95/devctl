@@ -135,6 +135,47 @@ func httpPut(t *testing.T, path string, jsonBody any) ([]byte, int) {
 	return body, resp.StatusCode
 }
 
+// httpGetRaw performs a GET request and returns body + status without asserting 200.
+func httpGetRaw(t *testing.T, path string) ([]byte, int) {
+	t.Helper()
+	url := fmt.Sprintf("%s%s", baseURL(), path)
+	resp, err := http.Get(url) //nolint:noctx
+	if err != nil {
+		t.Fatalf("GET %s: request failed: %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("GET %s: failed to read body: %v", url, err)
+	}
+	return body, resp.StatusCode
+}
+
+// httpDeleteJSON performs a DELETE request with a JSON body.
+func httpDeleteJSON(t *testing.T, path string, jsonBody any) ([]byte, int) {
+	t.Helper()
+	url := fmt.Sprintf("%s%s", baseURL(), path)
+	encoded, err := json.Marshal(jsonBody)
+	if err != nil {
+		t.Fatalf("DELETE %s: marshal body: %v", url, err)
+	}
+	req, err := http.NewRequest(http.MethodDelete, url, bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("DELETE %s: build request: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE %s: request failed: %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("DELETE %s: read body: %v", url, err)
+	}
+	return body, resp.StatusCode
+}
+
 // httpDelete performs a DELETE request to the given path.
 // Returns the response body bytes and the HTTP status code.
 func httpDelete(t *testing.T, path string) ([]byte, int) {

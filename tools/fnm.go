@@ -1,15 +1,12 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/danielgormly/devctl/internal/httplog"
 )
 
 // FNM is the Tool definition for fnm (Fast Node Manager), a fast
@@ -21,6 +18,9 @@ import (
 // Releases: https://github.com/Schniz/fnm/releases
 var FNM = Tool{
 	Name:             "fnm",
+	Label:            "fnm",
+	Description:      "Fast Node Manager, aliased as nvm",
+	Homepage:         "https://github.com/Schniz/fnm",
 	Aliases:          []string{"nvm"},
 	LatestRelease:    fetchFNMLatestRelease,
 	DownloadTo:       downloadFNMBinary,
@@ -54,21 +54,9 @@ func fetchFNMLatestRelease(ctx context.Context) (Release, error) {
 func downloadFNMBinary(ctx context.Context, rel Release, destPath string) error {
 	tmpZip := destPath + ".zip"
 	defer os.Remove(tmpZip)
-
-	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	done := httplog.LogGitHubCurlDownloadStart(rel.DownloadURL)
-	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", tmpZip, rel.DownloadURL)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	if err := cmd.Run(); err != nil {
-		done(err)
-		return fmt.Errorf("curl %s: %w\n%s", rel.DownloadURL, err, buf.String())
+	if err := downloadURL(ctx, rel.DownloadURL, tmpZip); err != nil {
+		return err
 	}
-	done(nil)
-
 	return extractBinaryFromZip(tmpZip, "fnm", destPath)
 }
 

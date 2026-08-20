@@ -302,7 +302,8 @@ func run() error {
 	// --- Install registry ---
 	// Build after siteManager and supervisor are ready so ReverbInstaller
 	// can receive its dependencies.
-	installRegistry, installHooks := install.NewRegistry(siteManager, queries, supervisor, cfg.SiteUser, cfg.ServerRoot, cfg.SiteHome)
+	installRegistry := install.NewRegistry(siteManager, queries, supervisor, cfg.SiteUser, cfg.ServerRoot, cfg.SiteHome)
+	install.CleanupRemovedWhoDB(ctx, siteManager, cfg.ServerRoot)
 
 	// Wire installer IsInstalled checks into the manager so GetState works.
 	for id, inst := range installRegistry {
@@ -314,7 +315,7 @@ func run() error {
 	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
 	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, installHooks, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr, version)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr, version)
 
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {
@@ -361,6 +362,7 @@ func run() error {
 	// Runs once per day at 3am.
 	go runUpdateChecker(runCtx, srv, installRegistry)
 	go runPHPUpdateChecker(runCtx, srv, cfg.ServerRoot)
+	go runHelperUpdateChecker(runCtx, srv)
 
 	// --- Self-update checker ---
 	// Checks GitHub for a newer devctl release once per day at 3am.
@@ -474,6 +476,26 @@ func runSelfUpdateChecker(ctx context.Context, srv *api.Server) {
 		srv.SetSelfLatestVersion(latest)
 	}
 
+	for {
+		now := time.Now()
+		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(next3am)):
+			check()
+		}
+	}
+}
+
+func runHelperUpdateChecker(ctx context.Context, srv *api.Server) {
+	check := func() {
+		log.Printf("helper-update-checker: checking for updates...")
+		srv.RecheckHelpersLatest(ctx)
+		log.Printf("helper-update-checker: done")
+	}
+
+	check()
 	for {
 		now := time.Now()
 		next3am := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())

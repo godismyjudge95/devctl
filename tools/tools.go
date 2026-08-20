@@ -9,15 +9,16 @@
 package tools
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
+	"github.com/danielgormly/devctl/internal/githubapi"
 	"github.com/danielgormly/devctl/internal/httplog"
 )
 
@@ -37,11 +38,25 @@ type Tool struct {
 	// Name is the binary name as it appears in the bin dir (e.g. "sqlite3").
 	Name string
 
+	// Label is the human-readable display name (e.g. "SQLite"). Falls back to
+	// Name when empty.
+	Label string
+
+	// Description is a one-line summary shown in the install picker.
+	Description string
+
+	// Homepage is the upstream project URL.
+	Homepage string
+
 	// Aliases is an optional list of extra names that should be symlinked to
 	// the installed binary inside binDir (e.g. ["nvm"] for fnm). Symlinks are
 	// created (or refreshed) every time EnsureLatest runs, even when the binary
 	// is already up-to-date.
 	Aliases []string
+
+	// Default marks a tool that is installed on first setup and cannot be
+	// uninstalled from the catalog (sqlite3).
+	Default bool
 
 	// LatestRelease fetches metadata about the latest upstream release.
 	LatestRelease func(ctx context.Context) (Release, error)
@@ -56,12 +71,28 @@ type Tool struct {
 	InstalledVersion func(ctx context.Context, binPath string) string
 }
 
+// State is the live catalog row returned by the API.
+type State struct {
+	ID              string   `json:"id"`
+	Label           string   `json:"label"`
+	Description     string   `json:"description"`
+	Homepage        string   `json:"homepage"`
+	Aliases         []string `json:"aliases,omitempty"`
+	Installed       bool     `json:"installed"`
+	Default         bool     `json:"default"`
+	Version         string   `json:"version"`
+	LatestVersion   string   `json:"latest_version"`
+	UpdateAvailable bool     `json:"update_available"`
+}
+
 // AllTools is the ordered list of every tool devctl manages. Install/update
 // routines iterate this slice so registering here is sufficient.
 var AllTools = []Tool{
 	SQLite3,
-	FNM,
 	Mago,
+	PHPantom,
+	FNM,
+	YQ,
 }
 
 // ---------------------------------------------------------------------------
@@ -71,39 +102,25 @@ var AllTools = []Tool{
 // fetchGitHubTag queries the GitHub Releases API for the latest release tag of
 // ownerRepo (e.g. "Schniz/fnm") and returns the raw tag_name (e.g. "v1.39.0").
 func fetchGitHubTag(ctx context.Context, ownerRepo string) (string, error) {
-	url := "https://api.github.com/repos/" + ownerRepo + "/releases/latest"
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	return githubapi.LatestTag(ctx, ownerRepo)
+}
+
+// downloadURL curls url into destPath.
+func downloadURL(ctx context.Context, url, destPath string) error {
+	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
+	done := httplog.LogGitHubCurlDownloadStart(url)
+	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", destPath, url)
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if err := cmd.Run(); err != nil {
+		done(err)
+		return fmt.Errorf("curl %s: %w\n%s", url, err, buf.String())
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "devctl/1")
-
-	done := httplog.LogGitHubRequestStart(req.Method, url)
-	resp, err := http.DefaultClient.Do(req)
-	done(resp, err)
-	if err != nil {
-		return "", fmt.Errorf("github version check %s: %w", ownerRepo, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github version check %s: HTTP %d", ownerRepo, resp.StatusCode)
-	}
-
-	var payload struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("github version check %s: decode: %w", ownerRepo, err)
-	}
-	if payload.TagName == "" {
-		return "", fmt.Errorf("github version check %s: empty tag_name", ownerRepo)
-	}
-	return payload.TagName, nil
+	done(nil)
+	return nil
 }
 
 // EnsureLatest checks whether the tool at {binDir}/{tool.Name} is already at
@@ -158,11 +175,31 @@ func EnsureLatest(ctx context.Context, t Tool, binDir string, w io.Writer) error
 	return nil
 }
 
-// EnsureAllLatest calls EnsureLatest for every tool in AllTools, writing a
-// labelled step to w for each one. Individual tool errors are printed to w as
-// warnings rather than aborting the whole run.
+// EnsureAllLatest installs default tools (sqlite3) and updates any other tool
+// whose binary is already present. Opt-in tools that have never been installed
+// are left alone.
 func EnsureAllLatest(ctx context.Context, binDir string, w io.Writer) {
-	for _, t := range AllTools {
+	ensureAll(ctx, AllTools, binDir, w)
+}
+
+func ensureAll(ctx context.Context, list []Tool, binDir string, w io.Writer) {
+	done := map[string]bool{}
+	for _, t := range list {
+		if !t.Default {
+			continue
+		}
+		if err := EnsureLatest(ctx, t, binDir, w); err != nil {
+			fmt.Fprintf(w, "warning: %v\n", err)
+		}
+		done[t.Name] = true
+	}
+	for _, t := range list {
+		if done[t.Name] {
+			continue
+		}
+		if !isPresent(t, binDir) {
+			continue
+		}
 		if err := EnsureLatest(ctx, t, binDir, w); err != nil {
 			fmt.Fprintf(w, "warning: %v\n", err)
 		}

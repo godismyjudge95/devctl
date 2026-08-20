@@ -15,6 +15,7 @@ import (
 
 	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/internal/versioncache"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
@@ -234,9 +235,9 @@ func writeNeedsElevation(w http.ResponseWriter, command string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
 	json.NewEncoder(w).Encode(map[string]any{
-		"error":            "needs elevation",
-		"needs_elevation":  true,
-		"command":          command,
+		"error":           "needs elevation",
+		"needs_elevation": true,
+		"command":         command,
 	})
 }
 
@@ -295,11 +296,6 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 	if err := inst.InstallW(instCtx, pw); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
-	}
-
-	// Fire lifecycle hooks so dependent services (e.g. WhoDB) can react.
-	if s.hooks != nil {
-		s.hooks.Fire(id, install.EventInstalled)
 	}
 
 	// Auto-start the service if it is managed (supervised child process).
@@ -391,11 +387,6 @@ func (s *Server) handleServicePurge(w http.ResponseWriter, r *http.Request) {
 	if err := inst.PurgeW(r.Context(), pw, preserveData); err != nil {
 		sendSSE(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
-	}
-
-	// Fire lifecycle hooks so dependent services (e.g. WhoDB) can react.
-	if s.hooks != nil {
-		s.hooks.Fire(id, install.EventPurged)
 	}
 
 	go s.poller.Poll()
@@ -653,26 +644,19 @@ var _ = services.StatusRunning
 // SetLatestVersion stores the fetched latest version for a service. Safe for
 // concurrent use. Called by the background update-check goroutine in main.go.
 func (s *Server) SetLatestVersion(id, version string) {
-	s.latestVersionsMu.Lock()
-	s.latestVersions[id] = version
-	s.latestVersionsMu.Unlock()
+	s.versions.Set(id, version)
 }
 
 // DeleteLatestVersion removes the cached latest version for a service. Called
 // after a successful update so that update_available clears immediately, even
 // if the subsequent recheckLatestVersion call fails (e.g. no network).
 func (s *Server) DeleteLatestVersion(id string) {
-	s.latestVersionsMu.Lock()
-	delete(s.latestVersions, id)
-	s.latestVersionsMu.Unlock()
+	s.versions.Delete(id)
 }
 
 // GetLatestVersion returns the cached latest version for a service, or "".
 func (s *Server) GetLatestVersion(id string) string {
-	s.latestVersionsMu.RLock()
-	v := s.latestVersions[id]
-	s.latestVersionsMu.RUnlock()
-	return v
+	return s.versions.Get(id)
 }
 
 // enrichStates copies the latest version and update_available flag from the
@@ -684,28 +668,14 @@ func (s *Server) enrichStates(states []services.ServiceState) []services.Service
 	// pointer only (lv := s.latestVersions) followed by RUnlock() is a data
 	// race: map mutations in SetLatestVersion / DeleteLatestVersion could run
 	// concurrently with the unlocked lv[st.ID] read below.
-	s.latestVersionsMu.RLock()
-	lv := make(map[string]string, len(s.latestVersions))
-	for k, v := range s.latestVersions {
-		lv[k] = v
-	}
-	s.latestVersionsMu.RUnlock()
+	lv := s.versions.Snapshot()
 
 	out := make([]services.ServiceState, len(states))
 	manifest := s.GetPHPLatestManifest()
 	for i, st := range states {
 		if latest, ok := lv[st.ID]; ok && latest != "" {
 			st.LatestVersion = latest
-			// update_available when latest != the currently running binary version.
-			// We compare against st.Version (the live version returned by the binary
-			// on each poll) rather than st.InstallVersion (a compile-time constant
-			// that never changes at runtime). Strip leading "v" so "v2.10.0" ==
-			// "2.10.0" normalises correctly.
-			current := strings.TrimPrefix(st.Version, "v")
-			latestNorm := strings.TrimPrefix(latest, "v")
-			if current != "" && latestNorm != "" && current != latestNorm {
-				st.UpdateAvailable = true
-			}
+			st.UpdateAvailable = versioncache.Available(st.Version, latest)
 		}
 		if strings.HasPrefix(st.ID, "php-fpm-") {
 			minor := strings.TrimPrefix(st.ID, "php-fpm-")

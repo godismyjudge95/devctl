@@ -1,15 +1,12 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/danielgormly/devctl/internal/httplog"
 )
 
 // Mago is the Tool definition for mago, a toolchain for PHP development.
@@ -19,6 +16,9 @@ import (
 // Releases: https://github.com/carthage-software/mago/releases
 var Mago = Tool{
 	Name:             "mago",
+	Label:            "Mago",
+	Description:      "PHP toolchain — linter, formatter, and static analyzer",
+	Homepage:         "https://github.com/carthage-software/mago",
 	LatestRelease:    fetchMagoLatestRelease,
 	DownloadTo:       downloadMagoBinary,
 	InstalledVersion: installedMagoVersion,
@@ -50,21 +50,9 @@ func fetchMagoLatestRelease(ctx context.Context) (Release, error) {
 func downloadMagoBinary(ctx context.Context, rel Release, destPath string) error {
 	tmpTar := destPath + ".tar.gz"
 	defer os.Remove(tmpTar)
-
-	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	done := httplog.LogGitHubCurlDownloadStart(rel.DownloadURL)
-	cmd := exec.CommandContext(dlCtx, "curl", "-fsSL", "-o", tmpTar, rel.DownloadURL)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	if err := cmd.Run(); err != nil {
-		done(err)
-		return fmt.Errorf("curl %s: %w\n%s", rel.DownloadURL, err, buf.String())
+	if err := downloadURL(ctx, rel.DownloadURL, tmpTar); err != nil {
+		return err
 	}
-	done(nil)
-
 	return extractBinaryFromTarGz(tmpTar, "mago", destPath)
 }
 
