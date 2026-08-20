@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/php"
@@ -196,6 +197,9 @@ func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 		return nil // already tracked
 	}
 
+	// git worktree add creates the directory before the checkout is finished.
+	SettleGitCheckout(dirPath, 3*time.Second)
+
 	input := CreateSiteInput{
 		Domain:         domain,
 		RootPath:       dirPath,
@@ -215,20 +219,44 @@ func (m *Manager) AutoDiscover(ctx context.Context, dirPath string) error {
 		input.PublicDir = info.PublicDir
 	}
 
+	var parentSite dbq.Site
+	var haveParent bool
+
 	// Check if this directory is a git linked worktree whose parent is already tracked.
 	if IsLinkedWorktree(dirPath) {
 		if parentPath, err := GetMainWorktreePath(dirPath); err == nil {
-			if parentSite, err := m.db.GetSiteByRootPath(ctx, parentPath); err == nil {
+			if ps, err := m.db.GetSiteByRootPath(ctx, parentPath); err == nil {
+				parentSite = ps
+				haveParent = true
 				input.ParentSiteID = parentSite.ID
 				input.WorktreeBranch = GetCurrentBranch(dirPath)
+				input.PHPVersion = parentSite.PhpVersion
+				input.HTTPS = parentSite.Https == 1
+				input.CORS = parentSite.Cors == 1
+				if input.PublicDir == "" {
+					input.PublicDir = parentSite.PublicDir
+				}
+				if input.Framework == "" {
+					input.Framework = parentSite.Framework
+				}
+				input.GitRemoteURL = parentSite.GitRemoteUrl
 				fmt.Printf("sites: auto-discovered %s as worktree of %s (branch: %s)\n",
 					domain, parentSite.Domain, input.WorktreeBranch)
 			}
 		}
 	}
 
-	_, err := m.Create(ctx, input)
-	return err
+	site, err := m.Create(ctx, input)
+	if err != nil {
+		return err
+	}
+
+	if haveParent {
+		cfg := ConfigFromSettings(parentSite.Settings, parentSite.RootPath)
+		SeedWorktreeResources(parentSite.RootPath, dirPath, cfg)
+		RewriteWorktreeEnvFiles(dirPath, parentSite.Domain, site.Domain, site.Https == 1)
+	}
+	return nil
 }
 
 // CreateWorktree creates a new git worktree for the given parent site on the specified branch,
@@ -265,6 +293,19 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 	if _, err := m.db.GetSiteByDomain(ctx, worktreeDomain); err == nil {
 		return dbq.Site{}, fmt.Errorf("a site with domain %q already exists", worktreeDomain)
 	}
+	if _, err := m.db.GetSiteByRootPath(ctx, worktreePath); err == nil {
+		return dbq.Site{}, fmt.Errorf("a site already tracks path %q", worktreePath)
+	}
+	if _, err := os.Stat(worktreePath); err == nil {
+		return dbq.Site{}, fmt.Errorf("path %q already exists", worktreePath)
+	}
+
+	config = ResolveWorktreeConfig(config, parent.Settings, parent.RootPath)
+
+	storedBranch := branch
+	if !createBranch {
+		storedBranch = strings.TrimPrefix(branch, "origin/")
+	}
 
 	// Determine PHP version from parent settings (inherit).
 	phpVersion := parent.PhpVersion
@@ -282,10 +323,11 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 		RootPath:       worktreePath,
 		PHPVersion:     phpVersion,
 		PublicDir:      parent.PublicDir,
-		HTTPS:          true,
+		HTTPS:          parent.Https == 1,
+		CORS:           parent.Cors == 1,
 		AutoDiscovered: false,
 		ParentSiteID:   parentID,
-		WorktreeBranch: branch,
+		WorktreeBranch: storedBranch,
 		IsGitRepo:      true,
 		GitRemoteURL:   parent.GitRemoteUrl,
 		Framework:      parent.Framework,
@@ -294,12 +336,14 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 		return dbq.Site{}, fmt.Errorf("register worktree site: %w", err)
 	}
 
-	// Create the git worktree on disk.
+	// Create the git worktree on disk (seeds vendor/.env, then we rewrite URLs).
 	if err := CreateGitWorktree(gitRoot, worktreePath, branch, createBranch, config); err != nil {
 		// Roll back the DB registration.
 		_ = m.Delete(ctx, site.ID)
 		return dbq.Site{}, fmt.Errorf("create git worktree: %w", err)
 	}
+
+	RewriteWorktreeEnvFiles(worktreePath, parent.Domain, worktreeDomain, site.Https == 1)
 
 	return site, nil
 }

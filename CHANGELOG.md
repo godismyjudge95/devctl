@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.13.0 — 2026-08-20
+
+- Hardened **git worktrees**: `vendor/` and `node_modules/` are copied (reflinked when possible) instead of symlinked so Composer `__DIR__` stays in the worktree; `.env` / `wp-config.php` / Drupal settings copies rewrite the parent hostname to the worktree vhost; lockfile mismatches skip stale dependency copies.
+- Added worktree **CLI** for agents: `sites:worktree:add`, `sites:worktree:rm`, `sites:worktrees`, `sites:worktree:config`, `sites:branches` (domain, id, or path; `--json`).
+- Framework detection now covers **Drupal** (composer + tarball), **Craft CMS**, **Symfony**, and WordPress **Bedrock** (`web/` public dir), with matching worktree copy/symlink defaults.
+- Auto-discovered `git worktree add` checkouts inherit PHP/HTTPS/CORS from the parent and run the same seed + env-rewrite pipeline.
+
 ## v0.12.0 — 2026-08-20
 
 - Redesigned the **dashboard UI**: grouped sidebar, dedicated pages instead of dialogs, restyled views, and shared layout primitives.

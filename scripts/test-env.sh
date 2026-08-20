@@ -86,6 +86,11 @@ incus exec "$CONTAINER" -- chmod 755 /usr/local/bin/devctl
 success "Binary pushed to /usr/local/bin/devctl."
 
 # ─── Step 7: Create testuser ──────────────────────────────────────────────────
+# Git is required for worktree tests (unit + API + BATS).
+info "Ensuring git is installed..."
+incus exec "$CONTAINER" -- bash -c 'command -v git >/dev/null || apt-get install -y -qq git'
+success "git is available."
+
 info "Creating testuser..."
 incus exec "$CONTAINER" -- useradd -m testuser
 incus exec "$CONTAINER" -- mkdir -p /home/testuser/ddev/sites/server

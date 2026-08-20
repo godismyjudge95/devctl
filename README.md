@@ -420,27 +420,39 @@ sudo devctl elevate trust
 
 ## Git Worktrees
 
-Any git-backed site can have worktrees added directly from the dashboard. Click the fork icon on a site card, pick or create a branch, configure which paths to symlink or copy from the parent, and click **Create Worktree**.
+Any git-backed site can have worktrees added from the dashboard or the CLI. Pick or create a branch, optionally configure which paths to copy or symlink from the parent, and create the worktree.
 
 The worktree is created as a sibling directory (`~/sites/myapp-feature-x/`) and immediately gets its own Caddy vhost (`myapp-feature-x.test`).
 
-**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase, `/` and `_` become `-`, and the `origin-` prefix is stripped (so `origin/my-branch` → `myapp-my-branch.test`).
+**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase; `/`, `_`, `.`, and other non-alphanumerics become `-`; `origin/` is stripped (`origin/my-branch` → `myapp-my-branch.test`).
 
-**Shared resources:** devctl pre-fills sensible defaults based on the detected project type:
+**Shared resources:** `vendor/` and `node_modules/` are **copied** (reflinked when the filesystem supports it), never symlinked. PHP resolves `__DIR__` through symlinks, so a symlinked `vendor/` makes Composer load classes from the parent checkout. If `composer.lock` (or the JS lockfile) differs from the parent, that directory is skipped so you can `composer install` / `npm install` for the branch.
 
-| Project type | Symlinked from parent | Copied from parent |
+`.env` (or `.env.example`) is copied and the parent hostname is rewritten to the worktree vhost (`APP_URL`, `SESSION_DOMAIN`, `SANCTUM_STATEFUL_DOMAINS`, WordPress `WP_HOME` / `WP_SITEURL`, Drupal `$base_url`, …). `DB_DATABASE` is left pointing at the parent database so worktrees share data by default.
+
+| Project type | Copied from parent | Symlinked from parent |
 |---|---|---|
-| Laravel / Statamic | `vendor`, `node_modules` | `.env` |
-| WordPress | — | `.env`, `wp-config.php` |
-| Generic | `vendor`, `node_modules` | — |
+| Laravel / Statamic / Symfony | `.env`, `vendor`, `node_modules` (`.env.local` for Symfony) | — |
+| WordPress (classic + Bedrock) | `.env`, `wp-config.php`, `vendor`, `node_modules` | `wp-content/uploads`, `web/app/uploads` |
+| Drupal | `.env`, `vendor`, `node_modules` | `web/sites/default/files`, `sites/default/files` |
+| Craft CMS | `.env`, `.env.php`, `vendor`, `node_modules` | `web/cpresources` |
+| Generic | `.env`, `vendor`, `node_modules` | — |
 
-Check **Save as default for this site** to persist your symlink/copy config in the site's settings for next time.
+Missing sources are skipped. Check **Save as default for this site** (or `devctl sites:worktree:config`) to persist symlink/copy paths.
+
+```sh
+devctl sites:worktree:add myapp.test feature/auth
+devctl sites:worktree:add myapp.test hotfix/now --create
+devctl sites:worktree:add --json . feature/x          # domain, id, or path (`.` = cwd)
+devctl sites:worktrees myapp.test
+devctl sites:worktree:rm myapp-feature-auth.test
+```
 
 **Worktree cards** on the Sites page show a dashed border, a parent-site link, and the branch name. The parent card shows an active-worktree count badge.
 
-**Remove a worktree** via its **Remove worktree** button — this deletes the directory, prunes the git worktree entry, and removes the Caddy vhost.
+**Remove a worktree** via its **Remove worktree** button or `devctl sites:worktree:rm` — this deletes the directory, prunes the git worktree entry, and removes the Caddy vhost.
 
-**Auto-detection:** Worktree directories that appear in your watch folder via `git worktree add` in the terminal are auto-discovered, recognised by their `.git` file pointer, and automatically linked to their parent site.
+**Auto-detection:** Worktree directories that appear in your watch folder via `git worktree add` in the terminal are auto-discovered, recognised by their `.git` file pointer, linked to their parent site, and seeded with the same copy/symlink/env rewrite pipeline.
 
 ---
 
@@ -621,6 +633,7 @@ devctl services:install mailpit   # install an available service
 devctl services:restart caddy     # restart a service
 devctl sites:list                 # list all sites
 devctl sites:php myapp.test 8.4   # switch PHP version for a site
+devctl sites:worktree:add myapp.test feature/auth  # new worktree + vhost
 devctl logs:tail caddy --follow   # stream the tail of a log live
 devctl mail:list                  # list captured emails
 devctl settings:get               # show all settings
@@ -663,6 +676,11 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `sites:php <domain> <version>` | Switch the PHP version for a site |
 | | `sites:spx <domain> enable\|disable` | Enable or disable the SPX profiler for a site |
 | | `sites:cors <domain> enable\|disable` | Enable or disable Caddy CORS header injection for a site |
+| | `sites:branches <domain>` | List git branches for a site |
+| | `sites:worktrees [domain]` | List worktrees for a site, or every worktree |
+| | `sites:worktree:add <domain> <branch>` | Create a worktree site (copy vendor/.env, rewrite URLs) |
+| | `sites:worktree:rm <domain>` | Remove a worktree (git + directory + vhost) |
+| | `sites:worktree:config <domain>` | Show or save default copy/symlink paths |
 | `helpers` | `helpers:list` | List installed CLI helpers and versions |
 | | `helpers:available` | List helpers that can be installed |
 | | `helpers:install <id>` | Download and install a helper |

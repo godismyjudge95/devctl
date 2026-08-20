@@ -53,6 +53,10 @@ func (c *Client) getRaw(path string) (string, error) {
 }
 
 func (c *Client) post(path string, body any, out any) error {
+	return c.postTimeout(path, body, out, c.http.Timeout)
+}
+
+func (c *Client) postTimeout(path string, body any, out any, timeout time.Duration) error {
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -61,7 +65,8 @@ func (c *Client) post(path string, body any, out any) error {
 		}
 		r = strings.NewReader(string(b))
 	}
-	resp, err := c.http.Post(c.base+path, "application/json", r)
+	client := &http.Client{Timeout: timeout, Transport: c.http.Transport}
+	resp, err := client.Post(c.base+path, "application/json", r)
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", path, err)
 	}
@@ -70,7 +75,7 @@ func (c *Client) post(path string, body any, out any) error {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("%s", strings.TrimSpace(string(b)))
 	}
-	if out != nil {
+	if out != nil && resp.StatusCode != http.StatusNoContent {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 	return nil
@@ -143,18 +148,32 @@ func (c *Client) deleteWithBody(path string, body any) error {
 // ---- API types ----
 
 type Site struct {
-	ID           string `json:"id"`
-	Domain       string `json:"domain"`
-	RootPath     string `json:"root_path"`
-	PHPVersion   string `json:"php_version"`
-	Aliases      string `json:"aliases"`
-	SPXEnabled   int64  `json:"spx_enabled"`
-	HTTPS        int64  `json:"https"`
-	CORS         int64  `json:"cors"`
-	PublicDir    string `json:"public_dir"`
-	Framework    string `json:"framework"`
-	IsGitRepo    int64  `json:"is_git_repo"`
-	GitRemoteURL string `json:"git_remote_url"`
+	ID             string  `json:"id"`
+	Domain         string  `json:"domain"`
+	RootPath       string  `json:"root_path"`
+	PHPVersion     string  `json:"php_version"`
+	Aliases        string  `json:"aliases"`
+	SPXEnabled     int64   `json:"spx_enabled"`
+	HTTPS          int64   `json:"https"`
+	CORS           int64   `json:"cors"`
+	PublicDir      string  `json:"public_dir"`
+	Framework      string  `json:"framework"`
+	IsGitRepo      int64   `json:"is_git_repo"`
+	GitRemoteURL   string  `json:"git_remote_url"`
+	ParentSiteID   *string `json:"parent_site_id"`
+	WorktreeBranch *string `json:"worktree_branch"`
+}
+
+type WorktreeConfig struct {
+	Symlinks []string `json:"symlinks"`
+	Copies   []string `json:"copies"`
+	NoShare  bool     `json:"no_share,omitempty"`
+}
+
+type Branch struct {
+	Name      string `json:"name"`
+	IsRemote  bool   `json:"is_remote"`
+	IsCurrent bool   `json:"is_current"`
 }
 
 type ServiceState struct {
@@ -295,6 +314,35 @@ type MailListResponse struct {
 func (c *Client) ListSites() ([]Site, error) {
 	var out []Site
 	return out, c.get("/api/sites", &out)
+}
+
+func (c *Client) ListSiteBranches(id string) ([]Branch, error) {
+	var out []Branch
+	return out, c.get("/api/sites/"+id+"/branches", &out)
+}
+
+func (c *Client) GetWorktreeConfig(id string) (WorktreeConfig, error) {
+	var out WorktreeConfig
+	return out, c.get("/api/sites/"+id+"/worktree-config", &out)
+}
+
+func (c *Client) PutWorktreeConfig(id string, cfg WorktreeConfig) (WorktreeConfig, error) {
+	var out WorktreeConfig
+	return out, c.put("/api/sites/"+id+"/worktree-config", cfg, &out)
+}
+
+func (c *Client) ListWorktrees(id string) ([]Site, error) {
+	var out []Site
+	return out, c.get("/api/sites/"+id+"/worktrees", &out)
+}
+
+func (c *Client) CreateWorktree(parentID string, body map[string]any) (Site, error) {
+	var out Site
+	return out, c.postTimeout("/api/sites/"+parentID+"/worktrees", body, &out, 10*time.Minute)
+}
+
+func (c *Client) RemoveWorktree(parentID, worktreeID string) error {
+	return c.delete("/api/sites/" + parentID + "/worktrees/" + worktreeID)
 }
 
 func (c *Client) UpdateSite(id string, body map[string]any) (Site, error) {

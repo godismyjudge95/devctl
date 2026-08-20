@@ -23,16 +23,16 @@ type SiteInspection struct {
 //  3. composer.json contains "statamic/cms"                 → statamic, public_dir=public
 //  4. artisan file present                                   → laravel,   public_dir=public
 //  5. composer.json contains "illuminate/foundation"        → laravel,   public_dir=public
-//  6. wp-config.php or wp-config-sample.php present         → wordpress, public_dir=""
-//  7. index.php contains "wp-blog-header" or "wp-load.php"  → wordpress, public_dir=""
-//  8. otherwise                                              → "",        public_dir=""
+//  6. composer.json contains "craftcms/cms" or "craft" file → craft,     public_dir=web
+//  7. drupal/core, core/lib/Drupal.php, or web/core/...     → drupal,    public_dir=web (composer) or ""
+//  8. wp-config.php, web/wp-config.php, or wp-config-sample → wordpress, public_dir=web (Bedrock) or ""
+//  9. index.php contains "wp-blog-header" or "wp-load.php"  → wordpress, public_dir=""
+//
+// 10. composer.json contains "symfony/framework-bundle"     → symfony,   public_dir=public
+// 11. otherwise                                              → "",        DetectPublicDir fallback
 func InspectPath(rootPath string) SiteInspection {
 	framework := DetectFramework(rootPath)
-	publicDir := ""
-	switch framework {
-	case "laravel", "statamic":
-		publicDir = "public"
-	}
+	publicDir := DetectPublicDir(rootPath)
 
 	isGit := IsGitRepo(rootPath)
 	remoteURL := ""
@@ -71,15 +71,32 @@ func DetectFramework(rootPath string) string {
 	if composerRequires(rootPath, "illuminate/foundation") {
 		return "laravel"
 	}
-	// 6. wp-config.php or wp-config-sample.php → WordPress
+	// 6. Craft CMS
+	if composerRequires(rootPath, "craftcms/cms") || inspectFileExists(filepath.Join(rootPath, "craft")) {
+		return "craft"
+	}
+	// 7. Drupal (composer layout or unpacked tarball)
+	if composerRequires(rootPath, "drupal/core") ||
+		composerRequires(rootPath, "drupal/core-recommended") ||
+		inspectFileExists(filepath.Join(rootPath, "core", "lib", "Drupal.php")) ||
+		inspectFileExists(filepath.Join(rootPath, "web", "core", "lib", "Drupal.php")) {
+		return "drupal"
+	}
+	// 8. WordPress (classic, Bedrock, or sample config)
 	if inspectFileExists(filepath.Join(rootPath, "wp-config.php")) ||
-		inspectFileExists(filepath.Join(rootPath, "wp-config-sample.php")) {
+		inspectFileExists(filepath.Join(rootPath, "wp-config-sample.php")) ||
+		inspectFileExists(filepath.Join(rootPath, "web", "wp-config.php")) {
 		return "wordpress"
 	}
-	// 7. index.php contains WordPress bootstrap calls → WordPress
+	// 9. index.php contains WordPress bootstrap calls → WordPress
 	if indexPHPContains(rootPath, "wp-blog-header") ||
 		indexPHPContains(rootPath, "wp-load.php") {
 		return "wordpress"
+	}
+	// 10. Symfony
+	if composerRequires(rootPath, "symfony/framework-bundle") ||
+		composerRequires(rootPath, "symfony/runtime") {
+		return "symfony"
 	}
 	return ""
 }
@@ -87,9 +104,34 @@ func DetectFramework(rootPath string) string {
 // DetectPublicDir returns the public subdirectory for the given root path.
 func DetectPublicDir(rootPath string) string {
 	switch DetectFramework(rootPath) {
-	case "laravel", "statamic":
+	case "laravel", "statamic", "symfony":
 		return "public"
+	case "craft":
+		if inspectDirExists(filepath.Join(rootPath, "web")) {
+			return "web"
+		}
+		if inspectDirExists(filepath.Join(rootPath, "public")) {
+			return "public"
+		}
+		return "web"
+	case "drupal":
+		if inspectFileExists(filepath.Join(rootPath, "web", "index.php")) {
+			return "web"
+		}
+		return ""
+	case "wordpress":
+		if inspectFileExists(filepath.Join(rootPath, "web", "index.php")) ||
+			inspectFileExists(filepath.Join(rootPath, "web", "wp-config.php")) {
+			return "web"
+		}
+		return ""
 	default:
+		if inspectFileExists(filepath.Join(rootPath, "public", "index.php")) {
+			return "public"
+		}
+		if inspectFileExists(filepath.Join(rootPath, "web", "index.php")) {
+			return "web"
+		}
 		return ""
 	}
 }

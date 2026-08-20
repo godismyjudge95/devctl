@@ -57,8 +57,10 @@ func TestDNSTeardown_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "d
 // dumps
 // ---------------------------------------------------------------------------
 
-func TestHelpersList_IsRegistered(t *testing.T)       { assertCmd(t, cmdCheck{name: "helpers:list"}) }
-func TestHelpersAvailable_IsRegistered(t *testing.T)  { assertCmd(t, cmdCheck{name: "helpers:available"}) }
+func TestHelpersList_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "helpers:list"}) }
+func TestHelpersAvailable_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "helpers:available"})
+}
 func TestHelpersInstall_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "helpers:install", wantArgs: true})
 }
@@ -136,6 +138,21 @@ func TestSitesPHP_IsRegistered(t *testing.T) {
 }
 func TestSitesSPX_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "sites:spx", wantArgs: true})
+}
+func TestSitesWorktrees_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "sites:worktrees"})
+}
+func TestSitesWorktreeAdd_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "sites:worktree:add", wantArgs: true, wantFlag: "create"})
+}
+func TestSitesWorktreeRm_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "sites:worktree:rm", wantArgs: true})
+}
+func TestSitesWorktreeConfig_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "sites:worktree:config", wantArgs: true, wantFlag: "copy"})
+}
+func TestSitesBranches_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "sites:branches", wantArgs: true})
 }
 
 // ---------------------------------------------------------------------------

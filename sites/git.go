@@ -2,12 +2,16 @@ package sites
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+	"unicode"
 )
 
 // ProjectType represents the detected type of a PHP project.
@@ -17,13 +21,18 @@ const (
 	ProjectTypeLaravel   ProjectType = "laravel"
 	ProjectTypeStatamic  ProjectType = "statamic"
 	ProjectTypeWordPress ProjectType = "wordpress"
+	ProjectTypeDrupal    ProjectType = "drupal"
+	ProjectTypeCraft     ProjectType = "craft"
+	ProjectTypeSymfony   ProjectType = "symfony"
 	ProjectTypeGeneric   ProjectType = "generic"
 )
 
 // WorktreeSetupConfig defines which paths to symlink vs copy when creating a worktree.
+// If both Symlinks and Copies are empty and NoShare is false, framework defaults apply.
 type WorktreeSetupConfig struct {
 	Symlinks []string `json:"symlinks"`
 	Copies   []string `json:"copies"`
+	NoShare  bool     `json:"no_share,omitempty"`
 }
 
 // Branch represents a git branch.
@@ -180,103 +189,257 @@ func ListGitWorktrees(path string) ([]GitWorktreeInfo, error) {
 }
 
 // DetectProjectType inspects the directory for known project markers.
+// Delegates to DetectFramework so detection rules stay in one place.
 func DetectProjectType(path string) ProjectType {
-	// Statamic: has a "please" binary or statamic directory in vendor.
-	if fileExists(filepath.Join(path, "please")) {
+	switch DetectFramework(path) {
+	case "statamic":
 		return ProjectTypeStatamic
-	}
-	if fileExists(filepath.Join(path, "vendor", "statamic")) {
-		return ProjectTypeStatamic
-	}
-	// Laravel: has an artisan file.
-	if fileExists(filepath.Join(path, "artisan")) {
+	case "laravel":
 		return ProjectTypeLaravel
-	}
-	// WordPress: has wp-config or wp-config-sample.
-	if fileExists(filepath.Join(path, "wp-config.php")) || fileExists(filepath.Join(path, "wp-config-sample.php")) {
+	case "wordpress":
 		return ProjectTypeWordPress
+	case "drupal":
+		return ProjectTypeDrupal
+	case "craft":
+		return ProjectTypeCraft
+	case "symfony":
+		return ProjectTypeSymfony
+	default:
+		return ProjectTypeGeneric
 	}
-	return ProjectTypeGeneric
 }
 
+// sharedCopies are gitignored runtime dirs/files that every PHP project may want
+// seeded into a new worktree. Missing sources are skipped at seed time.
+var sharedCopies = []string{".env", "vendor", "node_modules"}
+
 // DefaultWorktreeConfig returns sensible defaults for the given project type.
+//
+// vendor/ and node_modules/ are COPIED (or reflinked), never symlinked.
+// PHP resolves __DIR__ through symlinks, so a symlinked vendor/ makes Composer's
+// ClassLoader initialise against the parent checkout and silently load stale
+// classes (the Lerd lesson).
 func DefaultWorktreeConfig(pt ProjectType) WorktreeSetupConfig {
+	copies := append([]string{}, sharedCopies...)
+	var symlinks []string
 	switch pt {
-	case ProjectTypeLaravel:
-		return WorktreeSetupConfig{
-			Symlinks: []string{"vendor", "node_modules"},
-			Copies:   []string{".env"},
-		}
-	case ProjectTypeStatamic:
-		return WorktreeSetupConfig{
-			Symlinks: []string{"vendor", "node_modules"},
-			Copies:   []string{".env"},
-		}
 	case ProjectTypeWordPress:
-		return WorktreeSetupConfig{
-			Symlinks: []string{},
-			Copies:   []string{".env", "wp-config.php"},
+		copies = append(copies, "wp-config.php")
+		symlinks = []string{"wp-content/uploads", "web/app/uploads"}
+	case ProjectTypeDrupal:
+		symlinks = []string{"web/sites/default/files", "sites/default/files"}
+	case ProjectTypeCraft:
+		copies = append(copies, ".env.php")
+		symlinks = []string{"web/cpresources"}
+	case ProjectTypeSymfony:
+		copies = append(copies, ".env.local")
+	}
+	return WorktreeSetupConfig{Symlinks: symlinks, Copies: copies}
+}
+
+// ConfigFromSettings extracts a saved WorktreeSetupConfig from a site's settings
+// JSON. Falls back to framework defaults for rootPath when nothing is saved.
+func ConfigFromSettings(settingsJSON, rootPath string) WorktreeSetupConfig {
+	var settingsMap map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(settingsJSON), &settingsMap); err == nil {
+		var symlinks []string
+		var copies []string
+		symlinksSet := false
+		copiesSet := false
+
+		if raw, ok := settingsMap["worktree_symlinks"]; ok {
+			if err := json.Unmarshal(raw, &symlinks); err == nil {
+				symlinksSet = true
+			}
 		}
-	default:
-		return WorktreeSetupConfig{
-			Symlinks: []string{"vendor", "node_modules"},
-			Copies:   []string{},
+		if raw, ok := settingsMap["worktree_copies"]; ok {
+			if err := json.Unmarshal(raw, &copies); err == nil {
+				copiesSet = true
+			}
+		}
+
+		if symlinksSet || copiesSet {
+			return WorktreeSetupConfig{Symlinks: symlinks, Copies: copies}
 		}
 	}
+	return DefaultWorktreeConfig(DetectProjectType(rootPath))
+}
+
+// ResolveWorktreeConfig returns the config that should actually be applied.
+// Empty symlink+copy lists mean "use defaults" unless NoShare is set.
+func ResolveWorktreeConfig(cfg WorktreeSetupConfig, settingsJSON, rootPath string) WorktreeSetupConfig {
+	if cfg.NoShare {
+		return WorktreeSetupConfig{NoShare: true}
+	}
+	if len(cfg.Symlinks) == 0 && len(cfg.Copies) == 0 {
+		return ConfigFromSettings(settingsJSON, rootPath)
+	}
+	return cfg
 }
 
 // SlugifyBranch converts a branch name to a URL/directory-safe slug.
-// e.g. "feature/my-thing" → "feature-my-thing"
+// e.g. "feature/my-thing" → "feature-my-thing", "origin/v1.2.3" → "v1-2-3"
 func SlugifyBranch(branch string) string {
-	slug := strings.ToLower(branch)
-	slug = strings.ReplaceAll(slug, "/", "-")
-	slug = strings.ReplaceAll(slug, "_", "-")
-	// Remove "origin-" prefix from remote branches.
+	slug := strings.ToLower(strings.TrimSpace(branch))
+	slug = strings.TrimPrefix(slug, "origin/")
 	slug = strings.TrimPrefix(slug, "origin-")
-	return slug
+
+	var b strings.Builder
+	prevDash := false
+	for _, r := range slug {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "branch"
+	}
+	return out
 }
 
 // CreateGitWorktree creates a new git worktree at dest from mainRepoPath on the given branch.
 // If createBranch is true, a new local branch is created.
 // After creating the worktree, symlinks and copies from config are set up.
 func CreateGitWorktree(mainRepoPath, dest, branch string, createBranch bool, config WorktreeSetupConfig) error {
-	var args []string
-	if createBranch {
-		args = []string{"worktree", "add", "-b", branch, dest}
-	} else {
-		args = []string{"worktree", "add", dest, branch}
+	args, err := worktreeAddArgs(mainRepoPath, dest, branch, createBranch)
+	if err != nil {
+		return err
 	}
 	if _, err := runGit(mainRepoPath, args...); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "already used by worktree") || strings.Contains(msg, "already checked out") {
+			return fmt.Errorf("branch %q is already checked out in another worktree; pass create_branch or pick a different branch", branch)
+		}
+		if strings.Contains(msg, "already exists") {
+			return fmt.Errorf("branch %q already exists; omit create_branch to check it out", branch)
+		}
 		return fmt.Errorf("git worktree add: %w", err)
 	}
 
-	// Set up symlinks.
+	SeedWorktreeResources(mainRepoPath, dest, config)
+	return nil
+}
+
+// SettleGitCheckout waits until path looks like a finished git checkout.
+// git worktree add creates the directory, then writes .git / HEAD / files
+// across several syscalls; AutoDiscover must not inspect a half-written tree.
+func SettleGitCheckout(path string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !IsGitRepo(path) {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		if IsLinkedWorktree(path) && GetCurrentBranch(path) == "" {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		// One extra beat so the working tree files land after HEAD.
+		time.Sleep(80 * time.Millisecond)
+		return
+	}
+}
+
+// SeedWorktreeResources applies symlink/copy config from parent onto dest.
+// Missing sources are skipped. Existing destinations are not overwritten
+// (except that empty git-created dirs are replaced for symlink targets).
+// Safe to call from AutoDiscover as well as CreateGitWorktree.
+func SeedWorktreeResources(parentPath, dest string, config WorktreeSetupConfig) {
+	if config.NoShare {
+		return
+	}
 	for _, rel := range config.Symlinks {
-		src := filepath.Join(mainRepoPath, rel)
+		rel = filepath.Clean(rel)
+		if !safeRelPath(rel) {
+			fmt.Printf("worktree: skip unsafe symlink path %q\n", rel)
+			continue
+		}
+		src := filepath.Join(parentPath, rel)
 		dst := filepath.Join(dest, rel)
 		if !fileExists(src) {
-			continue // skip if source doesn't exist in main repo
+			continue
 		}
-		// Remove destination if it exists (e.g. git may have created an empty dir).
+		if fileExists(dst) && !isEmptyDir(dst) {
+			continue
+		}
 		_ = os.RemoveAll(dst)
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+			fmt.Printf("worktree: mkdir for symlink %s: %v\n", dst, err)
+			continue
+		}
 		if err := os.Symlink(src, dst); err != nil {
 			fmt.Printf("worktree: symlink %s → %s: %v\n", src, dst, err)
 		}
 	}
 
-	// Copy files.
 	for _, rel := range config.Copies {
-		src := filepath.Join(mainRepoPath, rel)
-		dst := filepath.Join(dest, rel)
-		if !fileExists(src) {
-			continue // skip if source doesn't exist
+		rel = filepath.Clean(rel)
+		if !safeRelPath(rel) {
+			fmt.Printf("worktree: skip unsafe copy path %q\n", rel)
+			continue
 		}
-		if err := copyFile(src, dst); err != nil {
+		src := filepath.Join(parentPath, rel)
+		dst := filepath.Join(dest, rel)
+		if rel == ".env" && !fileExists(src) {
+			src = filepath.Join(parentPath, ".env.example")
+		}
+		if !fileExists(src) {
+			continue
+		}
+		if fileExists(dst) {
+			continue
+		}
+		if (rel == "vendor" || rel == "node_modules") && !shouldSeedDepDir(parentPath, dest, rel) {
+			fmt.Printf("worktree: skip %s — lockfile differs from parent (install deps in the worktree)\n", rel)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+			fmt.Printf("worktree: mkdir for copy %s: %v\n", dst, err)
+			continue
+		}
+		if err := copyPath(src, dst); err != nil {
 			fmt.Printf("worktree: copy %s → %s: %v\n", src, dst, err)
 		}
 	}
+}
 
-	return nil
+// worktreeAddArgs builds `git worktree add` arguments, creating a local
+// tracking branch when the requested ref is remote-only.
+func worktreeAddArgs(repo, dest, branch string, createBranch bool) ([]string, error) {
+	if createBranch {
+		return []string{"worktree", "add", "-b", branch, dest}, nil
+	}
+	local := strings.TrimPrefix(branch, "origin/")
+	if branchExistsLocal(repo, local) {
+		return []string{"worktree", "add", dest, local}, nil
+	}
+	remoteRef := branch
+	if !strings.HasPrefix(branch, "origin/") {
+		remoteRef = "origin/" + local
+	}
+	if branchExists(repo, remoteRef) {
+		return []string{"worktree", "add", "--track", "-b", local, dest, remoteRef}, nil
+	}
+	// Let git try the name as given so the error message is useful.
+	return []string{"worktree", "add", dest, branch}, nil
+}
+
+func branchExistsLocal(repo, name string) bool {
+	_, err := runGit(repo, "show-ref", "--verify", "--quiet", "refs/heads/"+name)
+	return err == nil
+}
+
+func branchExists(repo, name string) bool {
+	_, err := runGit(repo, "rev-parse", "--verify", "--quiet", name)
+	return err == nil
 }
 
 // RemoveGitWorktree removes a linked worktree from the git repo and deletes its directory.
@@ -323,6 +486,116 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+func isEmptyDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	entries, err := os.ReadDir(path)
+	return err == nil && len(entries) == 0
+}
+
+func safeRelPath(rel string) bool {
+	if rel == "" || rel == "." || rel == ".." {
+		return false
+	}
+	if filepath.IsAbs(rel) {
+		return false
+	}
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.Contains(rel, string(filepath.Separator)+"..") {
+		return false
+	}
+	return true
+}
+
+var jsLockfiles = []string{
+	"pnpm-lock.yaml",
+	"yarn.lock",
+	"bun.lock",
+	"bun.lockb",
+	"package-lock.json",
+	"npm-shrinkwrap.json",
+}
+
+// shouldSeedDepDir is true when dest's lockfile matches parent's (or dest has
+// no lockfile). Copying a mismatched vendor/ silently loads the wrong packages.
+func shouldSeedDepDir(parent, dest, dirName string) bool {
+	var names []string
+	switch dirName {
+	case "vendor":
+		names = []string{"composer.lock"}
+	case "node_modules":
+		names = jsLockfiles
+	default:
+		return true
+	}
+	return lockfilesMatch(parent, dest, names)
+}
+
+func lockfilesMatch(parent, dest string, names []string) bool {
+	for _, name := range names {
+		destLock := filepath.Join(dest, name)
+		if !fileExists(destLock) {
+			continue
+		}
+		parentLock := filepath.Join(parent, name)
+		if !fileExists(parentLock) {
+			return false
+		}
+		pb, err1 := os.ReadFile(parentLock)
+		db, err2 := os.ReadFile(destLock)
+		if err1 != nil || err2 != nil {
+			return false
+		}
+		return bytes.Equal(pb, db)
+	}
+	// Dest has none of the named lockfiles — copy is fine.
+	return true
+}
+
+// copyPath copies a file or directory from src to dst. Prefers `cp -a --reflink=auto`
+// so btrfs/xfs can clone extents; falls back to a recursive Go copy.
+func copyPath(src, dst string) error {
+	_ = os.RemoveAll(dst)
+	cmd := exec.Command("cp", "-a", "--reflink=auto", src, dst)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		return nil
+	} else {
+		fmt.Printf("worktree: cp --reflink fallback for %s: %v (%s)\n", src, err, bytes.TrimSpace(out))
+	}
+	return copyPathGo(src, dst)
+}
+
+func copyPathGo(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, dst)
+	}
+	if info.IsDir() {
+		if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if err := copyPathGo(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return copyFile(src, dst)
+}
+
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -330,7 +603,12 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close()
 
-	out, err := os.Create(dst)
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
 	if err != nil {
 		return err
 	}

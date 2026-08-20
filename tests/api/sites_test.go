@@ -10,18 +10,20 @@ import (
 // Fields that may be null in the database are represented as strings here;
 // the JSON decoder will leave them as the zero value ("") when absent/null.
 type Site struct {
-	ID             string `json:"id"`
-	Domain         string `json:"domain"`
-	RootPath       string `json:"root_path"`
-	PhpVersion     string `json:"php_version"`
-	SpxEnabled     int    `json:"spx_enabled"`
-	HTTPS          int    `json:"https"`
-	CORS           int    `json:"cors"`
-	AutoDiscovered int    `json:"auto_discovered"`
-	PublicDir      string `json:"public_dir"`
-	Framework      string `json:"framework"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID             string  `json:"id"`
+	Domain         string  `json:"domain"`
+	RootPath       string  `json:"root_path"`
+	PhpVersion     string  `json:"php_version"`
+	SpxEnabled     int     `json:"spx_enabled"`
+	HTTPS          int     `json:"https"`
+	CORS           int     `json:"cors"`
+	AutoDiscovered int     `json:"auto_discovered"`
+	PublicDir      string  `json:"public_dir"`
+	Framework      string  `json:"framework"`
+	ParentSiteID   *string `json:"parent_site_id"`
+	WorktreeBranch *string `json:"worktree_branch"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 // TestGetSites_StatusOK verifies that GET /api/sites returns HTTP 200.

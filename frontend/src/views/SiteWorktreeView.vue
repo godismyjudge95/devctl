@@ -171,11 +171,11 @@ async function createWorktree() {
     <Surface v-if="site && !branchesLoading">
       <SectionHeader title="Shared resources" description="Paths relative to the project root, comma-separated." />
       <div class="px-5 pb-2">
-        <SettingRow label="Symlinks from parent" hint="e.g. vendor, node_modules" for="wt_symlinks">
-          <Input id="wt_symlinks" v-model="form.symlinksInput" placeholder="vendor, node_modules" class="font-mono" />
+        <SettingRow label="Symlinks from parent" hint="Shared runtime dirs (uploads, files). Do not symlink vendor." for="wt_symlinks">
+          <Input id="wt_symlinks" v-model="form.symlinksInput" placeholder="wp-content/uploads" class="font-mono" />
         </SettingRow>
-        <SettingRow label="Copies from parent" hint="e.g. .env" for="wt_copies">
-          <Input id="wt_copies" v-model="form.copiesInput" placeholder=".env" class="font-mono" />
+        <SettingRow label="Copies from parent" hint="vendor, node_modules, and .env are copied. APP_URL is rewritten to this worktree." for="wt_copies">
+          <Input id="wt_copies" v-model="form.copiesInput" placeholder=".env, vendor, node_modules" class="font-mono" />
         </SettingRow>
         <SettingRow label="Save as defaults" hint="Reuse these paths for future worktrees." for="save_config">
           <div class="flex items-center h-9">

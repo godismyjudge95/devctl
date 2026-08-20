@@ -38,7 +38,7 @@ func (s *Server) handleGetWorktreeConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	config := worktreeConfigFromSite(site)
+	config := sites.ConfigFromSettings(site.Settings, site.RootPath)
 	writeJSON(w, config)
 }
 
@@ -106,6 +106,7 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 		CreateBranch bool     `json:"create_branch"`
 		Symlinks     []string `json:"symlinks"`
 		Copies       []string `json:"copies"`
+		NoShare      bool     `json:"no_share"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -119,6 +120,7 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 	config := sites.WorktreeSetupConfig{
 		Symlinks: req.Symlinks,
 		Copies:   req.Copies,
+		NoShare:  req.NoShare,
 	}
 
 	site, err := s.siteManager.CreateWorktree(r.Context(), id, req.Branch, req.CreateBranch, config)
@@ -140,35 +142,4 @@ func (s *Server) handleRemoveWorktree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// worktreeConfigFromSite extracts the WorktreeSetupConfig from the site's settings JSON.
-// Falls back to project-type defaults if not configured.
-func worktreeConfigFromSite(site dbq.Site) sites.WorktreeSetupConfig {
-	var settingsMap map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(site.Settings), &settingsMap); err == nil {
-		var symlinks []string
-		var copies []string
-		symlinksSet := false
-		copiesSet := false
-
-		if raw, ok := settingsMap["worktree_symlinks"]; ok {
-			if err := json.Unmarshal(raw, &symlinks); err == nil {
-				symlinksSet = true
-			}
-		}
-		if raw, ok := settingsMap["worktree_copies"]; ok {
-			if err := json.Unmarshal(raw, &copies); err == nil {
-				copiesSet = true
-			}
-		}
-
-		if symlinksSet || copiesSet {
-			return sites.WorktreeSetupConfig{Symlinks: symlinks, Copies: copies}
-		}
-	}
-
-	// No saved config — derive defaults from project type.
-	pt := sites.DetectProjectType(site.RootPath)
-	return sites.DefaultWorktreeConfig(pt)
 }
