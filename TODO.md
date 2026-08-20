@@ -162,6 +162,4 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 # Completed
 
-- add yq from github releases to server binaries (2026-08-20) — shipped as an opt-in helper in the Helpers catalog
-
 

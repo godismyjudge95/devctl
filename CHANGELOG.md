@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.12.0 — 2026-08-20
+
+- Redesigned the **dashboard UI**: grouped sidebar, dedicated pages instead of dialogs, restyled views, and shared layout primitives.
 - Added **Helpers**: a services-style catalog of downloadable CLI binaries (`sqlite3`, mago, phpantom_lsp, fnm, yq) with install / update / uninstall in the dashboard and `devctl helpers:*`. sqlite3 stays default-installed; other tools are opt-in. GitHub latest-release checks and the in-memory version cache are shared with managed services.
 - Replaced the **WhoDB iframe tab** with a built-in **Databases** explorer (TablePlus-style): browse MySQL, PostgreSQL, ClickHouse, and site SQLite files; inspect structure; run SQL; edit rows in place.
 - Removed the **WhoDB** managed service (binary, `whodb.test` vhost, Settings connections). The Databases explorer is the only database UI. Existing installs drop leftover WhoDB files on daemon start. `/whodb` redirects to `/databases`.
