@@ -414,7 +414,7 @@ sudo devctl elevate trust
 
 (Requires the daemon + Caddy to be running so the CA can be read.)
 
-**Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress, and generic PHP projects.
+**Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress (classic and Bedrock), Drupal, Craft CMS, Symfony, and generic PHP projects.
 
 ---
 
@@ -422,9 +422,9 @@ sudo devctl elevate trust
 
 Any git-backed site can have worktrees added from the dashboard or the CLI. Pick or create a branch, optionally configure which paths to copy or symlink from the parent, and create the worktree.
 
-The worktree is created as a sibling directory (`~/sites/myapp-feature-x/`) and immediately gets its own Caddy vhost (`myapp-feature-x.test`).
+The worktree is created as a sibling directory (`~/sites/myapp-feature-x/`) and immediately gets its own Caddy vhost. Open it like any other site: visit `https://myapp-feature-x.test`, or click the domain on the worktree card.
 
-**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase; `/`, `_`, `.`, and other non-alphanumerics become `-`; `origin/` is stripped (`origin/my-branch` → `myapp-my-branch.test`).
+**Domain naming:** `{parent-dir}-{branch-slug}.test`. Branch slugging: lowercase; `/`, `_`, `.`, and other non-alphanumerics become `-`; `origin/` is stripped (`origin/my-branch` → `myapp-my-branch.test`). Example: parent dir `myapp`, branch `feature/auth` → `https://myapp-feature-auth.test`.
 
 **Shared resources:** `vendor/` and `node_modules/` are **copied** (reflinked when the filesystem supports it), never symlinked. PHP resolves `__DIR__` through symlinks, so a symlinked `vendor/` makes Composer load classes from the parent checkout. If `composer.lock` (or the JS lockfile) differs from the parent, that directory is skipped so you can `composer install` / `npm install` for the branch.
 
