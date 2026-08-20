@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="devctl-mark.png" width="64" alt="devctl logo">
+  <img src="docs/devctl-mark.png" width="64" alt="devctl logo">
 </p>
 
 # devctl
@@ -241,7 +241,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 
 ### Databases
 
-![Databases explorer](docs/screenshot-whodb.png)
+![Databases explorer](docs/screenshot-databases.png)
 
 The **Databases** sidebar opens a built-in explorer (not an iframe) for every local engine that is installed and running:
 
@@ -820,7 +820,7 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
   <img src="docs/screenshot-mobile-logs.png" width="200" alt="Logs page on mobile">
   <img src="docs/screenshot-mobile-settings.png" width="200" alt="Settings page on mobile">
   <img src="docs/screenshot-mobile-maxio.png" width="200" alt="MaxIO on mobile">
-  <img src="docs/screenshot-mobile-whodb.png" width="200" alt="Databases explorer on mobile">
+  <img src="docs/screenshot-mobile-databases.png" width="200" alt="Databases explorer on mobile">
   <img src="docs/screenshot-mobile-helpers.png" width="200" alt="Helpers catalog on mobile">
 </p>
 

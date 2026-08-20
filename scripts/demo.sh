@@ -145,29 +145,68 @@ fi
 # ─── Create demo site directories with framework markers ──────────────────────
 info "Creating demo site directories..."
 
-# Laravel — detected by presence of 'artisan' file
+# Directory names are the hostname without .test (myapp → myapp.test).
+# Naming them laravel.test made auto-discovery create laravel.test.test.
 incus exec "$CONTAINER" -- bash -c "
-  mkdir -p '${SITES_ROOT}/laravel.test/public' '${SITES_ROOT}/laravel.test/database'
-  touch '${SITES_ROOT}/laravel.test/artisan'
-  echo '<?php' > '${SITES_ROOT}/laravel.test/public/index.php'
-  chown -R testuser:testuser '${SITES_ROOT}/laravel.test'
+  mkdir -p '${SITES_ROOT}/laravel/public' '${SITES_ROOT}/laravel/database'
+  touch '${SITES_ROOT}/laravel/artisan'
+  echo '<?php' > '${SITES_ROOT}/laravel/public/index.php'
+  chown -R testuser:testuser '${SITES_ROOT}/laravel'
 "
 
-# Statamic — detected by vendor/statamic directory
 incus exec "$CONTAINER" -- bash -c "
-  mkdir -p '${SITES_ROOT}/statamic.test/vendor/statamic' '${SITES_ROOT}/statamic.test/public'
-  echo '<?php' > '${SITES_ROOT}/statamic.test/public/index.php'
-  chown -R testuser:testuser '${SITES_ROOT}/statamic.test'
+  mkdir -p '${SITES_ROOT}/statamic/vendor/statamic' '${SITES_ROOT}/statamic/public'
+  echo '<?php' > '${SITES_ROOT}/statamic/public/index.php'
+  chown -R testuser:testuser '${SITES_ROOT}/statamic'
 "
 
-# WordPress — detected by wp-config.php
 incus exec "$CONTAINER" -- bash -c "
-  mkdir -p '${SITES_ROOT}/wordpress.test'
-  touch '${SITES_ROOT}/wordpress.test/wp-config.php'
-  chown -R testuser:testuser '${SITES_ROOT}/wordpress.test'
+  mkdir -p '${SITES_ROOT}/wordpress'
+  touch '${SITES_ROOT}/wordpress/wp-config.php'
+  chown -R testuser:testuser '${SITES_ROOT}/wordpress'
 "
 
-success "Site directories created (laravel.test, statamic.test, wordpress.test)."
+success "Site directories created (laravel, statamic, wordpress)."
+
+# ─── Seed PHP binaries from the artifact cache ────────────────────────────────
+# PHP install resolves assets via api.github.com, which often times out from
+# Incus. Cached static-php binaries are enough: the daemon writes php.ini /
+# php-fpm.conf on startup and auto-starts FPM when php-fpm exists.
+seed_php_from_cache() {
+  local ver="$1"
+  incus exec "$CONTAINER" -- bash -c "
+    set -e
+    cache='${ARTIFACTS_MOUNT}'
+    dest='${SERVER_ROOT}/php/${ver}'
+    mkdir -p \"\$dest/spx-data\"
+    fpm=\$(ls -1 \"\$cache\"/php-binaries-*-php-${ver}-fpm-linux-x86_64 2>/dev/null | sort | tail -1)
+    cli=\$(ls -1 \"\$cache\"/php-binaries-*-php-${ver}-cli-linux-x86_64 2>/dev/null | sort | tail -1)
+    if [[ -z \"\$fpm\" || -z \"\$cli\" ]]; then
+      echo missing
+      exit 1
+    fi
+    cp \"\$fpm\" \"\$dest/php-fpm\"
+    cp \"\$cli\" \"\$dest/php\"
+    chmod 755 \"\$dest/php-fpm\" \"\$dest/php\"
+    chown -R testuser:testuser '${SERVER_ROOT}/php'
+  "
+}
+
+if incus exec "$CONTAINER" -- test -d "${ARTIFACTS_MOUNT}" 2>/dev/null; then
+  info "Seeding PHP 8.3 and 8.4 from artifact cache..."
+  if seed_php_from_cache 8.3; then
+    success "PHP 8.3 binaries in place."
+  else
+    info "PHP 8.3 not in artifact cache."
+  fi
+  if seed_php_from_cache 8.4; then
+    success "PHP 8.4 binaries in place."
+  else
+    info "PHP 8.4 not in artifact cache."
+  fi
+else
+  info "No artifact cache mount — PHP will be installed via the API if possible."
+fi
 
 # ─── Write devctl service unit ─────────────────────────────────────────────────
 info "Writing devctl.service..."
@@ -266,46 +305,42 @@ wait_running() {
 install_service "caddy" "Caddy" 120
 wait_running    "caddy" "Caddy" 30
 
-# ─── Install PHP 8.3 ──────────────────────────────────────────────────────────
-# GitHub may be unreachable from the Incus container. SPX screenshots only
-# need a version directory + profile files, so a failed download is non-fatal.
-info "Installing PHP 8.3..."
-PHP_STATUS=$(incus exec "$CONTAINER" -- \
-  curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 600 \
-  http://127.0.0.1:4000/api/php/versions/8.3/install 2>/dev/null || echo "000")
-if [[ "$PHP_STATUS" == "200" ]]; then
-  success "PHP 8.3 installed."
+# ─── Confirm PHP is visible to the daemon ─────────────────────────────────────
+# Binaries were copied before startup. If the cache was empty, try the API.
+php_count=$(incus exec "$CONTAINER" -- \
+  sh -c "curl -sf http://127.0.0.1:4000/api/php/versions | jq 'length'" 2>/dev/null || echo "0")
+if [[ "${php_count}" -ge 1 ]]; then
+  success "PHP versions detected: ${php_count}."
 else
-  info "PHP 8.3 install skipped (HTTP ${PHP_STATUS}) — seeding SPX profiles into a stub version dir."
-  incus exec "$CONTAINER" -- bash -c "
-    mkdir -p '${SERVER_ROOT}/php/8.3/spx-data'
-    echo '#!/bin/sh' > '${SERVER_ROOT}/php/8.3/php-fpm'
-    chmod 755 '${SERVER_ROOT}/php/8.3/php-fpm'
-    chown -R testuser:testuser '${SERVER_ROOT}/php'
-  "
+  info "No PHP versions detected — attempting API install of 8.3..."
+  PHP_STATUS=$(incus exec "$CONTAINER" -- \
+    curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 600 \
+    http://127.0.0.1:4000/api/php/versions/8.3/install 2>/dev/null || echo "000")
+  if [[ "$PHP_STATUS" == "200" ]]; then
+    success "PHP 8.3 installed via API."
+  else
+    info "PHP 8.3 API install skipped (HTTP ${PHP_STATUS}) — SPX profiles still seed into a stub dir."
+    incus exec "$CONTAINER" -- bash -c "
+      mkdir -p '${SERVER_ROOT}/php/8.3/spx-data'
+      echo '#!/bin/sh' > '${SERVER_ROOT}/php/8.3/php-fpm'
+      chmod 755 '${SERVER_ROOT}/php/8.3/php-fpm'
+      chown -R testuser:testuser '${SERVER_ROOT}/php'
+    "
+  fi
 fi
 
-# ─── Create demo sites via API ────────────────────────────────────────────────
-info "Creating demo sites..."
-
-create_site() {
-  local domain="$1" root="$2"
-  local result
-  result=$(incus exec "$CONTAINER" -- \
-    curl -sf -X POST -H "Content-Type: application/json" \
-    -d "{\"domain\":\"${domain}\",\"root_path\":\"${root}\"}" \
-    http://127.0.0.1:4000/api/sites 2>/dev/null || true)
-  if echo "$result" | grep -q '"id"'; then
-    success "Site ${domain} created."
-  else
-    error "Failed to create site ${domain}: ${result:0:200}"
-    exit 1
-  fi
-}
-
-create_site "laravel.test"   "${SITES_ROOT}/laravel.test"
-create_site "statamic.test"  "${SITES_ROOT}/statamic.test"
-create_site "wordpress.test" "${SITES_ROOT}/wordpress.test"
+# ─── Demo sites ───────────────────────────────────────────────────────────────
+# Directories laravel/statamic/wordpress are auto-discovered as *.test on
+# daemon start (PHP already on disk, so they pick up the latest version).
+info "Waiting for auto-discovered sites..."
+TIMEOUT=30; ELAPSED=0
+while true; do
+  count=$(incus exec "$CONTAINER" -- \
+    sh -c "curl -sf http://127.0.0.1:4000/api/sites | jq '[.[] | select(.domain==\"laravel.test\" or .domain==\"statamic.test\" or .domain==\"wordpress.test\")] | length'" 2>/dev/null || echo "0")
+  [[ "$count" == "3" ]] && { success "Sites laravel.test, statamic.test, wordpress.test ready."; break; }
+  [[ $ELAPSED -ge $TIMEOUT ]] && { error "Timed out waiting for auto-discovered sites (got ${count})."; exit 1; }
+  sleep 1; ELAPSED=$((ELAPSED + 1))
+done
 
 # ─── Install optional services ────────────────────────────────────────────────
 # Running: Valkey/Redis, Mailpit, MySQL, Meilisearch, MaxIO
@@ -341,6 +376,25 @@ install_helper() {
 }
 install_helper "yq" "yq"
 install_helper "mago" "mago"
+
+# Fall back to host binaries when GitHub is unreachable from Incus.
+HOST_SERVER_ROOT=$(sudo systemctl show devctl --property=Environment 2>/dev/null \
+  | tr ' ' '\n' | grep '^DEVCTL_SERVER_ROOT=' | cut -d= -f2 || true)
+HOST_BIN="${HOST_SERVER_ROOT}/bin"
+if [[ -d "$HOST_BIN" ]]; then
+  incus exec "$CONTAINER" -- mkdir -p "${SERVER_ROOT}/bin"
+  for name in sqlite3 mago phpantom_lsp fnm yq; do
+    if [[ -x "${HOST_BIN}/${name}" ]]; then
+      incus file push "${HOST_BIN}/${name}" "${CONTAINER}${SERVER_ROOT}/bin/${name}" >/dev/null
+    fi
+  done
+  incus exec "$CONTAINER" -- bash -c "
+    chmod 755 '${SERVER_ROOT}/bin/'* 2>/dev/null || true
+    ln -sfn '${SERVER_ROOT}/bin/fnm' '${SERVER_ROOT}/bin/nvm' 2>/dev/null || true
+    chown -R testuser:testuser '${SERVER_ROOT}/bin'
+  "
+  success "Helper binaries synced from host."
+fi
 
 # ─── Seed demo data ───────────────────────────────────────────────────────────
 info "Seeding demo data (dumps, mail, SPX profiles, MaxIO files, databases)..."
@@ -537,6 +591,7 @@ print("  Seeding SPX profiles...")
 
 SPX_DIR = f"{SERVER_ROOT}/php/8.3/spx-data"
 os.makedirs(SPX_DIR, exist_ok=True)
+now = int(time.time())
 
 def make_trace_gz(functions, events):
     """Return gzipped SPX call trace bytes."""
@@ -552,7 +607,7 @@ profiles = [
         "meta": {
             "http_host": "laravel.test", "http_method": "GET", "http_request_uri": "/",
             "wall_time_ms": 45.32, "peak_memory_usage": 6291456,
-            "called_function_count": 127, "exec_ts": 1704067200,
+            "called_function_count": 127, "exec_ts": now - 600,
         },
         "functions": [
             "{main}",
@@ -574,7 +629,7 @@ profiles = [
         "meta": {
             "http_host": "laravel.test", "http_method": "POST", "http_request_uri": "/api/users",
             "wall_time_ms": 120.17, "peak_memory_usage": 8388608,
-            "called_function_count": 312, "exec_ts": 1704067500,
+            "called_function_count": 312, "exec_ts": now - 300,
         },
         "functions": [
             "{main}",
@@ -598,7 +653,7 @@ profiles = [
         "meta": {
             "http_host": "statamic.test", "http_method": "GET", "http_request_uri": "/blog",
             "wall_time_ms": 78.45, "peak_memory_usage": 5242880,
-            "called_function_count": 198, "exec_ts": 1704067800,
+            "called_function_count": 198, "exec_ts": now - 120,
         },
         "functions": [
             "{main}",
@@ -695,7 +750,7 @@ else:
 # ── SQLite (Laravel site file) ────────────────────────────────────────────────
 print("  Seeding SQLite site database...")
 import sqlite3
-sqlite_path = "/home/testuser/ddev/sites/laravel.test/database/database.sqlite"
+sqlite_path = "/home/testuser/ddev/sites/laravel/database/database.sqlite"
 os.makedirs(os.path.dirname(sqlite_path), exist_ok=True)
 if os.path.exists(sqlite_path):
     os.remove(sqlite_path)
@@ -714,8 +769,8 @@ INSERT INTO posts (title, published) VALUES
 sdb.commit()
 sdb.close()
 os.chmod(sqlite_path, 0o666)
-os.system("chown -R testuser:testuser /home/testuser/ddev/sites/laravel.test/database")
-print("    laravel.test/database/database.sqlite ready.")
+os.system("chown -R testuser:testuser /home/testuser/ddev/sites/laravel/database")
+print("    laravel/database/database.sqlite ready.")
 
 # ── MySQL catalogs ────────────────────────────────────────────────────────────
 print("  Seeding MySQL databases...")

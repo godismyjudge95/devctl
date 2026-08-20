@@ -18,7 +18,7 @@
  *     screenshot-logs.png       (first log file auto-selected)
  *     screenshot-settings.png
  *     screenshot-maxio.png
- *     screenshot-whodb.png
+ *     screenshot-databases.png
  *     screenshot-helpers.png
  *
  *   Mobile (390×844):
@@ -30,7 +30,7 @@
  *     screenshot-mobile-logs.png
  *     screenshot-mobile-settings.png
  *     screenshot-mobile-maxio.png
- *     screenshot-mobile-whodb.png
+ *     screenshot-mobile-databases.png
  *     screenshot-mobile-helpers.png
  */
 
@@ -171,8 +171,8 @@ const PAGES = [
   {
     // Databases: open MySQL laravel.users so the grid shows rows.
     route:      "/databases",
-    desktop:    "screenshot-whodb.png",
-    mobile:     "screenshot-mobile-whodb.png",
+    desktop:    "screenshot-databases.png",
+    mobile:     "screenshot-mobile-databases.png",
     extraWait:  800,
     async before(page) {
       await page.waitForSelector('[data-catalog="mysql::laravel"]', { timeout: 10000 }).catch(() => {});
