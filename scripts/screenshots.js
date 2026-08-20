@@ -19,6 +19,7 @@
  *     screenshot-settings.png
  *     screenshot-maxio.png
  *     screenshot-whodb.png
+ *     screenshot-helpers.png
  *
  *   Mobile (390×844):
  *     screenshot-mobile-services.png
@@ -30,6 +31,7 @@
  *     screenshot-mobile-settings.png
  *     screenshot-mobile-maxio.png
  *     screenshot-mobile-whodb.png
+ *     screenshot-mobile-helpers.png
  */
 
 import puppeteer from "puppeteer";
@@ -135,8 +137,8 @@ const PAGES = [
     desktop: "screenshot-logs.png",
     mobile:  "screenshot-mobile-logs.png",
     async before(page) {
-      await page.waitForSelector("aside button", { timeout: 5000 }).catch(() => {});
-      await clickFirst(page, "aside button", 1000);
+      await page.waitForSelector("aside .overflow-y-auto button", { timeout: 5000 }).catch(() => {});
+      await clickFirst(page, "aside .overflow-y-auto button", 1000);
     },
   },
   {
@@ -145,18 +147,52 @@ const PAGES = [
     mobile:  "screenshot-mobile-settings.png",
   },
   {
-    // MaxIO: custom file-browser UI — give it a moment to load bucket list.
+    // MaxIO: open the seeded demo-files bucket so objects are visible.
     route:      "/maxio",
     desktop:    "screenshot-maxio.png",
     mobile:     "screenshot-mobile-maxio.png",
-    extraWait:  1000,
+    extraWait:  800,
+    async before(page) {
+      await page.waitForFunction(
+        () => [...document.querySelectorAll("span")].some(s => s.textContent === "demo-files"),
+        { timeout: 8000 },
+      ).catch(() => {});
+      const spans = await page.$$("span");
+      for (const el of spans) {
+        const t = await el.evaluate(n => n.textContent);
+        if (t === "demo-files") {
+          await el.click();
+          await sleep(1200);
+          break;
+        }
+      }
+    },
   },
   {
-    // Databases: built-in TablePlus-style explorer.
+    // Databases: open MySQL laravel.users so the grid shows rows.
     route:      "/databases",
     desktop:    "screenshot-whodb.png",
     mobile:     "screenshot-mobile-whodb.png",
-    extraWait:  1000,
+    extraWait:  800,
+    async before(page) {
+      await page.waitForSelector('[data-catalog="mysql::laravel"]', { timeout: 10000 }).catch(() => {});
+      const cat = await page.$('[data-catalog="mysql::laravel"]');
+      if (cat) {
+        await cat.click();
+        await sleep(1500);
+      }
+      await page.waitForSelector('[data-table="::users"]', { timeout: 8000 }).catch(() => {});
+      const tbl = await page.$('[data-table="::users"]');
+      if (tbl) {
+        await tbl.click();
+        await sleep(1500);
+      }
+    },
+  },
+  {
+    route:   "/helpers",
+    desktop: "screenshot-helpers.png",
+    mobile:  "screenshot-mobile-helpers.png",
   },
 ];
 

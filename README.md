@@ -269,6 +269,8 @@ AWS_ENDPOINT=https://s3.maxio.test
 
 Helpers are optional CLI binaries downloaded into `{serverRoot}/bin/` (on `PATH`). They are not supervised services — no start/stop, just install / update / uninstall.
 
+![Helpers catalog](docs/screenshot-helpers.png)
+
 sqlite3 is installed by default. Everything else is opt-in from the **Helpers** page or the CLI.
 
 | Helper | Source | Notes |
@@ -819,6 +821,7 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
   <img src="docs/screenshot-mobile-settings.png" width="200" alt="Settings page on mobile">
   <img src="docs/screenshot-mobile-maxio.png" width="200" alt="MaxIO on mobile">
   <img src="docs/screenshot-mobile-whodb.png" width="200" alt="Databases explorer on mobile">
+  <img src="docs/screenshot-mobile-helpers.png" width="200" alt="Helpers catalog on mobile">
 </p>
 
 Additional screenshots:

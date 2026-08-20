@@ -147,7 +147,7 @@ info "Creating demo site directories..."
 
 # Laravel — detected by presence of 'artisan' file
 incus exec "$CONTAINER" -- bash -c "
-  mkdir -p '${SITES_ROOT}/laravel.test/public'
+  mkdir -p '${SITES_ROOT}/laravel.test/public' '${SITES_ROOT}/laravel.test/database'
   touch '${SITES_ROOT}/laravel.test/artisan'
   echo '<?php' > '${SITES_ROOT}/laravel.test/public/index.php'
   chown -R testuser:testuser '${SITES_ROOT}/laravel.test'
@@ -267,18 +267,22 @@ install_service "caddy" "Caddy" 120
 wait_running    "caddy" "Caddy" 30
 
 # ─── Install PHP 8.3 ──────────────────────────────────────────────────────────
+# GitHub may be unreachable from the Incus container. SPX screenshots only
+# need a version directory + profile files, so a failed download is non-fatal.
 info "Installing PHP 8.3..."
 PHP_STATUS=$(incus exec "$CONTAINER" -- \
   curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 600 \
   http://127.0.0.1:4000/api/php/versions/8.3/install 2>/dev/null || echo "000")
 if [[ "$PHP_STATUS" == "200" ]]; then
   success "PHP 8.3 installed."
-elif [[ "$PHP_STATUS" == "000" ]]; then
-  error "PHP 8.3 install timed out."
-  exit 1
 else
-  error "PHP 8.3 install returned HTTP ${PHP_STATUS}."
-  exit 1
+  info "PHP 8.3 install skipped (HTTP ${PHP_STATUS}) — seeding SPX profiles into a stub version dir."
+  incus exec "$CONTAINER" -- bash -c "
+    mkdir -p '${SERVER_ROOT}/php/8.3/spx-data'
+    echo '#!/bin/sh' > '${SERVER_ROOT}/php/8.3/php-fpm'
+    chmod 755 '${SERVER_ROOT}/php/8.3/php-fpm'
+    chown -R testuser:testuser '${SERVER_ROOT}/php'
+  "
 fi
 
 # ─── Create demo sites via API ────────────────────────────────────────────────
@@ -322,8 +326,24 @@ wait_running    "meilisearch" "Meilisearch"   30
 install_service "maxio"       "MaxIO"         300
 wait_running    "maxio"       "MaxIO"         30
 
+# ─── Helpers (sqlite3 is default; install a couple more so the catalog looks used) ─
+install_helper() {
+  local id="$1" label="$2"
+  info "Installing helper ${label}..."
+  RESPONSE=$(incus exec "$CONTAINER" -- \
+    curl -sf -X POST --max-time 180 --no-buffer \
+    "http://127.0.0.1:4000/api/helpers/${id}/install" 2>/dev/null || true)
+  if echo "$RESPONSE" | grep -q "^event: done"; then
+    success "Helper ${label} installed."
+  else
+    info "Helper ${label} skipped (not cached or install failed)."
+  fi
+}
+install_helper "yq" "yq"
+install_helper "mago" "mago"
+
 # ─── Seed demo data ───────────────────────────────────────────────────────────
-info "Seeding demo data (dumps, mail, SPX profiles, MaxIO files)..."
+info "Seeding demo data (dumps, mail, SPX profiles, MaxIO files, databases)..."
 
 incus exec "$CONTAINER" -- python3 - <<'SEED_SCRIPT'
 import base64, gzip, io, json, os, socket, time
@@ -655,6 +675,110 @@ if status in (200, 204, 409):
             print(f"    Warning: upload {fpath} returned {s}")
 else:
     print(f"    Warning: bucket creation returned {status}.")
+
+status = s3_put("/media")
+if status in (200, 204, 409):
+    print("    Bucket 'media' ready.")
+    for fpath, body, ct in [
+        ("/media/avatars/alice.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16, "image/png"),
+        ("/media/avatars/bob.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16, "image/png"),
+        ("/media/hero.jpg", b"\xff\xd8\xff" + b"\x00" * 24, "image/jpeg"),
+    ]:
+        s = s3_put(fpath, body, ct)
+        if s in (200, 204):
+            print(f"    Uploaded {fpath}")
+        else:
+            print(f"    Warning: upload {fpath} returned {s}")
+else:
+    print(f"    Warning: bucket 'media' creation returned {status}.")
+
+# ── SQLite (Laravel site file) ────────────────────────────────────────────────
+print("  Seeding SQLite site database...")
+import sqlite3
+sqlite_path = "/home/testuser/ddev/sites/laravel.test/database/database.sqlite"
+os.makedirs(os.path.dirname(sqlite_path), exist_ok=True)
+if os.path.exists(sqlite_path):
+    os.remove(sqlite_path)
+sdb = sqlite3.connect(sqlite_path)
+sdb.executescript("""
+CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT);
+CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, published INTEGER DEFAULT 0);
+INSERT INTO users (name, email) VALUES
+  ('Alice Martin', 'alice@laravel.test'),
+  ('Bob Jones', 'bob@laravel.test'),
+  ('Carol Lee', 'carol@laravel.test');
+INSERT INTO posts (title, published) VALUES
+  ('Getting started with devctl', 1),
+  ('Draft: upcoming features', 0);
+""")
+sdb.commit()
+sdb.close()
+os.chmod(sqlite_path, 0o666)
+os.system("chown -R testuser:testuser /home/testuser/ddev/sites/laravel.test/database")
+print("    laravel.test/database/database.sqlite ready.")
+
+# ── MySQL catalogs ────────────────────────────────────────────────────────────
+print("  Seeding MySQL databases...")
+
+def api_json(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    headers = {"Content-Type": "application/json"} if body is not None else {}
+    req = urllib.request.Request(API + path, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+            return resp.status, json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+    except Exception as e:
+        return 0, str(e)
+
+users_cols = [
+    {"name": "id", "type": "INT", "nullable": False, "primary_key": True, "auto_increment": True, "unique": False},
+    {"name": "name", "type": "VARCHAR(255)", "nullable": False, "primary_key": False, "auto_increment": False, "unique": False},
+    {"name": "email", "type": "VARCHAR(255)", "nullable": True, "primary_key": False, "auto_increment": False, "unique": False},
+]
+posts_cols = [
+    {"name": "id", "type": "INT", "nullable": False, "primary_key": True, "auto_increment": True, "unique": False},
+    {"name": "title", "type": "VARCHAR(255)", "nullable": False, "primary_key": False, "auto_increment": False, "unique": False},
+    {"name": "published", "type": "TINYINT", "nullable": False, "primary_key": False, "auto_increment": False, "unique": False},
+]
+
+for dbname in ("laravel", "wordpress"):
+    st, body = api_json("POST", "/api/databases/mysql/databases", {"name": dbname})
+    print(f"    CREATE DATABASE {dbname}: {st}")
+
+st, body = api_json("POST", "/api/databases/mysql/tables", {
+    "database": "laravel", "name": "users", "columns": users_cols,
+})
+print(f"    CREATE TABLE laravel.users: {st}")
+st, body = api_json("POST", "/api/databases/mysql/tables", {
+    "database": "laravel", "name": "posts", "columns": posts_cols,
+})
+print(f"    CREATE TABLE laravel.posts: {st}")
+st, body = api_json("POST", "/api/databases/mysql/tables", {
+    "database": "wordpress", "name": "users", "columns": users_cols,
+})
+print(f"    CREATE TABLE wordpress.users: {st}")
+
+for row in (
+    {"name": "Alice Martin", "email": "alice@laravel.test"},
+    {"name": "Bob Jones", "email": "bob@laravel.test"},
+    {"name": "Carol Lee", "email": "carol@laravel.test"},
+    {"name": "Dana Kim", "email": "dana@laravel.test"},
+):
+    api_json("POST", "/api/databases/mysql/rows", {"database": "laravel", "table": "users", "values": row})
+for row in (
+    {"title": "Getting started with devctl", "published": 1},
+    {"title": "Draft: upcoming features", "published": 0},
+):
+    api_json("POST", "/api/databases/mysql/rows", {"database": "laravel", "table": "posts", "values": row})
+for row in (
+    {"name": "Admin", "email": "admin@wordpress.test"},
+    {"name": "Editor", "email": "editor@wordpress.test"},
+):
+    api_json("POST", "/api/databases/mysql/rows", {"database": "wordpress", "table": "users", "values": row})
+print("    MySQL rows inserted.")
 
 print("\nSeed data complete.")
 SEED_SCRIPT

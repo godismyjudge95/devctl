@@ -11,8 +11,6 @@ Commit all files to the repo BUT DO NOT PUSH
 # Backlog
 
 - set up a devctl.test proxy domain in caddy to the devctl dashboard so we can have https - still allow access on the raw 4000 port though
-- recapture Databases screenshots (`screenshot-whodb.png` / `screenshot-mobile-whodb.png`) for the README now that WhoDB is gone and the explorer is custom
-- add Helpers page screenshot for the README
 
 # Feature ideas (notes from Yerd / Lerd comparison)
 
@@ -161,5 +159,8 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 
 # Completed
+
+- recapture all README screenshots from the Incus demo container (sites, services, MySQL/SQLite data, MaxIO buckets, Helpers) (2026-08-20)
+- add Helpers page screenshot for the README (2026-08-20)
 
 
