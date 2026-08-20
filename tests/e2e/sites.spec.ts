@@ -118,9 +118,10 @@ test('sites page — create site via dialog then verify row appears', async ({ p
     await expect(page.getByText('Loading…')).toBeHidden({ timeout: 10_000 })
   }
 
-  // Open the "Add Site" dialog.
+  // Open the Add Site page.
   await page.getByRole('button', { name: 'Add Site' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 })
+  await page.waitForURL('**/sites/new')
+  await expect(page.getByRole('heading', { name: 'Add site' })).toBeVisible({ timeout: 5_000 })
 
   // Fill in the form — clear first to ensure previous value (if any) is gone.
   const domainInput = page.locator('#domain')
@@ -140,12 +141,13 @@ test('sites page — create site via dialog then verify row appears', async ({ p
   await expect(httpsCheckbox).toBeChecked()
 
   // Submit.
-  const createBtn = page.getByRole('dialog').getByRole('button', { name: /create/i })
+  const createBtn = page.getByRole('button', { name: /create/i })
   await expect(createBtn).toBeEnabled()
   await createBtn.click()
 
-  // Dialog should close once the POST succeeds and store.create() resolves.
-  await expect(page.getByRole('dialog')).toBeHidden({ timeout: 15_000 })
+  // Returns to the sites list once create succeeds.
+  await page.waitForURL('**/sites', { timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible({ timeout: 10_000 })
 
   // Give Vue reactivity a moment to propagate the new site into the rendered list.
   await page.waitForTimeout(500)
@@ -197,23 +199,25 @@ test('site settings — Force HTTPS checkbox persists after save', async ({ page
 
     // Open Site Settings for this row.
     await row.getByRole('button', { name: 'Settings' }).click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible({ timeout: 5_000 })
+    await page.waitForURL(`**/sites/${created.id}`)
+    await expect(page.getByRole('heading', { name: 'Site settings' })).toBeVisible({ timeout: 5_000 })
 
-    const httpsCheckbox = dialog.locator('#sd-https')
+    const httpsCheckbox = page.locator('#sd-https')
     await expect(httpsCheckbox).toBeVisible()
     await expect(httpsCheckbox).not.toBeChecked()
 
     await httpsCheckbox.click()
     await expect(httpsCheckbox).toBeChecked()
 
-    await dialog.getByRole('button', { name: 'Save' }).click()
-    await expect(dialog).toBeHidden({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Save' }).click()
+    await page.waitForURL('**/sites', { timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible({ timeout: 10_000 })
 
     // Re-open settings — checkbox must still be checked (persisted + reloaded).
-    await row.getByRole('button', { name: 'Settings' }).click()
-    await expect(dialog).toBeVisible({ timeout: 5_000 })
-    await expect(dialog.locator('#sd-https')).toBeChecked()
+    const rowAgain = page.locator('[data-slot="table-row"]').filter({ hasText: SETTINGS_HTTPS_DOMAIN })
+    await rowAgain.getByRole('button', { name: 'Settings' }).click()
+    await page.waitForURL(`**/sites/${created.id}`)
+    await expect(page.locator('#sd-https')).toBeChecked()
 
     const fetched = await page.request.get(`/api/sites/${created.id}`)
     expect(fetched.ok()).toBeTruthy()

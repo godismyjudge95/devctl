@@ -18,6 +18,13 @@ import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import PageHeader from '@/components/layout/PageHeader.vue'
+import Surface from '@/components/layout/Surface.vue'
+import SectionHeader from '@/components/layout/SectionHeader.vue'
+import StatusDot from '@/components/layout/StatusDot.vue'
+import ServiceMark from '@/components/layout/ServiceMark.vue'
+import EmptyState from '@/components/layout/EmptyState.vue'
+import { useSitesStore } from '@/stores/sites'
 import {
   Table, TableBody, TableCell, TableHead,
   TableHeader, TableRow, TableEmpty,
@@ -39,11 +46,11 @@ import { uninstallPHP } from '@/lib/api'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import ServiceLogSheet from './ServiceLogSheet.vue'
-import ServiceSettingsDialog from './ServiceSettingsDialog.vue'
-import ServiceInstallModal from './ServiceInstallModal.vue'
+
 
 const store = useServicesStore()
 const settingsStore = useSettingsStore()
+const sitesStore = useSitesStore()
 const router = useRouter()
 
 // Load credentials for already-installed services once states arrive
@@ -69,18 +76,33 @@ const installedServices = computed(() =>
   store.states.filter(s => s.installed)
 )
 
+const coreServices = computed(() =>
+  installedServices.value.filter(s => !s.id.startsWith('php-fpm-'))
+)
+
+const phpServices = computed(() =>
+  installedServices.value.filter(s => s.id.startsWith('php-fpm-'))
+)
+
+const runningCount = computed(() =>
+  installedServices.value.filter(s => s.status === 'running').length
+)
+
+function statusLabel(svc: { id: string; status: string }) {
+  if (store.installing[svc.id]) return 'installing…'
+  if (pending.value[svc.id]) return `${pending.value[svc.id]}ing…`
+  return svc.status
+}
+
+function isPending(svc: { id: string; status: string }) {
+  return !!(pending.value[svc.id] || store.installing[svc.id] || svc.status === 'pending')
+}
+
 function copyToClipboard(value: string) {
   navigator.clipboard.writeText(value).then(
     () => toast.success('Copied to clipboard'),
     () => toast.error('Failed to copy'),
   )
-}
-
-function statusVariant(status: string): 'success' | 'destructive' | 'secondary' | 'warning' {
-  if (status === 'running') return 'success'
-  if (status === 'stopped') return 'destructive'
-  if (status === 'warning') return 'warning'
-  return 'secondary'
 }
 
 // Per-service loading state: maps id -> action string | null
@@ -244,20 +266,6 @@ function configEditorPath(id: string): string {
   return `/services/${id}/config/${file}`
 }
 
-// --- Per-service settings dialog ---
-const svcSettingsOpen = ref(false)
-const svcSettingsId = ref('')
-const svcSettingsLabel = ref('')
-
-function openServiceSettings(id: string, label: string) {
-  svcSettingsId.value = id
-  svcSettingsLabel.value = label
-  svcSettingsOpen.value = true
-}
-
-// --- Add Service modal ---
-const addServiceOpen = ref(false)
-
 // --- Purge confirm dialog (non-PHP services) ---
 const purgeTarget = ref<{ id: string; label: string } | null>(null)
 const purgeOpen = ref(false)
@@ -321,12 +329,32 @@ async function doPHPUninstall() {
 
 <template>
   <div class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-y-2">
-      <h1 class="text-2xl font-semibold tracking-tight">Services</h1>
-      <Button variant="outline" size="sm" @click="addServiceOpen = true">
-        <Plus class="w-3.5 h-3.5" />
-        Add Service
-      </Button>
+    <PageHeader title="Services" description="Databases, caches, and runtimes this machine supervises.">
+      <template #actions>
+        <Button size="sm" @click="router.push('/services/install')">
+          <Plus class="w-3.5 h-3.5" />
+          Add Service
+        </Button>
+      </template>
+    </PageHeader>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="rounded-2xl border border-border bg-card px-4 py-3">
+        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">Running</p>
+        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ runningCount }}<span class="text-sm font-normal text-muted-foreground"> / {{ installedServices.length }}</span></p>
+      </div>
+      <div class="rounded-2xl border border-border bg-card px-4 py-3">
+        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">Sites</p>
+        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ sitesStore.count }}</p>
+      </div>
+      <div class="rounded-2xl border border-border bg-card px-4 py-3">
+        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">PHP</p>
+        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ phpServices.length }}<span class="text-sm font-normal text-muted-foreground"> versions</span></p>
+      </div>
+      <div class="rounded-2xl border border-border bg-card px-4 py-3">
+        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">Stopped</p>
+        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ store.stoppedCount }}</p>
+      </div>
     </div>
 
     <!-- ── Mobile card list (< md) ─────────────────────────────────── -->
@@ -335,24 +363,16 @@ async function doPHPUninstall() {
         <Card>
           <CardContent class="p-4">
               <div class="flex items-center justify-between gap-2 mb-3">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="font-medium text-sm truncate">{{ svc.label }}</span>
-                  <Badge :variant="statusVariant(svc.status)" class="shrink-0 text-xs">
-                    <span class="flex items-center gap-1">
-                      <Loader2
-                        v-if="pending[svc.id] || store.installing[svc.id] || svc.status === 'pending'"
-                        class="w-2.5 h-2.5 animate-spin"
-                      />
-                      <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
-                        :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
-                      />
-                      {{ store.installing[svc.id] ? 'installing…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
-                    </span>
-                  </Badge>
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <ServiceMark :id="svc.id" size="sm" />
+                  <div class="min-w-0">
+                    <div class="font-medium text-sm truncate">{{ svc.label }}</div>
+                    <StatusDot :status="svc.status" :pending="isPending(svc)" :label="statusLabel(svc)" />
+                  </div>
                 </div>
-                <div class="flex items-center gap-1 shrink-0">
-                  <span class="font-mono text-xs text-muted-foreground">{{ svc.version || '—' }}</span>
-                  <Badge v-if="svc.update_available" variant="warning" class="text-xs px-1 py-0">
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span class="font-mono text-xs text-muted-foreground tabular-nums">{{ svc.version || '—' }}</span>
+                  <Badge v-if="svc.update_available" variant="warning">
                     update
                   </Badge>
                 </div>
@@ -418,7 +438,7 @@ async function doPHPUninstall() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
                       v-if="hasSettingsGear(svc.id)"
-                      @click="openServiceSettings(svc.id, svc.label)"
+                      @click="router.push(`/services/${svc.id}/settings`)"
                     >
                       <Settings2 class="w-4 h-4" />
                       Settings
@@ -512,22 +532,23 @@ async function doPHPUninstall() {
         </Card>
       </template>
 
-      <div
-        v-if="installedServices.length === 0"
-        class="rounded-lg border border-dashed border-border py-16 text-center text-muted-foreground text-sm"
-      >
+      <EmptyState v-if="installedServices.length === 0">
         No services installed. Tap "Add Service" to install one.
-      </div>
+      </EmptyState>
     </div>
 
     <!-- ── Desktop table (md+) ─────────────────────────────────────── -->
-    <div class="hidden md:block rounded-lg border border-border overflow-hidden">
-      <Table>
+    <Surface class="hidden md:block overflow-hidden">
+      <SectionHeader
+        title="Local services"
+        description="Each engine binds to localhost. Start, stop, or inspect credentials from the row."
+      />
+      <Table class="data-table">
         <TableHeader>
           <TableRow>
             <TableHead class="w-8"></TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead>Service</TableHead>
+            <TableHead>State</TableHead>
             <TableHead>Version</TableHead>
             <TableHead class="text-right">Actions</TableHead>
           </TableRow>
@@ -549,25 +570,19 @@ async function doPHPUninstall() {
                   <ChevronRight v-else class="w-3.5 h-3.5" />
                 </Button>
               </TableCell>
-              <TableCell class="font-medium">{{ svc.label }}</TableCell>
               <TableCell>
-                <Badge :variant="statusVariant(svc.status)">
-                  <span class="flex items-center gap-1.5">
-                    <Loader2
-                      v-if="pending[svc.id] || store.installing[svc.id] || svc.status === 'pending'"
-                      class="w-3 h-3 animate-spin"
-                    />
-                    <span v-else class="inline-block w-1.5 h-1.5 rounded-full"
-                      :class="svc.status === 'running' ? 'bg-green-600' : svc.status === 'stopped' ? 'bg-red-400' : 'bg-amber-400'"
-                    />
-                    {{ store.installing[svc.id] ? 'installing…' : pending[svc.id] ? pending[svc.id] + 'ing…' : svc.status }}
-                  </span>
-                </Badge>
+                <div class="flex items-center gap-2.5">
+                  <ServiceMark :id="svc.id" size="sm" />
+                  <span class="font-medium">{{ svc.label }}</span>
+                </div>
               </TableCell>
-              <TableCell class="font-mono text-xs text-muted-foreground">
+              <TableCell>
+                <StatusDot :status="svc.status" :pending="isPending(svc)" :label="statusLabel(svc)" />
+              </TableCell>
+              <TableCell class="font-mono text-xs text-muted-foreground tabular-nums">
                 <span class="flex items-center gap-1.5">
                   {{ svc.version || '—' }}
-                  <Badge v-if="svc.update_available" variant="warning" class="text-xs px-1 py-0">
+                  <Badge v-if="svc.update_available" variant="warning">
                     update
                   </Badge>
                 </span>
@@ -645,7 +660,7 @@ async function doPHPUninstall() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           v-if="hasSettingsGear(svc.id)"
-                          @click="openServiceSettings(svc.id, svc.label)"
+                          @click="router.push(`/services/${svc.id}/settings`)"
                         >
                           <Settings2 class="w-4 h-4" />
                           Settings
@@ -733,7 +748,7 @@ async function doPHPUninstall() {
           </TableEmpty>
         </TableBody>
       </Table>
-    </div>
+    </Surface>
   </div>
 
   <!-- Log sheet -->
@@ -742,21 +757,6 @@ async function doPHPUninstall() {
     :service-id="logServiceId"
     :service-label="logServiceLabel"
     @update:open="logOpen = $event"
-  />
-
-  <!-- Per-service settings dialog -->
-  <ServiceSettingsDialog
-    :open="svcSettingsOpen"
-    :service-id="svcSettingsId"
-    :service-label="svcSettingsLabel"
-    @update:open="svcSettingsOpen = $event"
-  />
-
-  <!-- Add Service modal -->
-  <ServiceInstallModal
-    :open="addServiceOpen"
-    @update:open="addServiceOpen = $event"
-    @installed="(id) => store.fetchCredentials(id)"
   />
 
   <!-- Purge confirm dialog -->

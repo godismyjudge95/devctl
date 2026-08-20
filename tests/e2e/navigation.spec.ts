@@ -13,7 +13,9 @@ import { test, expect, type Page } from '@playwright/test'
 // test "/services" directly.
 const routes = [
   '/services',
+  '/services/install',
   '/sites',
+  '/sites/new',
   '/dumps',
   '/logs',
   '/settings',

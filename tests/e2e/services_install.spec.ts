@@ -195,9 +195,10 @@ test('install output dialog — opens when View output is clicked', async ({ pag
   await page.goto('/services')
   await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible({ timeout: 10_000 })
 
-  // Open the "Add Service" modal.
+  // Open the Add Service page.
   await page.getByRole('button', { name: 'Add Service' }).click()
-  await expect(page.getByRole('dialog', { name: 'Add Service' })).toBeVisible({ timeout: 5_000 })
+  await page.waitForURL('**/services/install')
+  await expect(page.getByRole('heading', { name: 'Add service' })).toBeVisible({ timeout: 5_000 })
 
   // Click Install on the first service that appears (any uninstalled service).
   const installBtn = page.getByRole('button', { name: 'Install' }).first()
