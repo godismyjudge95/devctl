@@ -114,7 +114,10 @@ function formatDate(ts: number): string {
     >
       <!-- Toolbar -->
       <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span class="text-sm font-medium">SPX Profiles</span>
+        <div>
+          <div class="kicker text-[12px]">Profiler</div>
+          <div class="text-[11px] text-muted-foreground mt-0.5">SPX profiles</div>
+        </div>
         <Button
           variant="ghost"
           size="icon-xs"

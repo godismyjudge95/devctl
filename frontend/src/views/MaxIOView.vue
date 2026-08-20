@@ -495,10 +495,8 @@ onMounted(() => {
     >
       <!-- Info bar -->
       <div class="px-4 py-3 border-b border-border">
-        <div class="flex items-center gap-1.5">
-          <HardDrive class="w-3.5 h-3.5 text-muted-foreground" />
-          <span class="text-xs font-medium">MaxIO</span>
-        </div>
+        <div class="kicker text-[12px]">Storage</div>
+        <div class="text-[11px] text-muted-foreground mt-0.5">S3-compatible buckets</div>
       </div>
 
       <!-- New bucket button -->

@@ -95,7 +95,10 @@ watch(() => props.open, (val) => {
     <SheetContent side="right" class="w-full sm:max-w-2xl flex flex-col p-0">
       <SheetHeader class="px-5 py-4 border-b border-border shrink-0">
         <div class="flex items-center gap-2 pr-8">
-          <SheetTitle class="font-mono text-sm flex-1">{{ serviceLabel }} — logs</SheetTitle>
+          <div class="flex-1 min-w-0">
+            <SheetTitle class="kicker text-[12px]">{{ serviceLabel }}</SheetTitle>
+            <p class="text-[11px] text-muted-foreground mt-0.5">Live logs</p>
+          </div>
           <Button variant="ghost" size="sm" @click="clearLog">
             <Eraser class="w-3.5 h-3.5" />
             Clear
@@ -104,7 +107,7 @@ watch(() => props.open, (val) => {
       </SheetHeader>
       <div
         ref="logScroll"
-        class="flex-1 overflow-auto bg-muted text-foreground font-mono text-sm p-4 leading-5"
+        class="flex-1 overflow-auto bg-[oklch(0.18_0.014_264)] text-[oklch(0.82_0.04_155)] font-mono text-xs p-4 leading-5"
       >
         <div v-if="displayedLogLines.length === 0" class="text-muted-foreground">Waiting for log output…</div>
         <div v-for="(line, i) in displayedLogLines" :key="i"

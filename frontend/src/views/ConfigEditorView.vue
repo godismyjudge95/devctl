@@ -5,6 +5,7 @@ import { toast } from 'vue-sonner'
 import { ArrowLeft, Save } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import ServiceMark from '@/components/layout/ServiceMark.vue'
 import CodeEditor from '@/components/CodeEditor.vue'
 import { getServiceConfig, putServiceConfig } from '@/lib/api'
 
@@ -126,11 +127,12 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <div class="flex flex-col h-full" @keydown="onKeydown" tabindex="-1">
     <!-- Top bar -->
-    <div class="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
+    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border shrink-0 bg-card">
       <Button variant="ghost" size="icon" class="shrink-0" @click="router.push('/services')">
         <ArrowLeft class="w-4 h-4" />
       </Button>
 
+      <ServiceMark :id="serviceId" size="sm" />
       <div class="flex items-center gap-2 min-w-0">
         <span class="font-medium text-sm truncate">{{ meta?.label ?? serviceId }}</span>
         <span class="text-muted-foreground text-sm">/</span>

@@ -8,6 +8,7 @@ import { ButtonGroup } from '@/components/ui/button-group'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import PageHeader from '@/components/layout/PageHeader.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -222,9 +223,7 @@ function onConnTypeChange(type: string) {
 
 <template>
   <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-    </div>
+    <PageHeader title="Settings" description="Dashboard bind address, watch directory, TLS, and integrations." />
 
     <div v-if="store.loading" class="text-muted-foreground text-sm py-8 text-center">Loading…</div>
 

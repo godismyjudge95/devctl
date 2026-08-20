@@ -4,6 +4,7 @@ import { Eraser, RefreshCw, ArrowLeft } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import StatusDot from '@/components/layout/StatusDot.vue'
 import { getLogs, clearLog, type LogFileInfo } from '@/lib/api'
 import { normalizeLogChunk } from '@/lib/utils'
 
@@ -180,7 +181,10 @@ onUnmounted(() => {
       :class="mobilePane === 'viewer' ? 'hidden md:flex' : 'flex'"
     >
       <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <span class="text-sm font-medium">Log Files</span>
+        <div>
+          <div class="kicker text-[12px]">Logs</div>
+          <div class="text-[11px] text-muted-foreground mt-0.5">Service output</div>
+        </div>
         <Button variant="ghost" size="icon-sm" @click="loadLogList" title="Refresh list">
           <RefreshCw class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" />
         </Button>
@@ -197,8 +201,8 @@ onUnmounted(() => {
           :key="f.id"
           class="w-full text-left flex items-center justify-between gap-2 px-4 py-3 text-sm transition-colors"
           :class="selectedId === f.id
-            ? 'bg-accent text-accent-foreground font-medium border-l-2 border-l-primary'
-            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
           @click="selectFile(f.id)"
         >
           <span class="truncate min-w-0">{{ formatLogName(f.id) }}</span>
@@ -224,6 +228,7 @@ onUnmounted(() => {
           <ArrowLeft class="w-4 h-4" />
           Back
         </Button>
+        <StatusDot v-if="selectedId" status="live" label="live" />
         <span class="font-mono text-sm text-muted-foreground truncate flex-1 min-w-0">
           {{ selectedId ? selectedId + '.log' : 'Select a log file' }}
         </span>
@@ -250,7 +255,7 @@ onUnmounted(() => {
       <div
         v-else
         ref="logScroll"
-        class="flex-1 overflow-auto bg-neutral-950 text-green-400 font-mono text-xs p-4 leading-5"
+        class="flex-1 overflow-auto bg-[oklch(0.18_0.014_264)] text-[oklch(0.82_0.04_155)] font-mono text-xs p-4 leading-5"
       >
         <div v-if="displayedLogLines.length === 0" class="text-neutral-500">Waiting for log output…</div>
         <div

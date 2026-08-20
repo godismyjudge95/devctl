@@ -197,8 +197,11 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
 
       <!-- Panel header -->
       <div class="flex items-center justify-between px-3 py-3 border-b border-border shrink-0">
-        <span class="text-sm font-medium">Inbox</span>
-        <span v-if="store.unread > 0" class="text-xs text-muted-foreground">{{ store.unread }} unread</span>
+        <div>
+          <div class="kicker text-[12px]">Mail</div>
+          <div class="text-[11px] text-muted-foreground mt-0.5">Captured SMTP</div>
+        </div>
+        <span v-if="store.unread > 0" class="text-xs text-muted-foreground tabular-nums">{{ store.unread }} unread</span>
       </div>
 
       <!-- Search -->
