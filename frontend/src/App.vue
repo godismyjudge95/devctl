@@ -12,8 +12,7 @@ import { usePwaInstall } from '@/composables/usePwaInstall'
 import { useUpdateStore } from '@/stores/update'
 import { onMounted, watch, computed, ref } from 'vue'
 import { Settings, Globe, Server, Mail, Bug, Sun, Moon, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Download } from 'lucide-vue-next'
-import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
+import StatusDot from '@/components/layout/StatusDot.vue'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { toast } from 'vue-sonner'
@@ -167,15 +166,15 @@ async function triggerSelfUpdate() {
 }
 
 const allNavItems = [
-  { path: '/services',  label: 'Services',  icon: Server },
-  { path: '/sites',     label: 'Sites',     icon: Globe },
-  { path: '/dumps',     label: 'Dumps',     icon: Bug },
-  { path: '/mail',      label: 'Mail',      icon: Mail,        requiresMailpit: true },
-  { path: '/spx',       label: 'Profiler',  icon: Activity,    requiresSPX: true },
-  { path: '/whodb',     label: 'WhoDB',     icon: Database,    requiresWhoDB: true },
-  { path: '/maxio',     label: 'Storage',   icon: HardDrive,   requiresMaxIO: true },
-  { path: '/logs',      label: 'Logs',      icon: ScrollText },
-  { path: '/settings',  label: 'Settings',  icon: Settings },
+  { path: '/services',  label: 'Services',  icon: Server,     group: 'Environment' },
+  { path: '/sites',     label: 'Sites',     icon: Globe,      group: 'Environment' },
+  { path: '/dumps',     label: 'Dumps',     icon: Bug,        group: 'Developer' },
+  { path: '/mail',      label: 'Mail',      icon: Mail,       group: 'Developer', requiresMailpit: true },
+  { path: '/spx',       label: 'Profiler',  icon: Activity,   group: 'Developer', requiresSPX: true },
+  { path: '/logs',      label: 'Logs',      icon: ScrollText, group: 'Developer' },
+  { path: '/whodb',     label: 'WhoDB',     icon: Database,   group: 'Tools', requiresWhoDB: true },
+  { path: '/maxio',     label: 'Storage',   icon: HardDrive,  group: 'Tools', requiresMaxIO: true },
+  { path: '/settings',  label: 'Settings',  icon: Settings,   group: 'System' },
 ]
 
 const navItems = computed(() =>
@@ -186,19 +185,37 @@ const navItems = computed(() =>
     (!(item as { requiresMaxIO?: boolean }).requiresMaxIO || servicesStore.maxioInstalled)
   )
 )
+
+const navGroups = computed(() => {
+  const order = ['Environment', 'Developer', 'Tools', 'System']
+  return order
+    .map(label => ({
+      label,
+      items: navItems.value.filter(item => item.group === label),
+    }))
+    .filter(group => group.items.length > 0)
+})
+
+function navBadge(path: string): { value: number | string; tone: 'muted' | 'alert' | 'live' } | null {
+  if (path === '/sites' && sitesStore.count > 0) return { value: sitesStore.count, tone: 'muted' }
+  if (path === '/dumps' && dumpsStore.unreadCount > 0) return { value: dumpsStore.unreadCount, tone: 'live' }
+  if (path === '/services' && servicesStore.stoppedCount > 0) return { value: servicesStore.stoppedCount, tone: 'alert' }
+  if (path === '/mail' && mailStore.newMailCount > 0) return { value: mailStore.newMailCount, tone: 'live' }
+  if (path === '/spx' && spxStore.newProfileCount > 0) return { value: spxStore.newProfileCount, tone: 'live' }
+  return null
+}
 </script>
 
 <template>
   <div class="flex h-dvh overflow-hidden bg-background text-foreground">
 
     <!-- Sidebar: hidden on mobile, always visible md+ -->
-    <nav class="hidden md:flex w-56 shrink-0 border-r border-border flex-col bg-card">
-      <!-- Logo -->
-      <div class="flex items-center gap-2 px-4 h-14 border-b border-border">
+    <nav class="hidden md:flex w-[220px] shrink-0 border-r border-sidebar-border flex-col bg-sidebar text-sidebar-foreground">
+      <div class="flex items-center gap-2.5 px-4 h-14">
         <img src="/logo-transparent.png" class="w-6 h-6 shrink-0" alt="devctl" />
         <div class="min-w-0">
-          <div class="font-semibold text-sm tracking-tight leading-tight">devctl</div>
-          <div class="text-xs text-muted-foreground">{{ updateStore.currentVersion || 'dev' }}</div>
+          <div class="font-semibold text-[13px] tracking-tight leading-tight">devctl</div>
+          <div class="text-[11px] text-muted-foreground font-mono">{{ updateStore.currentVersion || 'dev' }}</div>
         </div>
         <TooltipProvider v-if="updateStore.updateAvailable" :delay-duration="100">
           <Tooltip>
@@ -206,7 +223,7 @@ const navItems = computed(() =>
               <Button
                 variant="outline"
                 size="sm"
-                class="ml-auto shrink-0 text-amber-500 border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-400 gap-1"
+                class="ml-auto shrink-0 h-7 text-[11px] text-amber-600 border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-600 gap-1"
                 :disabled="updateStore.updating"
                 @click="triggerSelfUpdate()"
               >
@@ -221,65 +238,55 @@ const navItems = computed(() =>
         </TooltipProvider>
       </div>
 
-      <!-- Nav items -->
-      <div class="flex-1 px-3 py-3 space-y-0.5">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.path"
-          :to="item.path"
-          class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors"
-          :class="route.path.startsWith(item.path)
-            ? 'bg-accent text-accent-foreground font-medium'
-            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
-        >
-          <component :is="item.icon" class="w-4 h-4 shrink-0" />
-          <span>{{ item.label }}</span>
-          <Badge
-            v-if="item.path === '/sites' && sitesStore.count > 0"
-            variant="secondary"
-            class="ml-auto text-xs px-1.5 py-0"
-          >{{ sitesStore.count }}</Badge>
-          <Badge
-            v-if="item.path === '/dumps' && dumpsStore.unreadCount > 0"
-            variant="secondary"
-            class="ml-auto text-xs px-1.5 py-0"
-          >{{ dumpsStore.unreadCount }}</Badge>
-          <Badge
-            v-if="item.path === '/services' && servicesStore.stoppedCount > 0"
-            variant="destructive"
-            class="ml-auto text-xs px-1.5 py-0"
-          >{{ servicesStore.stoppedCount }}</Badge>
-          <Badge
-            v-if="item.path === '/mail' && mailStore.newMailCount > 0"
-            variant="secondary"
-            class="ml-auto text-xs px-1.5 py-0"
-          >{{ mailStore.newMailCount }}</Badge>
-          <Badge
-            v-if="item.path === '/spx' && spxStore.newProfileCount > 0"
-            variant="secondary"
-            class="ml-auto text-xs px-1.5 py-0"
-          >{{ spxStore.newProfileCount }}</Badge>
-        </RouterLink>
+      <div class="flex-1 px-2.5 py-1 overflow-y-auto">
+        <div v-for="group in navGroups" :key="group.label" class="mb-4">
+          <div class="px-2.5 mb-1.5 text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground/80">
+            {{ group.label }}
+          </div>
+          <div class="space-y-0.5">
+            <RouterLink
+              v-for="item in group.items"
+              :key="item.path"
+              :to="item.path"
+              class="flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-colors duration-150"
+              :class="route.path.startsWith(item.path)
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'"
+            >
+              <component :is="item.icon" class="w-4 h-4 shrink-0 opacity-80" />
+              <span>{{ item.label }}</span>
+              <span
+                v-if="navBadge(item.path)"
+                class="ml-auto min-w-4 h-4 px-1 rounded-full text-[10px] font-medium tabular-nums flex items-center justify-center"
+                :class="{
+                  'bg-muted text-muted-foreground': navBadge(item.path)?.tone === 'muted',
+                  'bg-destructive/10 text-destructive': navBadge(item.path)?.tone === 'alert',
+                  'bg-[oklch(0.94_0.04_150)] text-[oklch(0.38_0.11_150)] dark:bg-[oklch(0.28_0.05_150)] dark:text-[oklch(0.82_0.08_150)]': navBadge(item.path)?.tone === 'live',
+                }"
+              >{{ navBadge(item.path)?.value }}</span>
+            </RouterLink>
+          </div>
+        </div>
       </div>
 
-      <Separator />
-      <div v-if="isInstallable" class="px-3 pt-3">
+      <div class="px-3 pb-3 pt-2 border-t border-sidebar-border space-y-2">
         <Button
+          v-if="isInstallable"
           variant="outline"
           size="sm"
-          class="w-full gap-2 text-blue-500 border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
+          class="w-full gap-2"
           @click="promptInstall()"
         >
           <Download class="w-3.5 h-3.5" />
           Install app
         </Button>
-      </div>
-      <div class="px-3 py-3 flex items-center justify-between">
-        <span class="text-xs text-muted-foreground px-2">localhost:4000</span>
-        <Button variant="ghost" size="icon-xs" @click="toggleDark()">
-          <Sun v-if="isDark" class="w-4 h-4" />
-          <Moon v-else class="w-4 h-4" />
-        </Button>
+        <div class="flex items-center justify-between px-1">
+          <StatusDot status="connected" label="Connected" />
+          <Button variant="ghost" size="icon-xs" @click="toggleDark()">
+            <Sun v-if="isDark" class="w-3.5 h-3.5" />
+            <Moon v-else class="w-3.5 h-3.5" />
+          </Button>
+        </div>
       </div>
     </nav>
 
@@ -293,13 +300,13 @@ const navItems = computed(() =>
           <Button variant="ghost" size="icon" class="h-9 w-9" @click="mobileNavOpen = true">
             <Menu class="w-5 h-5" />
           </Button>
-          <SheetContent side="left" class="w-64 p-0 flex flex-col">
-            <SheetHeader class="px-4 h-14 border-b border-border flex flex-row items-center space-y-0">
+          <SheetContent side="left" class="w-64 p-0 flex flex-col bg-sidebar">
+            <SheetHeader class="px-4 h-14 border-b border-sidebar-border flex flex-row items-center space-y-0">
               <div class="flex items-center gap-2 w-full">
                 <img src="/logo-transparent.png" class="w-6 h-6 shrink-0" alt="devctl" />
                 <div class="min-w-0">
-                  <SheetTitle class="font-semibold text-sm tracking-tight leading-tight">devctl</SheetTitle>
-                  <div class="text-xs text-muted-foreground">{{ updateStore.currentVersion || 'dev' }}</div>
+                  <SheetTitle class="font-semibold text-[13px] tracking-tight leading-tight">devctl</SheetTitle>
+                  <div class="text-[11px] text-muted-foreground font-mono">{{ updateStore.currentVersion || 'dev' }}</div>
                 </div>
                 <TooltipProvider v-if="updateStore.updateAvailable" :delay-duration="100">
                   <Tooltip>
@@ -307,7 +314,7 @@ const navItems = computed(() =>
                       <Button
                         variant="outline"
                         size="sm"
-                        class="ml-auto shrink-0 text-amber-500 border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-400 gap-1"
+                        class="ml-auto shrink-0 h-7 text-[11px] text-amber-600 border-amber-500/30 hover:bg-amber-500/10 gap-1"
                         :disabled="updateStore.updating"
                         @click="triggerSelfUpdate(); mobileNavOpen = false"
                       >
@@ -321,72 +328,56 @@ const navItems = computed(() =>
               </div>
             </SheetHeader>
 
-            <!-- Mobile nav items -->
-            <div class="flex-1 px-3 py-3 space-y-0.5">
-              <RouterLink
-                v-for="item in navItems"
-                :key="item.path"
-                :to="item.path"
-                class="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors"
-                :class="route.path.startsWith(item.path)
-                  ? 'bg-accent text-accent-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
-                @click="mobileNavOpen = false"
-              >
-                <component :is="item.icon" class="w-4 h-4 shrink-0" />
-                <span>{{ item.label }}</span>
-                <Badge
-                  v-if="item.path === '/sites' && sitesStore.count > 0"
-                  variant="secondary"
-                  class="ml-auto text-xs px-1.5 py-0"
-                >{{ sitesStore.count }}</Badge>
-                <Badge
-                  v-if="item.path === '/dumps' && dumpsStore.unreadCount > 0"
-                  variant="secondary"
-                  class="ml-auto text-xs px-1.5 py-0"
-                >{{ dumpsStore.unreadCount }}</Badge>
-                <Badge
-                  v-if="item.path === '/services' && servicesStore.stoppedCount > 0"
-                  variant="destructive"
-                  class="ml-auto text-xs px-1.5 py-0"
-                >{{ servicesStore.stoppedCount }}</Badge>
-                <Badge
-                  v-if="item.path === '/mail' && mailStore.newMailCount > 0"
-                  variant="secondary"
-                  class="ml-auto text-xs px-1.5 py-0"
-                >{{ mailStore.newMailCount }}</Badge>
-                <Badge
-                  v-if="item.path === '/spx' && spxStore.newProfileCount > 0"
-                  variant="secondary"
-                  class="ml-auto text-xs px-1.5 py-0"
-                >{{ spxStore.newProfileCount }}</Badge>
-              </RouterLink>
+            <div class="flex-1 px-2.5 py-3 overflow-y-auto">
+              <div v-for="group in navGroups" :key="group.label" class="mb-4">
+                <div class="px-2.5 mb-1.5 text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground/80">
+                  {{ group.label }}
+                </div>
+                <div class="space-y-0.5">
+                  <RouterLink
+                    v-for="item in group.items"
+                    :key="item.path"
+                    :to="item.path"
+                    class="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors"
+                    :class="route.path.startsWith(item.path)
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'"
+                    @click="mobileNavOpen = false"
+                  >
+                    <component :is="item.icon" class="w-4 h-4 shrink-0 opacity-80" />
+                    <span>{{ item.label }}</span>
+                    <span
+                      v-if="navBadge(item.path)"
+                      class="ml-auto min-w-4 h-4 px-1 rounded-full text-[10px] font-medium tabular-nums flex items-center justify-center"
+                      :class="{
+                        'bg-muted text-muted-foreground': navBadge(item.path)?.tone === 'muted',
+                        'bg-destructive/10 text-destructive': navBadge(item.path)?.tone === 'alert',
+                        'bg-[oklch(0.94_0.04_150)] text-[oklch(0.38_0.11_150)] dark:bg-[oklch(0.28_0.05_150)] dark:text-[oklch(0.82_0.08_150)]': navBadge(item.path)?.tone === 'live',
+                      }"
+                    >{{ navBadge(item.path)?.value }}</span>
+                  </RouterLink>
+                </div>
+              </div>
             </div>
 
-            <Separator />
-            <div v-if="isInstallable" class="px-3 pt-3">
+            <div class="px-3 pb-3 pt-2 border-t border-sidebar-border space-y-2">
               <Button
+                v-if="isInstallable"
                 variant="outline"
                 size="sm"
-                class="w-full gap-2 text-blue-500 border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
+                class="w-full gap-2"
                 @click="promptInstall(); mobileNavOpen = false"
               >
                 <Download class="w-3.5 h-3.5" />
                 Install app
               </Button>
-            </div>
-            <div class="px-3 py-3 flex items-center justify-between">
-              <span class="text-xs text-muted-foreground px-2">localhost:4000</span>
-            <Button variant="ghost" size="icon-xs" @click="toggleDark()">
-                <Sun v-if="isDark" class="w-4 h-4" />
-                <Moon v-else class="w-4 h-4" />
-              </Button>
+              <StatusDot status="connected" label="Connected" />
             </div>
           </SheetContent>
         </Sheet>
 
         <!-- Current page label -->
-        <span class="text-sm font-semibold tracking-tight">{{ currentPageLabel }}</span>
+        <span class="kicker text-sm">{{ currentPageLabel }}</span>
 
         <!-- Dark mode toggle -->
         <Button variant="ghost" size="icon" class="h-9 w-9" @click="toggleDark()">
@@ -398,7 +389,7 @@ const navItems = computed(() =>
       <!-- Page content -->
       <div :class="route.meta.fullWidth
         ? 'flex-1 min-h-0 overflow-hidden'
-        : 'p-4 md:p-6 max-w-6xl mx-auto w-full'">
+        : 'p-5 md:p-8 max-w-6xl mx-auto w-full'">
         <RouterView />
       </div>
     </main>
