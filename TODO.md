@@ -160,7 +160,5 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 # Completed
 
-- recapture all README screenshots from the Incus demo container (sites, services, MySQL/SQLite data, MaxIO buckets, Helpers) (2026-08-20)
-- add Helpers page screenshot for the README (2026-08-20)
 
 
