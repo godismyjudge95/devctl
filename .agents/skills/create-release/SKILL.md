@@ -116,6 +116,14 @@ Release PHP binaries **separately** from the devctl binary. Do this when:
 
 PHP binaries use unique immutable tags such as `php-binaries-20260422.1`. Publishing a new PHP binaries release does not replace older ones; devctl discovers the newest matching release automatically.
 
+**Compile 8.x locally first.** GitHub Actions is a terrible place to iterate on static-php-cli failures. Prove the current extension list with the Docker mirror of the compile cells before tagging:
+
+```sh
+scripts/local-build-php8.sh 8.4
+```
+
+PHP 8.0 is **not** compiled (rehosted common). Do not spend time making 8.0.30 build against current libxml2. Fix any 8.1–8.5 compile errors in `build-php.yml` / the local script, then tag.
+
 ### 2.1 Choose the PHP binaries tag
 
 Use a unique immutable tag for each PHP binaries release:
@@ -142,7 +150,7 @@ gh release create "$PHP_TAG" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds supported PHP minors in parallel (legacy 7.x, packaged 8.0, built 8.1–8.5), and attaches the binaries plus `php-binaries.json` to this release.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds supported PHP minors in parallel (legacy 7.x, compiled 8.1–8.5 with sodium, rehosted 8.0 common without sodium), and attaches the binaries plus `php-binaries.json` to this release.
 
 ### 2.4 Verify
 

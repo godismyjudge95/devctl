@@ -295,7 +295,7 @@ devctl helpers:uninstall mago
 
 ## PHP
 
-PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP 8.x is repackaged from [static-php.dev](https://static-php.dev) common builds; 7.x is built best-effort with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) and a reduced extension set.
+PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP **8.1–8.5** are compiled with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) using the static-php.dev **common** extension set plus **sodium**. PHP **8.0** is still rehosted from static-php.dev common (no sodium): 8.0.30 does not compile against current libxml2. PHP **7.x** is a reduced set (sodium on 7.2 and 7.4; PHP 7.0 predates the extension).
 
 devctl resolves PHP downloads from the newest immutable `php-binaries-*` release and reads `php-binaries.json` metadata from that release to surface patch-level updates such as `8.4.18 -> 8.4.19` in the Services UI.
 

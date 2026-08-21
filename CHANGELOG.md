@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- PHP **8.1–8.5** binaries now compile **sodium** into the static CLI/FPM builds (same common extension set as before, plus `ext-sodium`). PHP **8.0** stays on the static-php.dev common tarball (no sodium) because 8.0.30 does not compile against current libxml2. Reinstall or wait for a new `php-binaries-*` release to pick it up.
+
 ## v0.13.0 — 2026-08-20
 
 - Hardened **git worktrees**: `vendor/` and `node_modules/` are copied (reflinked when possible) instead of symlinked so Composer `__DIR__` stays in the worktree; `.env` / `wp-config.php` / Drupal settings copies rewrite the parent hostname to the worktree vhost; lockfile mismatches skip stale dependency copies.
