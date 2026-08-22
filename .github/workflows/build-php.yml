@@ -13,6 +13,12 @@ concurrency:
   group: build-php-${{ github.ref }}
   cancel-in-progress: true
 
+# static-php-cli hits api.github.com for many optional deps (libcares, zlib, …).
+# Unauthenticated requests 403 under parallel matrix load; the Alpine container
+# forwards this into curl (see bin/spc-alpine-docker).
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   # ── PHP 8.x ────────────────────────────────────────────────────────────────
   # 8.1–8.5: compile with static-php-cli 2.8.5, common ext set plus sodium.
