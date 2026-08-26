@@ -267,9 +267,10 @@ jobs:
           path: tmp_meta/${{ matrix.minor }}.json
 
       - name: Upload binaries to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'php-binaries'))
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: |
             tmp_dist/php-${{ matrix.minor }}-cli-linux-x86_64
             tmp_dist/php-${{ matrix.minor }}-fpm-linux-x86_64
@@ -443,9 +444,10 @@ jobs:
           path: tmp_meta/*.json
 
       - name: Upload binaries to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'php-binaries'))
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: |
             tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64
             tmp_dist/php-${{ matrix.php }}-fpm-linux-x86_64
@@ -456,7 +458,8 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       always() &&
-      (github.event_name == 'release' && startsWith(github.ref_name, 'php-binaries'))
+      startsWith(github.ref_name, 'php-binaries') &&
+      (github.event_name == 'release' || github.event_name == 'workflow_dispatch')
     needs: [package, build-legacy]
 
     permissions:
@@ -517,4 +520,5 @@ jobs:
       - name: Upload manifest to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: php-binaries.json
