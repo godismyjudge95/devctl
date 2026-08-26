@@ -23,8 +23,9 @@ jobs:
   # ── PHP 8.x ────────────────────────────────────────────────────────────────
   # 8.0–8.5: compile with static-php-cli 2.8.5 and the custom extension set
   # (mysqli, ffi, imagick, intl, spx, sodium, pcov, …). 8.2+ also gets swoole.
-  # 8.0 omits protobuf/opentelemetry (PECL needs PHP 8.1+) and pins older
-  # libxml2/libxslt/icu via scripts/patch-spc-for-php80.sh.
+  # 8.0 omits protobuf/opentelemetry (PECL needs PHP 8.1+), omits pcov (8.0
+  # PECL cfg does not compile in-tree), and pins older libxml2/libxslt/icu
+  # via scripts/patch-spc-for-php80.sh.
   # Do not use --prefer-pre-built: those sqlite libs often lack
   # SQLITE_ENABLE_COLUMN_METADATA.
   # Prove 8.x compiles locally with scripts/local-build-php8.sh before tagging.
@@ -219,13 +220,20 @@ jobs:
 
           MODS=$("$CLI" -m)
           # php -m uses canonical names (SPX, FFI); compare case-insensitively.
-          for want in mysqli sodium spx pcov ffi openssl; do
+          for want in mysqli sodium spx ffi openssl; do
             echo "$MODS" | grep -ixq "$want" || {
               echo "missing extension: $want" >&2
               echo "$MODS" >&2
               exit 1
             }
           done
+          if [ "${{ matrix.minor }}" != "8.0" ]; then
+            echo "$MODS" | grep -ixq pcov || {
+              echo "missing extension: pcov" >&2
+              echo "$MODS" >&2
+              exit 1
+            }
+          fi
           if [ "${{ matrix.minor }}" != "8.0" ] && [ "${{ matrix.minor }}" != "8.1" ]; then
             echo "$MODS" | grep -ixq swoole || {
               echo "missing extension: swoole" >&2

@@ -296,7 +296,7 @@ devctl helpers:uninstall mago
 
 ## PHP
 
-PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP **8.0–8.5** are compiled with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) using the custom extension set: **mysqli**, **sodium**, **pdo_mysql**, **pdo_pgsql**, **pdo_sqlite**, **ffi**, **intl**, **imagick**, **spx**, **pcov**, and the rest of the previous static build (8.2+ also includes **swoole**). PHP **8.0** omits protobuf and opentelemetry (current PECL needs PHP 8.1+). PHP **7.x** is a smaller set that still includes **mysqli**, **pdo_mysql**, **pdo_pgsql**, and **pdo_sqlite** (sodium on 7.2 and 7.4; PHP 7.0 predates sodium).
+PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP **8.0–8.5** are compiled with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) using the custom extension set: **mysqli**, **sodium**, **pdo_mysql**, **pdo_pgsql**, **pdo_sqlite**, **ffi**, **intl**, **imagick**, **spx**, **pcov**, and the rest of the previous static build (8.2+ also includes **swoole**). PHP **8.0** omits protobuf, opentelemetry (current PECL needs PHP 8.1+), and **pcov** (the 8.0 PECL cfg does not compile in-tree). PHP **7.x** is a smaller set that still includes **mysqli**, **pdo_mysql**, **pdo_pgsql**, and **pdo_sqlite** (sodium on 7.2 and 7.4; PHP 7.0 predates sodium).
 
 devctl resolves PHP downloads from the newest immutable `php-binaries-*` release and reads `php-binaries.json` metadata from that release to surface patch-level updates such as `8.4.18 -> 8.4.19` in the Services UI.
 

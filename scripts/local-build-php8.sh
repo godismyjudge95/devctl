@@ -272,13 +272,20 @@ esac
 
 MODS="$("$CLI_OUT" -m)"
 # php -m uses canonical names (SPX, FFI); compare case-insensitively.
-for want in mysqli sodium spx pcov ffi openssl; do
+for want in mysqli sodium spx ffi openssl; do
   echo "$MODS" | grep -ixq "$want" || {
     echo "missing extension: $want" >&2
     echo "$MODS" >&2
     exit 1
   }
 done
+if [[ "$MINOR" != "8.0" ]]; then
+  echo "$MODS" | grep -ixq pcov || {
+    echo "missing extension: pcov" >&2
+    echo "$MODS" >&2
+    exit 1
+  }
+fi
 if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
   echo "$MODS" | grep -ixq swoole || {
     echo "missing extension: swoole" >&2
@@ -288,7 +295,7 @@ if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
 fi
 
 echo
-echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx, pcov loaded)"
+echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx loaded)"
 echo "  cli: $CLI_OUT"
 echo "  fpm: $FPM_OUT"
 echo
