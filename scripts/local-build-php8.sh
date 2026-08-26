@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Local (Docker) mirror of the GHA `package` compile cells for PHP 8.1–8.5.
+# Local (Docker) mirror of the GHA `package` compile cells for PHP 8.0–8.5.
 #
-# Purpose: prove the common+sodium static build before burning Actions minutes.
-# GHA remains the publish path (release assets + php-binaries.json).
+# Purpose: prove the custom extension set (plus sodium, spx, and pcov) before
+# burning Actions minutes. GHA remains the publish path (release assets +
+# php-binaries.json).
 #
-# PHP 8.0.30 is accepted by this script but is known to fail under spc 2.8.5:
-# current libxml2 breaks ext/libxml (ATTRIBUTE_UNUSED). CI rehosts 8.0 from
-# static-php.dev common instead of compiling it.
+# PHP 8.0.30 compiles with scripts/patch-spc-for-php80.sh (older libxml2,
+# libxslt, ICU). It omits protobuf and opentelemetry (current PECL needs 8.1+).
 #
 # Safety:
 #   - Does NOT touch host PHP, systemd, or `make install`
@@ -33,10 +33,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PATCH_SCRIPT="${ROOT}/scripts/patch-spc-for-php8.sh"
+PATCH_SCRIPT_80="${ROOT}/scripts/patch-spc-for-php80.sh"
+# Keep in lockstep with .github/workflows/build-php.yml `package` compile cells.
+# Override with PHP8_EXTS=... if needed; default comes from scripts/php8-exts.sh.
+# shellcheck source=php8-exts.sh
+source "${ROOT}/scripts/php8-exts.sh"
 
-# Keep in lockstep with .github/workflows/build-php.yml `package` job.
 SPC_REF="${SPC_REF:-2.8.5}"
-PHP8_EXTS="${PHP8_EXTS:-bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,xml,mbstring,mbregex,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_sqlite,pdo_pgsql,pgsql,phar,posix,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xmlwriter,xmlreader,zlib,zip}"
+PHP8_EXTS="${PHP8_EXTS:-}"
 
 declare -A PHP8_PATCH=(
   [8.0]=8.0.30
@@ -146,6 +151,10 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
   fi
 fi
 
+if [[ -z "$PHP8_EXTS" ]]; then
+  PHP8_EXTS="$(php8_exts_for "$MINOR")"
+fi
+
 mkdir -p "$WORKDIR"
 WORKDIR="$(cd "$WORKDIR" && pwd)"
 SPC_DIR="${WORKDIR}/static-php-cli"
@@ -172,12 +181,20 @@ else
 fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  echo "==> (dry-run) would cd $SPC_DIR and run doctor / download / build"
+  echo "==> (dry-run) would cd $SPC_DIR, patch libaom pin, then doctor / download / build"
   echo "==> dry-run complete"
   exit 0
 fi
 
 cd "$SPC_DIR"
+
+echo "==> patching static-php-cli for PHP 8.x (libaom pin, pcov static)"
+run bash "$PATCH_SCRIPT" .
+
+if [[ "$MINOR" == "8.0" ]]; then
+  echo "==> pinning libxml2 2.12.10, libxslt 1.1.39, and ICU 70.1 for PHP 8.0"
+  run bash "$PATCH_SCRIPT_80" .
+fi
 
 if [[ "$SKIP_DOCTOR" -eq 0 ]]; then
   echo "==> spc-alpine-docker doctor --auto-fix"
@@ -188,10 +205,14 @@ fi
 
 if [[ "$SKIP_DOWNLOAD" -eq 0 ]]; then
   echo "==> downloading sources (cached under $SPC_DIR/downloads)"
+  IGNORE_CACHE="php-src,libaom,libevent,pcov"
+  if [[ "$MINOR" == "8.0" ]]; then
+    IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu"
+  fi
   run ./bin/spc-alpine-docker download \
     --with-php="$PATCH" \
     --for-extensions="$PHP8_EXTS" \
-    --ignore-cache-sources=php-src \
+    --ignore-cache-sources="$IGNORE_CACHE" \
     --retry=5
 else
   echo "==> skipping download (--skip-download); using existing downloads/"
@@ -220,7 +241,7 @@ if [[ "$WIPE_BUILD" -eq 1 ]]; then
 fi
 
 echo "==> building PHP $PATCH (cli + fpm)"
-BUILD_ARGS=("$PHP8_EXTS" --build-cli --build-fpm)
+BUILD_ARGS=("$PHP8_EXTS" --build-cli --build-fpm --with-added-patch=config/spc-pcov-static.php)
 if [[ "$DEBUG" -eq 1 ]]; then
   BUILD_ARGS+=(--debug)
 fi
@@ -250,16 +271,24 @@ case "$PHP_PATCH_GOT" in
 esac
 
 MODS="$("$CLI_OUT" -m)"
-for want in sodium pdo_sqlite openssl; do
-  echo "$MODS" | grep -qx "$want" || {
+# php -m uses canonical names (SPX, FFI); compare case-insensitively.
+for want in mysqli sodium spx pcov ffi openssl; do
+  echo "$MODS" | grep -ixq "$want" || {
     echo "missing extension: $want" >&2
     echo "$MODS" >&2
     exit 1
   }
 done
+if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
+  echo "$MODS" | grep -ixq swoole || {
+    echo "missing extension: swoole" >&2
+    echo "$MODS" >&2
+    exit 1
+  }
+fi
 
 echo
-echo "OK: PHP ${PHP_PATCH_GOT} (sodium loaded)"
+echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx, pcov loaded)"
 echo "  cli: $CLI_OUT"
 echo "  fpm: $FPM_OUT"
 echo

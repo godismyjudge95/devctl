@@ -21,11 +21,12 @@ env:
 
 jobs:
   # ── PHP 8.x ────────────────────────────────────────────────────────────────
-  # 8.1–8.5: compile with static-php-cli 2.8.5, common ext set plus sodium.
+  # 8.0–8.5: compile with static-php-cli 2.8.5 and the custom extension set
+  # (mysqli, ffi, imagick, intl, spx, sodium, pcov, …). 8.2+ also gets swoole.
+  # 8.0 omits protobuf/opentelemetry (PECL needs PHP 8.1+) and pins older
+  # libxml2/libxslt/icu via scripts/patch-spc-for-php80.sh.
   # Do not use --prefer-pre-built: those sqlite libs often lack
   # SQLITE_ENABLE_COLUMN_METADATA.
-  # 8.0: rehost static-php.dev common. PHP 8.0.30 does not compile against
-  # current libxml2 (ATTRIBUTE_UNUSED in ext/libxml) under spc 2.8.5.
   # Prove 8.x compiles locally with scripts/local-build-php8.sh before tagging.
   package:
     name: ${{ matrix.build == 'compile' && 'Build' || 'Package' }} PHP ${{ matrix.minor }} (linux-x86_64)
@@ -35,16 +36,13 @@ jobs:
     permissions:
       contents: write
 
-    env:
-      PHP8_EXTS: bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,xml,mbstring,mbregex,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_sqlite,pdo_pgsql,pgsql,phar,posix,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xmlwriter,xmlreader,zlib,zip
-
     strategy:
       fail-fast: false
       matrix:
         include:
           - minor: "8.0"
             patch: "8.0.30"
-            build: rehost
+            build: compile
           - minor: "8.1"
             patch: "8.1.34"
             build: compile
@@ -127,12 +125,45 @@ jobs:
           ref: 2.8.5
           path: spc
 
+      - name: Checkout devctl (extension list)
+        if: matrix.build == 'compile'
+        uses: actions/checkout@v4
+        with:
+          path: devctl
+          sparse-checkout: |
+            scripts/php8-exts.sh
+            scripts/patch-spc-for-php8.sh
+            scripts/patch-spc-for-php80.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Set extension list
+        if: matrix.build == 'compile'
+        id: exts
+        run: |
+          set -euo pipefail
+          # shellcheck source=scripts/php8-exts.sh
+          source "${GITHUB_WORKSPACE}/devctl/scripts/php8-exts.sh"
+          LIST="$(php8_exts_for "${{ matrix.minor }}")"
+          echo "list=$LIST" >> "$GITHUB_OUTPUT"
+
+      - name: Pin libaom for Alpine imagick/AVIF
+        if: matrix.build == 'compile'
+        working-directory: spc
+        run: |
+          set -euo pipefail
+          SCRIPT="${GITHUB_WORKSPACE}/devctl/scripts/patch-spc-for-php8.sh"
+          test -f "$SCRIPT"
+          bash "$SCRIPT" .
+          if [ "${{ matrix.minor }}" = "8.0" ]; then
+            bash "${GITHUB_WORKSPACE}/devctl/scripts/patch-spc-for-php80.sh" .
+          fi
+
       - name: Cache downloaded sources
         if: matrix.build == 'compile'
         uses: actions/cache@v4
         with:
           path: spc/downloads
-          key: spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-v1
+          key: spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-v5
           restore-keys: |
             spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-
             spc-2.8.5-8x-${{ matrix.minor }}-linux-x86_64-
@@ -147,10 +178,14 @@ jobs:
         working-directory: spc
         run: |
           set -euo pipefail
+          IGNORE_CACHE="php-src,libaom,libevent,pcov"
+          if [ "${{ matrix.minor }}" = "8.0" ]; then
+            IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu"
+          fi
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.patch }} \
-            --for-extensions=${{ env.PHP8_EXTS }} \
-            --ignore-cache-sources=php-src \
+            --for-extensions=${{ steps.exts.outputs.list }} \
+            --ignore-cache-sources="$IGNORE_CACHE" \
             --retry=5
 
       - name: Build PHP CLI and FPM
@@ -159,9 +194,10 @@ jobs:
         run: |
           set -euo pipefail
           ./bin/spc-alpine-docker build \
-            ${{ env.PHP8_EXTS }} \
+            ${{ steps.exts.outputs.list }} \
             --build-cli \
-            --build-fpm
+            --build-fpm \
+            --with-added-patch=config/spc-pcov-static.php
 
           mkdir -p ../tmp_dist ../tmp_meta
           test -x buildroot/bin/php
@@ -182,13 +218,30 @@ jobs:
           esac
 
           MODS=$("$CLI" -m)
-          for want in sodium pdo_sqlite openssl; do
-            echo "$MODS" | grep -qx "$want" || {
+          # php -m uses canonical names (SPX, FFI); compare case-insensitively.
+          for want in mysqli sodium spx pcov ffi openssl; do
+            echo "$MODS" | grep -ixq "$want" || {
               echo "missing extension: $want" >&2
               echo "$MODS" >&2
               exit 1
             }
           done
+          if [ "${{ matrix.minor }}" != "8.0" ] && [ "${{ matrix.minor }}" != "8.1" ]; then
+            echo "$MODS" | grep -ixq swoole || {
+              echo "missing extension: swoole" >&2
+              echo "$MODS" >&2
+              exit 1
+            }
+          fi
+          if [ "${{ matrix.minor }}" = "8.0" ] || [ "${{ matrix.minor }}" = "8.1" ]; then
+            for want in pdo_pgsql pdo_sqlite; do
+              echo "$MODS" | grep -ixq "$want" || {
+                echo "missing extension: $want" >&2
+                echo "$MODS" >&2
+                exit 1
+              }
+            done
+          fi
 
           cat > "../tmp_meta/${{ matrix.minor }}.json" <<EOF
           {
@@ -280,15 +333,15 @@ jobs:
               # intl dropped: PHP 7.0 intl is incompatible with modern ICU (icu_77::)
               # mbregex dropped: PHP 7.0 bundled oniguruma conflicts with external onig
               # hash enabled via LinuxBuilder --enable-hash (spc ignores hash in ext list)
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.2)
               # intl dropped: PHP 7.2 intl fails vs modern ICU (TRUE/FALSE + C++ API)
               # hash enabled via LinuxBuilder --enable-hash (spc ignores hash in ext list)
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             7.4)
-              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+              LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
               ;;
             *)
               echo "unsupported legacy PHP version: ${{ matrix.php }}" >&2
@@ -348,11 +401,19 @@ jobs:
               ;;
           esac
 
+          MODS=$("../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -m)
+          for want in mysqli pdo_mysql pdo_pgsql pdo_sqlite; do
+            echo "$MODS" | grep -qx "$want" || {
+              echo "missing extension: $want" >&2
+              echo "$MODS" >&2
+              exit 1
+            }
+          done
           # sodium ships on 7.2+ (the extension does not exist in 7.0).
           if [ "${{ matrix.php }}" != "7.0" ]; then
-            "../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -m | grep -qx sodium || {
+            echo "$MODS" | grep -qx sodium || {
               echo "missing extension: sodium" >&2
-              "../tmp_dist/php-${{ matrix.php }}-cli-linux-x86_64" -m >&2
+              echo "$MODS" >&2
               exit 1
             }
           fi

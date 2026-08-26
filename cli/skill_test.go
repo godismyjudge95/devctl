@@ -142,6 +142,7 @@ func TestWriteSkill_ContentContainsKeyCommands(t *testing.T) {
 	wantCommands := []string{
 		"services:list",
 		"services:restart",
+		"services:credentials",
 		"sites:list",
 		"logs:tail",
 		"mail:list",
@@ -155,6 +156,71 @@ func TestWriteSkill_ContentContainsKeyCommands(t *testing.T) {
 			t.Errorf("WriteSkill: content missing command %q", cmd)
 		}
 	}
+}
+
+func TestWriteSkill_WrapsGeneratedBodyInDevctlTags(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "SKILL.md")
+	if err := WriteSkill(path); err != nil {
+		t.Fatalf("WriteSkill: %v", err)
+	}
+	content := readSkill(t, path)
+	if !strings.Contains(content, "<devctl>") {
+		t.Error("WriteSkill: missing opening <devctl> tag")
+	}
+	if !strings.Contains(content, "</devctl>") {
+		t.Error("WriteSkill: missing closing </devctl> tag")
+	}
+	open := strings.Index(content, "<devctl>")
+	close := strings.Index(content, "</devctl>")
+	if open < 0 || close <= open {
+		t.Fatal("WriteSkill: <devctl> tags are not a matching pair")
+	}
+	inner := content[open:close]
+	if !strings.Contains(inner, "services:list") {
+		t.Error("WriteSkill: command catalog is not inside <devctl> tags")
+	}
+}
+
+func TestWriteSkill_FirstTryGuide(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "SKILL.md")
+	if err := WriteSkill(path); err != nil {
+		t.Fatalf("WriteSkill: %v", err)
+	}
+	content := readSkill(t, path)
+	for _, want := range []string{
+		"not the DDEV product",
+		"php artisan serve",
+		"services:credentials",
+		"valkey-cli",
+		"https://",
+		".test",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("WriteSkill: first-try guide missing %q", want)
+		}
+	}
+	descStart := strings.Index(content, "description:")
+	if descStart < 0 {
+		t.Fatal("missing description")
+	}
+	descEnd := strings.Index(content[descStart:], "\n")
+	desc := content[descStart : descStart+descEnd]
+	for _, want := range []string{"artisan", "mysql", "credentials", ".test"} {
+		if !strings.Contains(strings.ToLower(desc), want) {
+			t.Errorf("skill description should mention %q so agents load it for site work; got %q", want, desc)
+		}
+	}
+}
+
+func readSkill(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
 }
 
 // TestWriteSkill_IsIdempotent verifies that calling WriteSkill twice

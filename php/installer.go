@@ -14,6 +14,7 @@ import (
 	"github.com/danielgormly/devctl/internal/httplog"
 	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
+	"github.com/danielgormly/devctl/tools"
 )
 
 const (
@@ -98,7 +99,7 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		// Non-fatal — log and continue.
 		fmt.Printf("php: install composer: %v\n", err)
 	}
-	if err := InstallWPCLI(ctx, binDir); err != nil {
+	if err := tools.EnsureLatest(ctx, tools.WPCLI, binDir, io.Discard); err != nil {
 		// Non-fatal — log and continue.
 		fmt.Printf("php: install wp-cli: %v\n", err)
 	}
@@ -192,7 +193,6 @@ func disableSystemFPM(ctx context.Context, ver string) {
 
 const (
 	composerURL = "https://getcomposer.org/composer-stable.phar"
-	wpcliURL    = "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
 )
 
 // InstallComposer downloads the latest stable Composer phar into binDir as
@@ -205,20 +205,6 @@ func InstallComposer(ctx context.Context, binDir string) error {
 	}
 	if err := os.Chmod(dest, 0755); err != nil {
 		return fmt.Errorf("chmod composer: %w", err)
-	}
-	return nil
-}
-
-// InstallWPCLI downloads the latest WP-CLI phar into binDir as "wp" and makes
-// it executable. It is safe to call on every PHP install — it always refreshes
-// to the latest build.
-func InstallWPCLI(ctx context.Context, binDir string) error {
-	dest := filepath.Join(binDir, "wp")
-	if err := curlDownload(ctx, wpcliURL, dest); err != nil {
-		return fmt.Errorf("download wp-cli: %w", err)
-	}
-	if err := os.Chmod(dest, 0755); err != nil {
-		return fmt.Errorf("chmod wp-cli: %w", err)
 	}
 	return nil
 }

@@ -122,7 +122,7 @@ PHP binaries use unique immutable tags such as `php-binaries-20260422.1`. Publis
 scripts/local-build-php8.sh 8.4
 ```
 
-PHP 8.0 is **not** compiled (rehosted common). Do not spend time making 8.0.30 build against current libxml2. Fix any 8.1–8.5 compile errors in `build-php.yml` / the local script, then tag.
+PHP 8.0 **is** compiled. Prove it with `scripts/local-build-php8.sh 8.0` after changing `scripts/patch-spc-for-php80.sh`. Keep the 8.0 pins (libxml2 2.12.10, libxslt 1.1.39, ICU 70.1). Do not add protobuf or opentelemetry on 8.0 (current PECL needs PHP 8.1+). Fix any 8.0–8.5 compile errors in `build-php.yml` / `scripts/php8-exts.sh` / `scripts/patch-spc-for-php8.sh` / `scripts/patch-spc-for-php80.sh` / the local script, then tag. The 8.0–8.5 list must keep **mysqli**, **sodium**, **spx**, and **pcov**. Keep the libaom v3.12.1 and libevent 2.1.12 pins in `patch-spc-for-php8.sh` (current spc defaults fail the imagick/event compile). static-php-cli marks pcov shared-only; the patch enables a static compile (extract into `php-src/ext/pcov`, plus `config/spc-pcov-static.php` so config.m4 does not call php-config or overwrite `PHP_VERSION`).
 
 ### 2.1 Choose the PHP binaries tag
 
@@ -150,7 +150,7 @@ gh release create "$PHP_TAG" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds supported PHP minors in parallel (legacy 7.x, compiled 8.1–8.5 with sodium, rehosted 8.0 common without sodium), and attaches the binaries plus `php-binaries.json` to this release.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds supported PHP minors in parallel (legacy 7.x with mysqli/pdo_pgsql/pdo_sqlite, compiled 8.0–8.5 with the custom set including mysqli/sodium/spx/pcov), and attaches the binaries plus `php-binaries.json` to this release.
 
 ### 2.4 Verify
 

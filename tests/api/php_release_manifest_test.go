@@ -98,7 +98,7 @@ func TestPHPInstall_Legacy70FromLatestRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("php 7.0 -m failed: %v out=%s", err, string(mods))
 	}
-	for _, want := range []string{"gd", "openssl", "redis", "mbstring", "zip"} {
+	for _, want := range []string{"gd", "mysqli", "openssl", "redis", "mbstring", "zip"} {
 		if !bytes.Contains(mods, []byte(want)) {
 			t.Errorf("php 7.0 modules missing %q; got:\n%s", want, string(mods))
 		}

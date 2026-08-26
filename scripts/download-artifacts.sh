@@ -293,10 +293,12 @@ download "Composer (stable)" \
   "composer"
 
 # ─── WP-CLI ───────────────────────────────────────────────────────────────────
-# Installer saves to {binDir}/wp (basename: wp).
-download "WP-CLI" \
-  "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" \
-  "wp"
+# Helper (tools.WPCLI) and PHP install save the phar as {binDir}/wp.
+# curl dest is a temp file; the shim matches this GitHub TAG-ASSET cache key.
+WPCLI_VERSION="2.12.0"
+download "WP-CLI ${WPCLI_VERSION}" \
+  "https://github.com/wp-cli/wp-cli/releases/download/v${WPCLI_VERSION}/wp-cli-${WPCLI_VERSION}.phar" \
+  "v${WPCLI_VERSION}-wp-cli-${WPCLI_VERSION}.phar"
 
 echo ""
 success "All artifacts downloaded to ${CACHE_DIR}"

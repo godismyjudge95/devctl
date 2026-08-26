@@ -18,7 +18,7 @@ The backend is a single Go binary (`main.go`) that runs as a **systemd system se
 |---|---|
 | `api/` | HTTP handlers, route registration, SSE, WebSocket upgrade |
 | `services/` | Static service registry, exec manager, status poller, process supervisor |
-| `tools/` | Downloadable CLI helpers (sqlite3, mago, phpantom_lsp, fnm, yq) |
+| `tools/` | Downloadable CLI helpers (sqlite3, mago, phpantom_lsp, wp, fnm, yq) |
 | `internal/githubapi/` | Shared GitHub Releases latest-tag client |
 | `internal/versioncache/` | Shared latest-version cache and update-available comparison |
 | `sites/` | Site CRUD (SQLite), Caddy Admin API client, fsnotify watcher |

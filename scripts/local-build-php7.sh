@@ -76,13 +76,13 @@ fi
 
 case "$PHP" in
   7.0)
-    EXT_LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+    EXT_LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,posix,readline,redis,session,simplexml,soap,sockets,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
     ;;
   7.2)
-    EXT_LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+    EXT_LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,fileinfo,filter,ftp,gd,gmp,iconv,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
     ;;
   7.4)
-    EXT_LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
+    EXT_LIST="bcmath,bz2,calendar,ctype,curl,dom,exif,ffi,fileinfo,filter,ftp,gd,gmp,iconv,intl,mbregex,mbstring,mysqli,mysqlnd,openssl,pcntl,pdo,pdo_mysql,pdo_pgsql,pdo_sqlite,phar,posix,readline,redis,session,simplexml,soap,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
     ;;
   *)
     echo "unsupported PHP version: $PHP (want 7.0, 7.2, or 7.4)" >&2
@@ -255,6 +255,22 @@ case "$PHP_PATCH" in
     exit 1
     ;;
 esac
+
+MODS="$("$CLI_OUT" -m)"
+for want in mysqli pdo_mysql pdo_pgsql pdo_sqlite; do
+  echo "$MODS" | grep -qx "$want" || {
+    echo "missing extension: $want" >&2
+    echo "$MODS" >&2
+    exit 1
+  }
+done
+if [[ "$PHP" != "7.0" ]]; then
+  echo "$MODS" | grep -qx sodium || {
+    echo "missing extension: sodium" >&2
+    echo "$MODS" >&2
+    exit 1
+  }
+fi
 
 echo
 echo "OK: PHP ${PHP_PATCH}"

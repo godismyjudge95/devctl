@@ -258,6 +258,9 @@ func Run(args []string) error {
 		}
 		fmt.Println()
 	}
+	if err := cli.UpdateAgentsFile(); err != nil {
+		fmt.Printf("  warning: could not update AGENTS.md: %v\n", err)
+	}
 
 	return nil
 }

@@ -29,3 +29,13 @@ test('add helper page — lists opt-in tools', async ({ page }) => {
   await expect(page.getByText('Mago')).toBeVisible()
   await expect(page.getByText('PHPantom')).toBeVisible()
 })
+
+test('helpers catalog includes WP-CLI', async ({ page }) => {
+  // PHP install also ensures WP-CLI, so it may already be on the installed list.
+  if (await page.getByText('WP-CLI').isVisible()) {
+    return
+  }
+  await page.getByRole('button', { name: 'Add Helper' }).click()
+  await page.waitForURL('**/helpers/install')
+  await expect(page.getByText('WP-CLI')).toBeVisible()
+})

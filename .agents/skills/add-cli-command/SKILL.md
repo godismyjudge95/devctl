@@ -244,13 +244,13 @@ Keep the table sorted: `services`, `sites`, `php`, `logs`, `dumps`, `spx`, `mail
 
 ## Auto-generated CLI skill
 
-`cli/skill.go` generates `~/.agents/skills/devctl-cli/SKILL.md` from the live command registry. The daemon regenerates it silently on every startup (if the file already exists). After adding a command, run:
+`cli/skill.go` generates `~/.agents/skills/devctl-cli/SKILL.md` from the live command registry. It also upserts the `<devctl>` block in `~/.agents/AGENTS.md`. The daemon regenerates both silently on every startup (if the files already exist). After adding a command, run:
 
 ```sh
 devctl devctl:skill
 ```
 
-This updates the agent skill so AI tools immediately know about the new command. You do **not** need to manually edit the auto-generated skill file.
+This updates the agent skill and the always-on AGENTS.md block. Do not hand-edit inside `<devctl>` tags.
 
 ## Checklist
 

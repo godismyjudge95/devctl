@@ -376,6 +376,7 @@ install_helper() {
 }
 install_helper "yq" "yq"
 install_helper "mago" "mago"
+install_helper "wp" "WP-CLI"
 
 # Fall back to host binaries when GitHub is unreachable from Incus.
 HOST_SERVER_ROOT=$(sudo systemctl show devctl --property=Environment 2>/dev/null \
@@ -383,7 +384,7 @@ HOST_SERVER_ROOT=$(sudo systemctl show devctl --property=Environment 2>/dev/null
 HOST_BIN="${HOST_SERVER_ROOT}/bin"
 if [[ -d "$HOST_BIN" ]]; then
   incus exec "$CONTAINER" -- mkdir -p "${SERVER_ROOT}/bin"
-  for name in sqlite3 mago phpantom_lsp fnm yq; do
+  for name in sqlite3 mago phpantom_lsp wp fnm yq; do
     if [[ -x "${HOST_BIN}/${name}" ]]; then
       incus file push "${HOST_BIN}/${name}" "${CONTAINER}${SERVER_ROOT}/bin/${name}" >/dev/null
     fi

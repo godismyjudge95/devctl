@@ -178,6 +178,13 @@ func TestLookup(t *testing.T) {
 	if _, ok := Lookup("sqlite3"); !ok {
 		t.Fatal("sqlite3 should be registered")
 	}
+	got, ok := Lookup("wp")
+	if !ok {
+		t.Fatal("wp should be registered")
+	}
+	if got.Label != "WP-CLI" {
+		t.Fatalf("wp label = %q, want WP-CLI", got.Label)
+	}
 	if _, ok := Lookup("nope"); ok {
 		t.Fatal("unknown tool should miss")
 	}

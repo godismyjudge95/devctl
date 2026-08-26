@@ -75,8 +75,8 @@ func init() {
 		Name:        "helpers:install",
 		Description: "Download and install a CLI helper",
 		Usage:       "<helper-id>",
-		Args:        []ArgDef{{Name: "helper-id", Description: "Helper ID (e.g. mago, phpantom_lsp, yq)"}},
-		Examples:    []string{"devctl helpers:install mago", "devctl helpers:install phpantom_lsp"},
+		Args:        []ArgDef{{Name: "helper-id", Description: "Helper ID (e.g. mago, phpantom_lsp, wp)"}},
+		Examples:    []string{"devctl helpers:install mago", "devctl helpers:install wp"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
 			if len(args) == 0 {
 				return fmt.Errorf("usage: devctl helpers:install <helper-id>")

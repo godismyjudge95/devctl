@@ -91,6 +91,7 @@ var AllTools = []Tool{
 	SQLite3,
 	Mago,
 	PHPantom,
+	WPCLI,
 	FNM,
 	YQ,
 }

@@ -278,6 +278,7 @@ sqlite3 is installed by default. Everything else is opt-in from the **Helpers** 
 | `sqlite3` | [sqlite.org](https://www.sqlite.org/download.html) | Default. Cannot be uninstalled. |
 | `mago` | [carthage-software/mago](https://github.com/carthage-software/mago) | PHP linter / formatter / analyzer |
 | `phpantom_lsp` | [PHPantom-dev/phpantom_lsp](https://github.com/PHPantom-dev/phpantom_lsp) | PHP language server |
+| `wp` | [wp-cli/wp-cli](https://github.com/wp-cli/wp-cli) | WordPress CLI (`wp`). Also installed when you install PHP. |
 | `fnm` | [Schniz/fnm](https://github.com/Schniz/fnm) | Fast Node Manager, also linked as `nvm` |
 | `yq` | [mikefarah/yq](https://github.com/mikefarah/yq) | YAML / JSON / XML processor |
 
@@ -295,7 +296,7 @@ devctl helpers:uninstall mago
 
 ## PHP
 
-PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP **8.1–8.5** are compiled with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) using the static-php.dev **common** extension set plus **sodium**. PHP **8.0** is still rehosted from static-php.dev common (no sodium): 8.0.30 does not compile against current libxml2. PHP **7.x** is a reduced set (sodium on 7.2 and 7.4; PHP 7.0 predates the extension).
+PHP versions are installed as self-contained static binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP **8.0–8.5** are compiled with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) using the custom extension set: **mysqli**, **sodium**, **pdo_mysql**, **pdo_pgsql**, **pdo_sqlite**, **ffi**, **intl**, **imagick**, **spx**, **pcov**, and the rest of the previous static build (8.2+ also includes **swoole**). PHP **8.0** omits protobuf and opentelemetry (current PECL needs PHP 8.1+). PHP **7.x** is a smaller set that still includes **mysqli**, **pdo_mysql**, **pdo_pgsql**, and **pdo_sqlite** (sodium on 7.2 and 7.4; PHP 7.0 predates sodium).
 
 devctl resolves PHP downloads from the newest immutable `php-binaries-*` release and reads `php-binaries.json` metadata from that release to surface patch-level updates such as `8.4.18 -> 8.4.19` in the Services UI.
 
@@ -343,7 +344,7 @@ devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the
 
 devctl also prepends the Composer global bin directory to PATH for every command it runs internally as the site user, so framework tools are accessible in the context of site commands regardless of the shell configuration.
 
-**Helpers in `{serverRoot}/bin/`:** sqlite3 is downloaded on install (and kept up to date). Other CLI helpers (mago, phpantom_lsp, fnm, yq) are opt-in — see [Helpers](#helpers). Already-installed helpers are updated after a self-update.
+**Helpers in `{serverRoot}/bin/`:** sqlite3 is downloaded on install (and kept up to date). Other CLI helpers (mago, phpantom_lsp, wp, fnm, yq) are opt-in — see [Helpers](#helpers). Already-installed helpers are updated after a self-update. Installing a PHP version also downloads WP-CLI (`wp`) into this directory.
 
 ---
 
@@ -712,11 +713,11 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | `settings` | `settings:get` | Show all devctl settings |
 | | `settings:set <key=value>...` | Update devctl settings |
 | `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |
-| | `devctl:skill` | Generate an OpenCode agent skill describing all CLI commands |
+| | `devctl:skill` | Generate the agent skill and refresh the `<devctl>` block in AGENTS.md |
 
 ### OpenCode integration
 
-Run `devctl devctl:skill` once to write an OpenCode skill file to `~/.agents/skills/devctl-cli/SKILL.md`. The daemon silently regenerates the file on every startup if it already exists.
+Run `devctl devctl:skill` once to write an OpenCode skill file to `~/.agents/skills/devctl-cli/SKILL.md`. The same command refreshes the `<devctl>` block in `~/.agents/AGENTS.md` (same pattern as Context7). The daemon silently regenerates both on every startup if they already exist.
 
 ---
 

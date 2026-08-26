@@ -389,6 +389,22 @@ PY
   fi
 fi
 
+# 4d) PHP 7.0/7.2 pdo_sqlite uses bundled ext/pdo_sqlite/libsqlite/sqlite3.c,
+#     which is not in the 7.x tarball we download. Point it at our sqlite lib.
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path("config/ext.json")
+d = json.loads(p.read_text())
+ps = d.setdefault("pdo_sqlite", {})
+if ps.get("arg-type") == "with-prefix":
+    print("pdo_sqlite already with-prefix")
+else:
+    ps["arg-type"] = "with-prefix"
+    p.write_text(json.dumps(d, indent=4) + "\n")
+    print("pdo_sqlite arg-type -> with-prefix")
+PY
+
 echo "---- alpine docker pins ----"
 grep -nE 'ALPINE_FROM|php81|php82|cwcc-spc' bin/spc-alpine-docker | head -40
 echo "---- PHP configure OpenSSL ac_cv / LIBS ----"

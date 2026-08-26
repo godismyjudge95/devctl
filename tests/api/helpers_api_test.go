@@ -27,8 +27,8 @@ func TestGetHelpers_StatusOK(t *testing.T) {
 func TestGetHelpers_IncludesCatalog(t *testing.T) {
 	body := httpGet(t, "/api/helpers")
 	helpers := decodeJSON[[]HelperState](t, body)
-	if len(helpers) < 5 {
-		t.Fatalf("expected at least sqlite3, mago, phpantom_lsp, fnm, yq; got %d", len(helpers))
+	if len(helpers) < 6 {
+		t.Fatalf("expected at least sqlite3, mago, phpantom_lsp, wp, fnm, yq; got %d", len(helpers))
 	}
 	byID := map[string]HelperState{}
 	for _, h := range helpers {
@@ -37,10 +37,16 @@ func TestGetHelpers_IncludesCatalog(t *testing.T) {
 		}
 		byID[h.ID] = h
 	}
-	for _, id := range []string{"sqlite3", "mago", "phpantom_lsp", "fnm", "yq"} {
+	for _, id := range []string{"sqlite3", "mago", "phpantom_lsp", "wp", "fnm", "yq"} {
 		if _, ok := byID[id]; !ok {
 			t.Errorf("missing helper %s", id)
 		}
+	}
+	if byID["wp"].Label != "WP-CLI" {
+		t.Errorf("wp label = %q, want WP-CLI", byID["wp"].Label)
+	}
+	if byID["wp"].Default {
+		t.Error("wp should be opt-in")
 	}
 	sqlite3 := byID["sqlite3"]
 	if !sqlite3.Default {

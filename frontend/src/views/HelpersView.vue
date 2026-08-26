@@ -76,7 +76,7 @@ async function executeUninstall() {
     </PageHeader>
 
     <EmptyState v-if="!store.loading && store.installed.length === 0">
-      No helpers installed yet. Add mago, PHPantom, fnm, or yq from the catalog.
+      No helpers installed yet. Add mago, PHPantom, WP-CLI, fnm, or yq from the catalog.
     </EmptyState>
 
     <div v-else-if="store.installed.length" class="md:hidden space-y-3">
