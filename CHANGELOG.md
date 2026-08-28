@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Managed PostgreSQL search contrib (`pg_trgm`, `unaccent`, `fuzzystrmatch`, `btree_gin`) is wired into existing databases (`CREATE EXTENSION` on template1 and every connectable database except template0).
 - Agent skill `devctl:skill` now writes exact colon command names, a first-try env guide, and a `<devctl>` block in `AGENTS.md` (same wrap pattern as Context7) so agents stop guessing DDEV / Sail / invented DB passwords.
 - PHP **8.0–8.5** static builds use the custom extension set (**mysqli**, **sodium**, **pdo_mysql**, **pdo_pgsql**, **pdo_sqlite**, **spx**, **pcov**, **ffi**, **intl**, **imagick**, and the rest). PHP **8.2+** still includes **swoole**. PHP **8.0** omits protobuf, opentelemetry (current PECL needs PHP 8.1+), and **pcov** (the 8.0 PECL cfg does not compile in-tree). PHP **7.x** keeps **mysqli** and now includes **pdo_pgsql** and **pdo_sqlite** (sodium on 7.2 and 7.4; PHP 7.0 predates sodium). Reinstall or wait for a new `php-binaries-*` release to pick it up.
 - Added **WP-CLI** (`wp`) to the Helpers catalog. Installing PHP still downloads it into `{serverRoot}/bin/`; you can also install, update, or uninstall it from the Helpers page or `devctl helpers:*`.

@@ -328,6 +328,14 @@ func run() error {
 		}
 	}
 
+	// Postgres may still be opening when EnsurePostgresConfig ran above.
+	// Wire SQL objects after auto-start, same as install/update.
+	go func() {
+		if err := install.EnsurePostgresExtensionsAfterStart(cfg.ServerRoot, cfg.SiteUser); err != nil {
+			log.Printf("startup: postgres extensions: %v", err)
+		}
+	}()
+
 	// Auto-start PHP-FPM supervised services for all registered versions.
 	for _, def := range registry.All() {
 		if def.Managed && isPHPFPMDef(def) {
