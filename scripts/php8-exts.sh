@@ -14,7 +14,8 @@
 # protobuf/otel PECL needs PHP 8.1+ IS_MIXED. pcov PECL for 8.0 pulls a
 # bundled zend_cfg that fails the in-tree static make. 8.0.30 pins older
 # libxml2/libxslt/icu, ImageMagick 7.1.2-30, and imagick 3.8.1 via
-# scripts/patch-spc-for-php80.sh.
+# scripts/patch-spc-for-php80.sh. After download, 8.0 also drops the zstd
+# and brotli stub files (PHP 8.0 gen_stub cannot parse `const` in stubs).
 
 php8_exts_for() {
   local minor="${1:?php8_exts_for: minor required}"
@@ -39,6 +40,25 @@ php8_exts_for() {
       return 1
       ;;
   esac
+}
+
+# PHP 8.0 gen_stub (PHP-Parser 4.13) rejects `const` in stub files.
+# zstd.c and brotli.c already define arginfo inline for PHP < 8.2.
+# Drop the stub and leave an empty *_arginfo.h so make's %.c: %_arginfo.h
+# heuristic is satisfied without running gen_stub. CI alpine has `php` on
+# PATH so make actually runs gen_stub; a missing php binary skips the rule.
+php8_neutralize_php80_stubs() {
+  local downloads="${1:?php8_neutralize_php80_stubs: downloads dir required}"
+  local spec dir name
+  for spec in ext-zstd/zstd ext-brotli/brotli; do
+    dir="${downloads}/${spec%/*}"
+    name="${spec#*/}"
+    if [[ -f "${dir}/${name}.stub.php" ]]; then
+      rm -f "${dir}/${name}.stub.php"
+      : > "${dir}/${name}_arginfo.h"
+      echo "php8-exts: dropped ${spec}.stub.php (PHP 8.0 gen_stub cannot parse const)"
+    fi
+  done
 }
 
 php8_exts_must_include() {

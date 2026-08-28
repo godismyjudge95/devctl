@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- PHP **8.0** static builds pin ImageMagick 7.1.2-30 and imagick 3.8.1 so CI does not pull a newer unversioned pair that fails the 8.0 compile. Failed compile jobs now upload `spc.output.log` / `spc.shell.log`.
+- PHP **8.0** static builds pin ImageMagick 7.1.2-30 and imagick 3.8.1 so CI does not pull a newer unversioned pair that fails the 8.0 compile. After download, 8.0 also drops the zstd and brotli stub files (PHP 8.0 gen_stub cannot parse `const`). Failed compile jobs now upload `spc.output.log` / `spc.shell.log`.
 
 ## v0.14.0 — 2026-08-27
 

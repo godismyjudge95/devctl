@@ -189,6 +189,15 @@ jobs:
             --ignore-cache-sources="$IGNORE_CACHE" \
             --retry=5
 
+      - name: Neutralize PHP 8.0 zstd/brotli stubs
+        if: matrix.build == 'compile' && matrix.minor == '8.0'
+        working-directory: spc
+        run: |
+          set -euo pipefail
+          # shellcheck source=scripts/php8-exts.sh
+          source "${GITHUB_WORKSPACE}/devctl/scripts/php8-exts.sh"
+          php8_neutralize_php80_stubs downloads
+
       - name: Build PHP CLI and FPM
         if: matrix.build == 'compile'
         working-directory: spc

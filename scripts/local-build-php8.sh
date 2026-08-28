@@ -219,6 +219,10 @@ else
   echo "==> skipping download (--skip-download); using existing downloads/"
 fi
 
+if [[ "$MINOR" == "8.0" ]]; then
+  php8_neutralize_php80_stubs "$SPC_DIR/downloads"
+fi
+
 if [[ "$WIPE_BUILD" -eq 1 ]]; then
   echo "==> wiping build intermediates (keeping downloads/)"
   for d in buildroot source; do
