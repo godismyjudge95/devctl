@@ -49,13 +49,24 @@ php8_exts_for() {
 # PATH so make actually runs gen_stub; a missing php binary skips the rule.
 php8_neutralize_php80_stubs() {
   local downloads="${1:?php8_neutralize_php80_stubs: downloads dir required}"
-  local spec dir name
+  local spec dir name stub arginfo
   for spec in ext-zstd/zstd ext-brotli/brotli; do
     dir="${downloads}/${spec%/*}"
     name="${spec#*/}"
-    if [[ -f "${dir}/${name}.stub.php" ]]; then
-      rm -f "${dir}/${name}.stub.php"
-      : > "${dir}/${name}_arginfo.h"
+    stub="${dir}/${name}.stub.php"
+    arginfo="${dir}/${name}_arginfo.h"
+    if [[ -f "$stub" ]]; then
+      # spc-alpine-docker download writes these as root.
+      if [[ -w "$stub" ]]; then
+        rm -f "$stub"
+      else
+        sudo rm -f "$stub"
+      fi
+      if [[ -w "$dir" ]]; then
+        : > "$arginfo"
+      else
+        sudo tee "$arginfo" </dev/null >/dev/null
+      fi
       echo "php8-exts: dropped ${spec}.stub.php (PHP 8.0 gen_stub cannot parse const)"
     fi
   done
