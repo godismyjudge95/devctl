@@ -337,7 +337,7 @@ onMounted(loadSettings)
     <Surface v-else-if="isPostgres(serviceId)">
       <SectionHeader
         title="Managed extensions"
-        description="Installed with PostgreSQL. pg_clickhouse wires into template1 when ClickHouse is also installed."
+        description="Installed with PostgreSQL. pg_clickhouse wires into template1 when ClickHouse is also installed. Contrib search modules are created in every connectable database."
       />
       <div class="px-5 pb-5">
         <div v-if="postgresExtensions.length === 0" class="text-sm text-muted-foreground py-4">

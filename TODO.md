@@ -160,5 +160,7 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 # Completed
 
+- Managed PostgreSQL search contrib (`pg_trgm`, `unaccent`, `fuzzystrmatch`, `btree_gin`): `CREATE EXTENSION` on template1 and every connectable database except template0. *(completed 27 Aug 2026)*
+
 
 

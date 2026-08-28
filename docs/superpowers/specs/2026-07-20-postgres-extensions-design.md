@@ -31,3 +31,5 @@ Each managed extension reports: `id`, `label`, `files_installed`, `preload_confi
 - ClickHouse install: if Postgres present, install pg_clickhouse files if missing + wire `template1`.
 - After Postgres start: poll and create SQL objects (`EnsurePostgresExtensionsAfterStart`).
 - Startup: `EnsurePostgresConfig` refreshes files/preload/wire idempotently.
+
+Contrib search modules (`pg_trgm`, `unaccent`, `fuzzystrmatch`, `btree_gin`) ship in the Percona tree and are wired with `CREATE EXTENSION` on template1 and every connectable database except template0.

@@ -4,6 +4,7 @@ package apitest
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -26,8 +27,8 @@ func TestPostgresExtensions_ListEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &exts); err != nil {
 		t.Fatalf("decode: %v\n%s", err, body)
 	}
-	if len(exts) < 3 {
-		t.Fatalf("expected at least timescaledb + pgvector + pg_clickhouse, got %d: %+v", len(exts), exts)
+	if len(exts) < 7 {
+		t.Fatalf("expected at least timescaledb + pgvector + pg_clickhouse + four search contrib, got %d: %+v", len(exts), exts)
 	}
 	ids := map[string]bool{}
 	for _, e := range exts {
@@ -35,6 +36,11 @@ func TestPostgresExtensions_ListEndpoint(t *testing.T) {
 	}
 	if !ids["timescaledb"] || !ids["pgvector"] || !ids["pg_clickhouse"] {
 		t.Fatalf("missing expected extensions: %+v", exts)
+	}
+	for _, id := range []string{"pg_trgm", "unaccent", "fuzzystrmatch", "btree_gin"} {
+		if !ids[id] {
+			t.Fatalf("missing search contrib %s: %+v", id, exts)
+		}
 	}
 }
 
@@ -80,6 +86,89 @@ func TestPostgresExtensions_PgvectorPortable(t *testing.T) {
 	}
 	if pv.Version == "" {
 		t.Fatalf("pgvector missing version: %+v", pv)
+	}
+}
+
+func TestPostgresExtensions_SearchContribWired(t *testing.T) {
+	const installTimeout = 20 * time.Minute
+	ensureInstalledRunning(t, "postgres", installTimeout)
+
+	t.Log("POST /api/postgres/extensions/ensure")
+	ensureBody, status := httpPost(t, "/api/postgres/extensions/ensure", nil)
+	if status != http.StatusOK {
+		t.Fatalf("ensure status %d: %s", status, ensureBody)
+	}
+
+	wantIDs := []string{"pg_trgm", "unaccent", "fuzzystrmatch", "btree_gin"}
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		exts := listPgExts(t)
+		allReady := true
+		for _, id := range wantIDs {
+			e := findExt(exts, id)
+			if e == nil || !e.Ready || !e.Wired || !e.FilesInstalled {
+				allReady = false
+				t.Logf("waiting for %s: %+v", id, e)
+			}
+		}
+		if allReady {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("search contrib not ready in time: %+v", exts)
+		}
+		time.Sleep(2 * time.Second)
+		_, _ = httpPost(t, "/api/postgres/extensions/ensure", nil)
+	}
+
+	simBody, simStatus := httpPost(t, "/api/databases/postgres/query", map[string]any{
+		"database": "postgres",
+		"sql":      "SELECT similarity('laravel', 'larael')",
+		"limit":    1,
+	})
+	if simStatus != http.StatusOK {
+		t.Fatalf("similarity query %d: %s", simStatus, simBody)
+	}
+
+	createBody, createStatus := httpPost(t, "/api/databases/postgres/databases", map[string]any{
+		"name": "searchcontrib_test",
+	})
+	if createStatus != http.StatusOK {
+		t.Fatalf("create database %d: %s", createStatus, createBody)
+	}
+	t.Cleanup(func() {
+		httpDelete(t, "/api/databases/postgres/databases/searchcontrib_test")
+	})
+
+	extBody, extStatus := httpPost(t, "/api/databases/postgres/query", map[string]any{
+		"database": "searchcontrib_test",
+		"sql":      "SELECT extname FROM pg_extension WHERE extname IN ('pg_trgm','unaccent','fuzzystrmatch','btree_gin') ORDER BY 1",
+		"limit":    10,
+	})
+	if extStatus != http.StatusOK {
+		t.Fatalf("new db extensions %d: %s", extStatus, extBody)
+	}
+	var qres struct {
+		Rows [][]any `json:"rows"`
+	}
+	if err := json.Unmarshal(extBody, &qres); err != nil {
+		t.Fatalf("decode extension query: %v\n%s", err, extBody)
+	}
+	got := map[string]bool{}
+	for _, row := range qres.Rows {
+		if len(row) > 0 {
+			got[fmt.Sprint(row[0])] = true
+		}
+	}
+	for _, id := range wantIDs {
+		if !got[id] {
+			t.Fatalf("new database missing %s: %s", id, extBody)
+		}
+	}
+
+	ensureBody2, status2 := httpPost(t, "/api/postgres/extensions/ensure", nil)
+	if status2 != http.StatusOK {
+		t.Fatalf("second ensure status %d: %s", status2, ensureBody2)
 	}
 }
 

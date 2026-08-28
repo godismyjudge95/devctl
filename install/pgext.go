@@ -79,11 +79,11 @@ type PostgresExtension interface {
 
 // managedPostgresExtensions is the ordered registry.
 func managedPostgresExtensions() []PostgresExtension {
-	return []PostgresExtension{
+	return append([]PostgresExtension{
 		timescaleExtension{},
 		pgvectorExtension{},
 		pgClickhouseExtension{},
-	}
+	}, bundledSearchContribExtensions()...)
 }
 
 // ListPostgresExtensions returns status for every managed extension.
