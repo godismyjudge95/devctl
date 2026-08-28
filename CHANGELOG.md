@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- PHP **8.0** static builds pin ImageMagick 7.1.2-30 and imagick 3.8.1 so CI does not pull a newer unversioned pair that fails the 8.0 compile. Failed compile jobs now upload `spc.output.log` / `spc.shell.log`.
+
 ## v0.14.0 — 2026-08-27
 
 - Managed PostgreSQL search contrib (`pg_trgm`, `unaccent`, `fuzzystrmatch`, `btree_gin`) is wired into existing databases (`CREATE EXTENSION` on template1 and every connectable database except template0).

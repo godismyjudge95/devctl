@@ -13,7 +13,8 @@
 # PHP 8.0 compiles with this list (minus protobuf, opentelemetry, and pcov).
 # protobuf/otel PECL needs PHP 8.1+ IS_MIXED. pcov PECL for 8.0 pulls a
 # bundled zend_cfg that fails the in-tree static make. 8.0.30 pins older
-# libxml2/libxslt/icu via scripts/patch-spc-for-php80.sh.
+# libxml2/libxslt/icu, ImageMagick 7.1.2-30, and imagick 3.8.1 via
+# scripts/patch-spc-for-php80.sh.
 
 php8_exts_for() {
   local minor="${1:?php8_exts_for: minor required}"

@@ -25,7 +25,7 @@ jobs:
   # (mysqli, ffi, imagick, intl, spx, sodium, pcov, …). 8.2+ also gets swoole.
   # 8.0 omits protobuf/opentelemetry (PECL needs PHP 8.1+), omits pcov (8.0
   # PECL cfg does not compile in-tree), and pins older libxml2/libxslt/icu
-  # via scripts/patch-spc-for-php80.sh.
+  # plus ImageMagick 7.1.2-30 / imagick 3.8.1 via scripts/patch-spc-for-php80.sh.
   # Do not use --prefer-pre-built: those sqlite libs often lack
   # SQLITE_ENABLE_COLUMN_METADATA.
   # Prove 8.x compiles locally with scripts/local-build-php8.sh before tagging.
@@ -164,7 +164,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: spc/downloads
-          key: spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-v5
+          key: spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-v6
           restore-keys: |
             spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-
             spc-2.8.5-8x-${{ matrix.minor }}-linux-x86_64-
@@ -181,7 +181,7 @@ jobs:
           set -euo pipefail
           IGNORE_CACHE="php-src,libaom,libevent,pcov"
           if [ "${{ matrix.minor }}" = "8.0" ]; then
-            IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu"
+            IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
           fi
           ./bin/spc-alpine-docker download \
             --with-php=${{ matrix.patch }} \
@@ -259,6 +259,16 @@ jobs:
             "fpm": "php-${{ matrix.minor }}-fpm-linux-x86_64"
           }
           EOF
+
+      - name: Upload spc logs on failure
+        if: failure() && matrix.build == 'compile'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spc-logs-${{ matrix.minor }}
+          path: |
+            spc/log/spc.output.log
+            spc/log/spc.shell.log
+          if-no-files-found: ignore
 
       - name: Upload metadata artifact
         uses: actions/upload-artifact@v4

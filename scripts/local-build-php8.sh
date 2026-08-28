@@ -6,7 +6,8 @@
 # php-binaries.json).
 #
 # PHP 8.0.30 compiles with scripts/patch-spc-for-php80.sh (older libxml2,
-# libxslt, ICU). It omits protobuf and opentelemetry (current PECL needs 8.1+).
+# libxslt, ICU, ImageMagick 7.1.2-30, imagick 3.8.1). It omits protobuf
+# and opentelemetry (current PECL needs 8.1+).
 #
 # Safety:
 #   - Does NOT touch host PHP, systemd, or `make install`
@@ -192,7 +193,7 @@ echo "==> patching static-php-cli for PHP 8.x (libaom pin, pcov static)"
 run bash "$PATCH_SCRIPT" .
 
 if [[ "$MINOR" == "8.0" ]]; then
-  echo "==> pinning libxml2 2.12.10, libxslt 1.1.39, and ICU 70.1 for PHP 8.0"
+  echo "==> pinning libxml2 2.12.10, libxslt 1.1.39, ICU 70.1, ImageMagick 7.1.2-30, and imagick 3.8.1 for PHP 8.0"
   run bash "$PATCH_SCRIPT_80" .
 fi
 
@@ -207,7 +208,7 @@ if [[ "$SKIP_DOWNLOAD" -eq 0 ]]; then
   echo "==> downloading sources (cached under $SPC_DIR/downloads)"
   IGNORE_CACHE="php-src,libaom,libevent,pcov"
   if [[ "$MINOR" == "8.0" ]]; then
-    IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu"
+    IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
   fi
   run ./bin/spc-alpine-docker download \
     --with-php="$PATCH" \
