@@ -196,6 +196,10 @@ func TestWriteSkill_FirstTryGuide(t *testing.T) {
 		"valkey-cli",
 		"https://",
 		".test",
+		"sites:worktree:add",
+		"lockfile matches the parent",
+		"auth.json",
+		"Do not read the devctl source",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("WriteSkill: first-try guide missing %q", want)

@@ -430,7 +430,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "sites:worktree:add",
-		Description: "Create a git worktree site from a parent (seeds vendor/.env, rewrites URLs)",
+		Description: "Create a git worktree site from a parent. Rewrites URLs in .env. Copies vendor and node_modules only when the lockfile matches the parent",
 		Usage:       "<domain> <branch> [--create] [--copy=...] [--symlink=...] [--no-share]",
 		Args: []ArgDef{
 			{Name: "domain", Description: "Parent site domain, id, or path (use . for cwd)"},
@@ -514,8 +514,9 @@ func init() {
 			}
 			KV("Parent", parent.Domain)
 			fmt.Println()
-			fmt.Println(styleDim.Render("vendor/ is copied (not symlinked) so Composer __DIR__ stays in this worktree."))
-			fmt.Println(styleDim.Render("If composer.lock differs from the parent, run composer install in the worktree."))
+			fmt.Println(styleDim.Render("vendor/ and node_modules/ are copied only when that lockfile matches the parent."))
+			fmt.Println(styleDim.Render("If either directory is missing, install dependencies in the worktree."))
+			fmt.Println(styleDim.Render("auth.json is not copied. Copy it from the parent when Composer needs it."))
 			return nil
 		},
 	})

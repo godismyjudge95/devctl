@@ -679,7 +679,7 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `sites:cors <domain> enable\|disable` | Enable or disable Caddy CORS header injection for a site |
 | | `sites:branches <domain>` | List git branches for a site |
 | | `sites:worktrees [domain]` | List worktrees for a site, or every worktree |
-| | `sites:worktree:add <domain> <branch>` | Create a worktree site (copy vendor/.env, rewrite URLs) |
+| | `sites:worktree:add <domain> <branch>` | Create a worktree site. Rewrite URLs in `.env`. Copy `vendor` and `node_modules` only when the lockfile matches |
 | | `sites:worktree:rm <domain>` | Remove a worktree (git + directory + vhost) |
 | | `sites:worktree:config <domain>` | Show or save default copy/symlink paths |
 | `helpers` | `helpers:list` | List installed CLI helpers and versions |
