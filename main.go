@@ -352,7 +352,11 @@ func run() error {
 	defer cancel()
 
 	go poller.Run(runCtx)
-	go supervisor.Run(runCtx)
+	supDone := make(chan struct{})
+	go func() {
+		supervisor.Run(runCtx)
+		close(supDone)
+	}()
 
 	go func() {
 		if err := watcher.Watch(runCtx, sitesWatchDir); err != nil {
@@ -390,7 +394,10 @@ func run() error {
 	}()
 
 	// --- Listen ---
-	return srv.Listen(runCtx, addr)
+	listenErr := srv.Listen(runCtx, addr)
+	cancel()
+	<-supDone
+	return listenErr
 }
 
 // getSetting retrieves a setting from the DB with a fallback default.

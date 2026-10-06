@@ -212,6 +212,15 @@ func (s *Supervisor) startProcess(def Definition) error {
 
 	cmd := exec.CommandContext(ctx, def.ManagedCmd, args...)
 	cmd.Dir = managedDir
+	// Go's default CommandContext cancel is SIGKILL. Nested PHP-FPM workers
+	// survive that. SIGTERM lets the master shut the tree down. Stop() still
+	// force-kills after 10s if the child ignores TERM.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
 
 	// If ManagedUser is set and differs from the current process user, drop
 	// privileges before exec (requires CAP_SETUID — only works when daemon is
@@ -366,7 +375,7 @@ func (s *Supervisor) Stop(id string) error {
 	delete(s.procs, id)
 	s.mu.Unlock()
 
-	cancel() // cancel context — triggers SIGTERM for exec procs, stops RunFunc for goroutines
+	cancel() // SIGTERM via cmd.Cancel for exec procs; stops RunFunc for goroutines
 
 	if done != nil {
 		// Wait for the reaping / RunFunc goroutine to finish. Force-kill if
@@ -479,8 +488,9 @@ func (s *Supervisor) restartCrashed() {
 	}
 }
 
-// stopAll stops every managed service. Called on shutdown.
-func (s *Supervisor) stopAll() {
+// StopAll stops every managed service. Called on shutdown and before re-exec
+// so children are not left attached to a replaced process image.
+func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	ids := make([]string, 0, len(s.procs))
 	for id := range s.procs {
@@ -491,6 +501,10 @@ func (s *Supervisor) stopAll() {
 	for _, id := range ids {
 		s.Stop(id) //nolint:errcheck
 	}
+}
+
+func (s *Supervisor) stopAll() {
+	s.StopAll()
 }
 
 // loadEnvFile reads a key=value file and returns a slice of "KEY=VALUE" strings

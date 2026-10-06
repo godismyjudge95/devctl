@@ -18,5 +18,5 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		f.Flush()
 	}
 
-	reexec.Schedule(300*time.Millisecond, nil)
+	reexec.Schedule(300*time.Millisecond, s.supervisor.StopAll)
 }
