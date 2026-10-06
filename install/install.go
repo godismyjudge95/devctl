@@ -237,49 +237,6 @@ func aptUpdateW(ctx context.Context, w io.Writer) error {
 	return aptGetW(ctx, w, "update")
 }
 
-// systemctl wraps systemctl <action> <unit>.
-func systemctl(ctx context.Context, action, unit string) error {
-	return systemctlW(ctx, io.Discard, action, unit)
-}
-
-// systemctlW is like systemctl but writes output to w.
-func systemctlW(ctx context.Context, w io.Writer, action, unit string) error {
-	cmd := exec.CommandContext(ctx, "systemctl", action, unit)
-	var buf bytes.Buffer
-	mw := io.MultiWriter(&buf, w)
-	cmd.Stdout = mw
-	cmd.Stderr = mw
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("systemctl %s %s: %w: %s", action, unit, err, buf.String())
-	}
-	return nil
-}
-
-// enableAndStart enables and starts a systemd unit (best-effort start).
-func enableAndStart(ctx context.Context, unit string) error {
-	return enableAndStartW(ctx, io.Discard, unit)
-}
-
-// enableAndStartW is like enableAndStart but streams output to w.
-func enableAndStartW(ctx context.Context, w io.Writer, unit string) error {
-	if err := systemctlW(ctx, w, "enable", unit); err != nil {
-		return err
-	}
-	return systemctlW(ctx, w, "start", unit)
-}
-
-// stopAndDisable stops and disables a systemd unit, ignoring errors (unit may
-// not be installed).
-func stopAndDisable(ctx context.Context, unit string) {
-	stopAndDisableW(ctx, io.Discard, unit)
-}
-
-// stopAndDisableW is like stopAndDisable but streams output to w.
-func stopAndDisableW(ctx context.Context, w io.Writer, unit string) {
-	_ = systemctlW(ctx, w, "stop", unit)
-	_ = systemctlW(ctx, w, "disable", unit)
-}
-
 // curlPipe runs: curl -fsSL <url> | <cmd> [args...].
 // Used to pipe GPG keys into gpg --dearmor.
 func curlPipe(ctx context.Context, url string, cmd string, args ...string) error {

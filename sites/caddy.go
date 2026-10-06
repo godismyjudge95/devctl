@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/php"
 )
 
@@ -254,13 +255,14 @@ func (c *CaddyClient) RootCert() ([]byte, error) {
 }
 
 // EnsureHTTPServer ensures the Caddy config has an HTTP server named "devctl"
-// listening on :80/:443, the TLS automation policy uses Caddy's internal CA
-// for *.test domains, and a reverse-proxy vhost for devctl.test points at
-// devctlAddr (e.g. "127.0.0.1:4000").
+// listening on dist.ListenHTTP() (:80/:443 on Linux, :8080/:8443 on Darwin),
+// the TLS automation policy uses Caddy's internal CA for *.test domains, and
+// a reverse-proxy vhost for devctl.test points at devctlAddr (e.g. "127.0.0.1:4000").
 // This is idempotent — safe to call on startup or after Caddy restarts.
 func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
+	listen := dist.ListenHTTP()
 	serverConfig := map[string]interface{}{
-		"listen": []string{":80", ":443"},
+		"listen": listen,
 		"routes": []interface{}{},
 		"automatic_https": map[string]interface{}{
 			"disable":           false,
@@ -287,6 +289,16 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 		defer resp2.Body.Close()
 		io.Copy(io.Discard, resp2.Body)
 	}
+
+	// Always write listen so a Darwin box cannot keep Linux :80/:443 from autosave.
+	listenBody, _ := json.Marshal(listen)
+	putListenURL := fmt.Sprintf("%s/config/apps/http/servers/devctl/listen", c.adminURL)
+	respListen, err := c.http.Do(mustRequest("PUT", putListenURL, listenBody))
+	if err != nil {
+		return fmt.Errorf("caddy PUT listen: %w", err)
+	}
+	defer respListen.Body.Close()
+	io.Copy(io.Discard, respListen.Body)
 
 	// Configure the TLS app to use Caddy's internal CA for *.test domains.
 	// Without this, automatic_https defaults to Let's Encrypt, which rejects

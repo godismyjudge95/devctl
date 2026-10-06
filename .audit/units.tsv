@@ -1,0 +1,16 @@
+id	depends	verify	notes
+U0-harness	none	scripts/verify-nested-stack.sh fails without a daemon, passes with nested children	written this session
+U1-dist	arena	go test -c ./internal/dist/ (name from sketch)	GOOS/GOARCH URL table, no hardcoded linux-amd64 in new helper
+U2-caddy-url	U1	installer downloads mac_arm64 or linux_{amd64,arm64}; file is Mach-O or ELF	HEAD 200 already confirmed
+U3-go-services	U1	mailpit meilisearch typesense maxio URL tests with literal expected strings	mechanical
+U4-clickhouse	U1	IsInstalled accepts Mach-O; darwin URL builds.clickhouse.com macos-aarch64	ELF-only check must go
+U5-supervisor-stop	none	children get SIGTERM then SIGKILL; run() waits for stopAll	needed on darwin, no cgroup
+U6-launchd-parent	arena	plist exists; launchctl print shows PID; children nested	parent only
+U7-resolver	arena	/etc/resolver/<tld> nameserver 127.0.0.1 port 5354	needs sudo
+U8-ca	arena	security dump-trust-settings lists Caddy local CA	needs sudo
+U9-pf-ports	arena	curl -k https://127.0.0.1/ with Host site.test after pf, or :8443 without sudo	sudo optional fallback
+U10-mysql-tarball	U1	official macos15/linux tarball, no apt libnuma, no dpkg-deb on darwin	
+U11-postgres-tarball	U1	EDB zip darwin / Percona linux, no apt libreadline	skip timescale/pgvector on darwin
+U12-php-assets	U1	darwin uses static-php.dev until github has darwin names; linux keeps php-binaries	
+U13-tools	U1	yq mago fnm phpantom sqlite3 URLs for darwin_arm64	
+U14-linux-regression	U2-U13	Incus or OrbStack make test-run still green	do not run integration on live linux host

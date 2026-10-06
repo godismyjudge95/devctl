@@ -8,9 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
+
+func caddyTarballURL(latest string, a dist.Asset) string {
+	ver := strings.TrimPrefix(latest, "v")
+	return fmt.Sprintf("https://github.com/caddyserver/caddy/releases/download/%s/caddy_%s_%s.tar.gz", latest, ver, a.Token)
+}
 
 // CaddyInstaller downloads the Caddy binary to {serverRoot}/caddy/
 // and runs it as a supervised child process.
@@ -62,12 +68,15 @@ func (c *CaddyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("caddy: resolve latest version: %w", err)
 	}
-	ver := strings.TrimPrefix(latest, "v")
-	dlURL := fmt.Sprintf("https://github.com/caddyserver/caddy/releases/download/%s/caddy_%s_linux_amd64.tar.gz", latest, ver)
+	a, err := dist.For("caddy")
+	if err != nil {
+		return fmt.Errorf("caddy: %w", err)
+	}
+	dlURL := caddyTarballURL(latest, a)
 
 	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
 	binPath := filepath.Join(caddyDir, "caddy")
-	tmpTar := filepath.Join(os.TempDir(), "caddy-linux-amd64.tar.gz")
+	tmpTar := filepath.Join(os.TempDir(), a.File)
 	defer os.Remove(tmpTar)
 
 	// 1. Create directory (data/ subdir for autosave.json and internal CA certs).
@@ -148,13 +157,15 @@ func (c *CaddyInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("caddy: update: %w", err)
 	}
-	// Strip leading "v" for the tarball filename (e.g. "v2.10.0" → "2.10.0").
-	ver := strings.TrimPrefix(latest, "v")
-	dlURL := fmt.Sprintf("https://github.com/caddyserver/caddy/releases/download/%s/caddy_%s_linux_amd64.tar.gz", latest, ver)
+	a, err := dist.For("caddy")
+	if err != nil {
+		return fmt.Errorf("caddy: %w", err)
+	}
+	dlURL := caddyTarballURL(latest, a)
 
 	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
 	binPath := filepath.Join(caddyDir, "caddy")
-	tmpTar := filepath.Join(os.TempDir(), "caddy-update-linux-amd64.tar.gz")
+	tmpTar := filepath.Join(os.TempDir(), "caddy-update-"+a.File)
 	defer os.Remove(tmpTar)
 
 	fmt.Fprintf(w, "caddy: downloading %s...\n", latest)
