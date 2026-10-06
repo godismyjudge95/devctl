@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -329,6 +330,18 @@ func fileExists(path string) bool {
 // runShell runs a shell command string (sh -c).
 func runShell(ctx context.Context, command string) (string, error) {
 	return runShellW(ctx, io.Discard, command)
+}
+
+func chownRecursiveCmd(siteUser, path string) string {
+	group := siteUser
+	if u, err := user.Lookup(siteUser); err == nil {
+		if g, err := user.LookupGroupId(u.Gid); err == nil && g.Name != "" {
+			group = g.Name
+		} else if u.Gid != "" {
+			group = u.Gid
+		}
+	}
+	return fmt.Sprintf("chown -R %s:%s %s", siteUser, group, path)
 }
 
 // runShellW is like runShell but also streams output to w.

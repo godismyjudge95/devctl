@@ -122,7 +122,7 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 			return err
 		}
 		if p.siteUser != "" {
-			chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, p.postgresDir())
+			chownCmd := chownRecursiveCmd(p.siteUser, p.postgresDir())
 			if out, err := runShellW(ctx, w, chownCmd); err != nil {
 				return fmt.Errorf("postgres: chown after extensions: %w\n%s", err, out)
 			}
@@ -182,7 +182,7 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	//    PostgreSQL refuses to start (and initdb refuses to run) as root.
 	if p.siteUser != "" {
 		fmt.Fprintf(w, "postgres: transferring ownership to %s...\n", p.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		chownCmd := chownRecursiveCmd(p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			// Non-root daemon already owns the tree it created — warn only.
 			fmt.Fprintf(w, "postgres: chown (best-effort): %v\n%s", err, out)
@@ -232,7 +232,7 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	// 9. Re-chown after extension files land (install may run as root).
 	if p.siteUser != "" {
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		chownCmd := chownRecursiveCmd(p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("postgres: chown after extensions: %w\n%s", err, out)
 		}
@@ -294,7 +294,7 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 
 	// Re-transfer ownership so the new files are also owned by the site user.
 	if p.siteUser != "" {
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		chownCmd := chownRecursiveCmd(p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("postgres: update chown: %w\n%s", err, out)
 		}
@@ -308,7 +308,7 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 
 	// Re-chown after extension files land.
 	if p.siteUser != "" {
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", p.siteUser, p.siteUser, pgDir)
+		chownCmd := chownRecursiveCmd(p.siteUser, pgDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("postgres: update chown after extensions: %w\n%s", err, out)
 		}

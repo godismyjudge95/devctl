@@ -122,7 +122,7 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 	// 6. Transfer ownership to the site user.
 	if m.siteUser != "" {
 		fmt.Fprintf(w, "meilisearch: chowning %s to %s...\n", meiliDir, m.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, meiliDir)
+		chownCmd := chownRecursiveCmd(m.siteUser, meiliDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("meilisearch: chown: %w\n%s", err, out)
 		}

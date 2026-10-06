@@ -136,7 +136,7 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 10. Transfer ownership to the site user.
 	if v.siteUser != "" {
 		fmt.Fprintf(w, "valkey: chowning %s to %s...\n", valkeyDir, v.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", v.siteUser, v.siteUser, valkeyDir)
+		chownCmd := chownRecursiveCmd(v.siteUser, valkeyDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("valkey: chown: %w\n%s", err, out)
 		}

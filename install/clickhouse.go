@@ -159,7 +159,7 @@ func (c *ClickHouseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 7. Transfer ownership to the site user.
 	if c.siteUser != "" {
 		fmt.Fprintf(w, "clickhouse: chowning %s to %s...\n", chDir, c.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", c.siteUser, c.siteUser, chDir)
+		chownCmd := chownRecursiveCmd(c.siteUser, chDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("clickhouse: chown: %w\n%s", err, out)
 		}

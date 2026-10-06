@@ -182,7 +182,7 @@ func (m *MySQLInstaller) installDarwinTarball(ctx context.Context, w io.Writer) 
 
 	if m.siteUser != "" {
 		fmt.Fprintf(w, "mysql: chowning %s to %s...\n", mysqlDir, m.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, mysqlDir)
+		chownCmd := chownRecursiveCmd(m.siteUser, mysqlDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("mysql: chown: %w\n%s", err, out)
 		}
@@ -307,7 +307,7 @@ func (m *MySQLInstaller) installLinuxDebs(ctx context.Context, w io.Writer) erro
 	//    can both access the files without permission errors.
 	if m.siteUser != "" {
 		fmt.Fprintf(w, "mysql: chowning %s to %s...\n", mysqlDir, m.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, mysqlDir)
+		chownCmd := chownRecursiveCmd(m.siteUser, mysqlDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("mysql: chown: %w\n%s", err, out)
 		}

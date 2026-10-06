@@ -123,7 +123,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 9. Transfer ownership to the site user.
 	if t.siteUser != "" {
 		fmt.Fprintf(w, "typesense: chowning %s to %s...\n", tsDir, t.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", t.siteUser, t.siteUser, tsDir)
+		chownCmd := chownRecursiveCmd(t.siteUser, tsDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("typesense: chown: %w\n%s", err, out)
 		}

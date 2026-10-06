@@ -104,7 +104,7 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 6. Transfer ownership to the site user.
 	if m.siteUser != "" {
 		fmt.Fprintf(w, "mailpit: chowning %s to %s...\n", mailpitDir, m.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, mailpitDir)
+		chownCmd := chownRecursiveCmd(m.siteUser, mailpitDir)
 		if out, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("mailpit: chown: %w\n%s", err, out)
 		}

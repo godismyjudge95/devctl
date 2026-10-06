@@ -149,7 +149,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	// 9. Transfer ownership to the site user.
 	if m.siteUser != "" {
 		fmt.Fprintf(w, "maxio: chowning %s to %s...\n", maxioDir, m.siteUser)
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, maxioDir)
+		chownCmd := chownRecursiveCmd(m.siteUser, maxioDir)
 		if _, err := runShellW(ctx, w, chownCmd); err != nil {
 			return fmt.Errorf("maxio: chown: %w", err)
 		}

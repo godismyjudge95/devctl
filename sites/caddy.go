@@ -290,15 +290,32 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 		io.Copy(io.Discard, resp2.Body)
 	}
 
-	// Always write listen so a Darwin box cannot keep Linux :80/:443 from autosave.
+	// PATCH so Darwin can replace Linux :80/:443 from autosave. PUT 409s when listen exists.
 	listenBody, _ := json.Marshal(listen)
-	putListenURL := fmt.Sprintf("%s/config/apps/http/servers/devctl/listen", c.adminURL)
-	respListen, err := c.http.Do(mustRequest("PUT", putListenURL, listenBody))
+	patchListenURL := fmt.Sprintf("%s/config/apps/http/servers/devctl/listen", c.adminURL)
+	respListen, err := c.http.Do(mustRequest("PATCH", patchListenURL, listenBody))
 	if err != nil {
-		return fmt.Errorf("caddy PUT listen: %w", err)
+		return fmt.Errorf("caddy PATCH listen: %w", err)
 	}
 	defer respListen.Body.Close()
 	io.Copy(io.Discard, respListen.Body)
+
+	// Caddy otherwise tries to install its CA into the OS trust store and
+	// prints a Homebrew certutil hint. elevate/trust.go owns trust.
+	pkiBody, _ := json.Marshal(map[string]interface{}{
+		"certificate_authorities": map[string]interface{}{
+			"local": map[string]interface{}{
+				"install_trust": false,
+			},
+		},
+	})
+	pkiURL := fmt.Sprintf("%s/config/apps/pki", c.adminURL)
+	respPKI, err := c.http.Do(mustRequest("PUT", pkiURL, pkiBody))
+	if err != nil {
+		return fmt.Errorf("caddy PUT pki: %w", err)
+	}
+	defer respPKI.Body.Close()
+	io.Copy(io.Discard, respPKI.Body)
 
 	// Configure the TLS app to use Caddy's internal CA for *.test domains.
 	// Without this, automatic_https defaults to Let's Encrypt, which rejects
