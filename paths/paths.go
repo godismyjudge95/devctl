@@ -11,7 +11,12 @@
 // other tools.
 package paths
 
-import "path/filepath"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+)
 
 // ServerDir returns the root directory for all devctl-managed service data.
 // For historical reasons this accepts serverRoot directly — it is a no-op that
@@ -81,4 +86,46 @@ func LogsDir(serverRoot string) string {
 //	{serverRoot}/logs/{id}.log
 func LogPath(serverRoot, id string) string {
 	return filepath.Join(LogsDir(serverRoot), id+".log")
+}
+
+// ExpandHome expands a leading ~ or $HOME in p. Other values are returned
+// unchanged (after TrimSpace). Empty input stays empty.
+func ExpandHome(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	switch {
+	case p == "~" || p == "$HOME":
+		return home
+	case strings.HasPrefix(p, "~/"):
+		return filepath.Join(home, p[2:])
+	case strings.HasPrefix(p, "$HOME/"):
+		return filepath.Join(home, strings.TrimPrefix(p, "$HOME/"))
+	default:
+		return p
+	}
+}
+
+// DefaultSitesDir is the install-time sites directory for this OS.
+// Linux: {siteHome}/ddev/sites. Darwin: {siteHome}/Code/sites.
+func DefaultSitesDir(siteHome string) string {
+	return DefaultSitesDirFor(runtime.GOOS, siteHome)
+}
+
+// DefaultSitesDirFor is DefaultSitesDir for a given GOOS.
+func DefaultSitesDirFor(goos, siteHome string) string {
+	if goos == "darwin" {
+		return filepath.Join(siteHome, "Code", "sites")
+	}
+	return filepath.Join(siteHome, "ddev", "sites")
+}
+
+// DefaultServerRoot is DefaultSitesDir(siteHome)/server.
+func DefaultServerRoot(siteHome string) string {
+	return filepath.Join(DefaultSitesDir(siteHome), "server")
 }

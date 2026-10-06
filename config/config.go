@@ -15,7 +15,7 @@ import (
 type Config struct {
 	// DBPath is the absolute path to the SQLite database.
 	DBPath string
-	// SiteUser is the non-root OS user who owns ~/sites (e.g. "daniel").
+	// SiteUser is the non-root OS user who owns the sites dir (e.g. "daniel").
 	// Set via the DEVCTL_SITE_USER environment variable.
 	SiteUser string
 	// SiteHome is the home directory of SiteUser (e.g. "/home/alice").
@@ -23,7 +23,7 @@ type Config struct {
 	// ServerRoot is the absolute path to the devctl server directory
 	// (e.g. "/home/alice/ddev/sites/server"). It is baked into the systemd
 	// unit as DEVCTL_SERVER_ROOT at install time. When unset it falls back to
-	// {SiteHome}/sites/server for backwards compatibility.
+	// {SiteHome}/ddev/sites/server on Linux, {SiteHome}/Code/sites/server on macOS.
 	ServerRoot string
 }
 
@@ -46,8 +46,7 @@ func Load() (*Config, error) {
 }
 
 // resolveServerRoot returns the server root directory. It reads
-// DEVCTL_SERVER_ROOT; if unset it falls back to {siteHome}/ddev/sites/server
-// for backwards compatibility with installs that predate this setting.
+// DEVCTL_SERVER_ROOT; if unset it falls back to paths.DefaultServerRoot.
 func resolveServerRoot(siteHome string) string {
 	if v := os.Getenv("DEVCTL_SERVER_ROOT"); v != "" {
 		return filepath.Clean(v)
@@ -55,7 +54,7 @@ func resolveServerRoot(siteHome string) string {
 	// Legacy fallback: derive from siteHome.
 	// NOTE: DEVCTL_SERVER_ROOT must be set in the systemd unit. This fallback
 	// is only a best-effort for edge cases and should not be relied upon.
-	return filepath.Join(siteHome, "ddev", "sites", "server")
+	return paths.DefaultServerRoot(siteHome)
 }
 
 // resolveSiteUser returns the non-root user and their home directory.

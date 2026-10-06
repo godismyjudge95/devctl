@@ -304,7 +304,7 @@ func printGlobalHelp() {
 	fmt.Println()
 	fmt.Println(styleDim.Render("install flags:"))
 	fmt.Println("  --user              non-root user devctl will manage (auto-detected from SUDO_USER)")
-	fmt.Println("  --sites-dir         directory where sites are stored (default: ~/sites)")
+	fmt.Println("  --sites-dir         directory where sites are stored (Linux: ~/ddev/sites, macOS: ~/Code/sites)")
 	fmt.Println("  --path              directory to install the devctl binary into")
 	fmt.Println("  --yes               skip all confirmation prompts")
 	fmt.Println()
