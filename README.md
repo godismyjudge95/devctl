@@ -4,7 +4,7 @@
 
 # devctl
 
-A local PHP development environment dashboard for Linux. Runs as a **non-root** systemd service (with ambient capabilities for ports 80/443) and serves a browser UI at `http://127.0.0.1:4000`.
+A local PHP development environment dashboard for Linux and macOS. On Linux it runs as a **non-root** systemd service (with ambient capabilities for ports 80/443). On macOS it runs as a **LaunchAgent** (`ai.devctl`) and Caddy listens on `:8080` / `:8443` (optional pf redirect from 80/443). The browser UI is at `http://127.0.0.1:4000`.
 
 devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, MaxIO, ClickHouse) — all from a single dashboard without touching config files.
 
@@ -44,7 +44,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 
 ## Overview
 
-devctl is a self-contained development environment manager for PHP projects on Linux. Everything runs from a single statically-linked binary that you install once and forget about:
+devctl is a self-contained development environment manager for PHP projects on Linux and macOS. Everything runs from a single statically-linked binary that you install once and forget about:
 
 - **No Docker**, no VMs, no `sudo` on every command.
 - **One dashboard** at `http://127.0.0.1:4000` to start/stop/install services, manage PHP versions, view logs, and inspect variable dumps.
@@ -52,7 +52,7 @@ devctl is a self-contained development environment manager for PHP projects on L
 - **Zero config files to edit** — devctl writes sensible defaults on first install. Every config file is user-editable and never overwritten on restart.
 - **AI-friendly** — a CLI lets AI agents (OpenCode, Claude, Cursor) interact with your dev environment without root: `devctl services:list`, `devctl sites:list`, `devctl logs:tail caddy`, etc.
 
-All service binaries are downloaded directly from their upstream releases and stored under your sites directory (default `~/sites/server/`). Nothing is installed system-wide except the devctl binary and systemd unit.
+All service binaries are downloaded directly from their upstream releases and stored under your sites directory (`~/ddev/sites/server/` on Linux, `~/Code/sites/server/` on macOS). Nothing is installed system-wide except the parent unit (systemd on Linux, LaunchAgent on macOS).
 
 ---
 
@@ -65,7 +65,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | Free | ✅ (Pro is paid) | ✅ | ✅ | ✅ |
 | Open source | ❌ | ✅ | ✅ | ✅ |
 | Linux | ❌ | ✅ | ✅ | ✅ |
-| macOS | ✅ | ✅ | ✅ | ❌ |
+| macOS | ✅ | ✅ | ✅ | ✅ |
 | Windows | ✅ | WSL2 (beta) | ❌ | WSL2 |
 | Automatic `.test` domains | ✅ | ✅ | ✅ | ✅ |
 | HTTPS with a trusted local CA | ✅ | ✅ | ✅ | ✅ |
@@ -105,10 +105,11 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 
 ## Requirements
 
-- **OS**: Ubuntu 22.04+ or Debian 12+ (amd64)
-- **sudo once** for install and elevation (CA trust, DNS resolver, privileged ports) — day-to-day work does **not** need root
-- A non-root user whose `~/sites` directory devctl will manage
+- **OS**: Ubuntu 22.04+ or Debian 12+ (amd64 or arm64), or macOS 15+ (Apple silicon)
+- **sudo once** for elevation (CA trust, DNS resolver, privileged ports). Day-to-day work does **not** need root. On Linux, `devctl install` also needs sudo. On macOS, install and uninstall run as the site user.
+- A non-root user whose sites directory devctl will manage (`~/ddev/sites` on Linux, `~/Code/sites` on macOS)
 - **DNS**: the `.test` TLD must resolve to your machine. The easiest approach is `sudo devctl elevate resolver` (see [Elevation](#elevation) and [DNS](#dns)). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
+- **No Homebrew.** Service binaries come from vendor downloads only.
 
 ---
 
@@ -116,33 +117,48 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 
 ### From a release binary
 
-Download the latest binary from the [Releases](https://github.com/godismyjudge95/devctl/releases) page, then run the interactive installer:
+Download the latest binary from the [Releases](https://github.com/godismyjudge95/devctl/releases) page, then run the interactive installer.
+
+**Linux:**
 
 ```sh
 chmod +x devctl
 sudo ./devctl install
 ```
 
+**macOS:**
+
+```sh
+chmod +x devctl
+./devctl install
+```
+
+Do not run the macOS installer as root. It writes `~/Library/LaunchAgents/ai.devctl.plist` and loads it with `launchctl`.
+
 The installer prompts you to confirm:
 
-1. Which user's sites directory devctl should manage (auto-detected from `SUDO_USER`)
-2. Where your sites are stored (default: `~/sites`)
-3. Where to install the devctl binary (default: `~/sites/server/devctl/devctl`)
+1. Which user's sites directory devctl should manage (auto-detected from `SUDO_USER` on Linux, or the current user on macOS)
+2. Where your sites are stored (default: `~/ddev/sites` on Linux, `~/Code/sites` on macOS)
+3. Where to install the devctl binary (default: `{sites-dir}/server/devctl/devctl`)
 
-It then writes the systemd unit file, enables the service, and confirms it is running.
+On Linux it then writes the systemd unit, enables the service, and confirms it is running. On macOS it writes the LaunchAgent and waits for `http://127.0.0.1:4000`.
 
 For non-interactive (scripted) installs, pass all flags explicitly:
 
 ```sh
+# Linux
 sudo ./devctl install --user alice --sites-dir /home/alice/sites --yes
+
+# macOS
+./devctl install --user alice --sites-dir /Users/alice/sites --yes
 ```
 
 | Flag | Description |
 |---|---|
-| `--user` | Non-root user whose sites dir devctl will manage. Auto-detected from `SUDO_USER` if omitted. |
-| `--sites-dir` | Directory where sites are stored. Default: `~/sites`. |
+| `--user` | Non-root user whose sites dir devctl will manage. Auto-detected from `SUDO_USER` on Linux, or the current user on macOS. |
+| `--sites-dir` | Directory where sites are stored. Default: `~/ddev/sites` on Linux, `~/Code/sites` on macOS. |
 | `--path` | Directory to install the devctl binary into. Default: `{sites-dir}/server/devctl`. |
-| `--yes` | Skip all confirmation prompts. Requires `--user` in non-interactive mode. |
+| `--yes` | Skip all confirmation prompts. On Linux, requires `--user` when `SUDO_USER` is unset. |
 
 The dashboard will be available at **http://127.0.0.1:4000** once the service starts.
 
@@ -154,11 +170,14 @@ Requirements: Go 1.25+, Node.js 18+, npm.
 git clone https://github.com/godismyjudge95/devctl
 cd devctl
 make build
-sudo make install
-sudo systemctl enable --now devctl
+make install
 ```
 
-`make install` copies the binary to `~/sites/server/devctl/devctl` and writes `devctl.service` to `/etc/systemd/system/`. Edit the service file to set `HOME`, `DEVCTL_SITE_USER`, and `DEVCTL_SERVER_ROOT` to your actual values before enabling.
+`make build` / `make install` run `npm ci` in `frontend/` when `vue-tsc` is missing (a fresh clone has no `node_modules/`).
+
+Never run `sudo make install`. The Makefile builds as your user. Linux recipes call sudo only for the unit and binary copy. macOS recipes do not use sudo.
+
+On Linux, `make install` copies the binary to `{serverRoot}/devctl/devctl` and writes `devctl.service` to `/etc/systemd/system/`. On macOS it writes `~/Library/LaunchAgents/ai.devctl.plist`. Edit `HOME`, `DEVCTL_SITE_USER`, and `DEVCTL_SERVER_ROOT` in the generated unit if you need non-default paths.
 
 ---
 
@@ -173,7 +192,7 @@ When a newer version is available an amber **↑** button appears next to the **
 1. The current binary is downloaded from the GitHub release page and verified by running `--version`.
 2. The running binary is backed up as `devctl.bak` next to the installed binary.
 3. The new binary replaces the current one atomically.
-4. `systemctl restart devctl` is triggered — the service comes back up on the new version within seconds.
+4. Linux: `systemctl restart devctl`. macOS: LaunchAgent `KeepAlive` restarts the process.
 5. On the next clean startup, the `devctl.bak` backup is removed automatically.
 
 If the download or verification step fails the current binary is not replaced and an error is shown in the dialog.
@@ -182,11 +201,19 @@ If the download or verification step fails the current binary is not replaced an
 
 ## Uninstall
 
+**Linux:**
+
 ```sh
 sudo devctl uninstall
 ```
 
-Stops and disables the service, removes the systemd unit file, and optionally removes the binary and devctl data directory (`{serverRoot}/devctl/`). Your sites directory is never touched.
+**macOS:**
+
+```sh
+devctl uninstall
+```
+
+Stops the parent daemon, removes the systemd unit or LaunchAgent plist, and optionally removes the binary and devctl data directory (`{serverRoot}/devctl/`). Your sites directory is never touched.
 
 To also remove all installed service binaries in one step, use `--purge-services`:
 
@@ -214,24 +241,24 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 
 | Service | Port(s) | `.test` vhost | Download source | Config file |
 |---|---|---|---|---|
-| Caddy | `:80`, `:443`, `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
+| Caddy | `:80`, `:443` (Linux) or `:8080`, `:8443` (macOS), `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
 | DNS Server | `127.0.0.1:5354` (UDP+TCP) | — | Embedded goroutine (no download) | — |
-| Valkey (Redis-compatible) | `127.0.0.1:6379` | — | [download.valkey.io](https://download.valkey.io/releases/) | `{serverRoot}/valkey/valkey.conf` |
-| PostgreSQL + extensions | `127.0.0.1:5432` | — | [Percona PG tarball](https://downloads.percona.com/downloads/postgresql-distribution-18/) + [TimescaleDB Community `.deb`](https://packagecloud.io/timescale/timescaledb) + [pgvector](https://github.com/pgvector/pgvector) (portable rebuild) + [pg_clickhouse `.deb`](https://github.com/ClickHouse/pg_clickhouse/releases) (extracted in-place) | `{serverRoot}/postgres/data/postgresql.conf` |
-| MySQL | `127.0.0.1:3306` | — | [repo.mysql.com/apt](https://repo.mysql.com/apt/) (Ubuntu `.deb` packages, extracted in-place) | `{serverRoot}/mysql/my.cnf` |
+| Valkey (Redis-compatible) | `127.0.0.1:6379` | — | Linux: [download.valkey.io](https://download.valkey.io/releases/). macOS: [Herd Valkey zip](https://download.herdphp.com/services/valkey/8.1.10-universal.zip) (valkey.io has no Darwin artifact). | `{serverRoot}/valkey/valkey.conf` |
+| PostgreSQL + extensions | `127.0.0.1:5432` | — | Linux: [Percona PG tarball](https://downloads.percona.com/downloads/postgresql-distribution-18/) + [TimescaleDB Community `.deb`](https://packagecloud.io/timescale/timescaledb) + [pgvector](https://github.com/pgvector/pgvector) + [pg_clickhouse `.deb`](https://github.com/ClickHouse/pg_clickhouse/releases). macOS: [EDB PostgreSQL zip](https://www.enterprisedb.com/download-postgresql-binaries); TimescaleDB, pgvector, and pg_clickhouse compile against the nested `pg_config` (no Homebrew formula). | `{serverRoot}/postgres/data/postgresql.conf` |
+| MySQL | `127.0.0.1:3306` | — | Linux: [repo.mysql.com/apt](https://repo.mysql.com/apt/) (Ubuntu `.deb` packages, extracted in-place). macOS: [official macos15-arm64 tarball](https://dev.mysql.com/downloads/mysql/). | `{serverRoot}/mysql/my.cnf` |
 | Meilisearch | `127.0.0.1:7700` | `meilisearch.test` | [github.com/meilisearch/meilisearch](https://github.com/meilisearch/meilisearch/releases) | `{serverRoot}/meilisearch/config.toml` |
 | Typesense | `127.0.0.1:8108` | `typesense.test` | [dl.typesense.org](https://dl.typesense.org/releases/) | `{serverRoot}/typesense/typesense.ini` |
 | Mailpit | `127.0.0.1:8025` (web), `127.0.0.1:1025` (SMTP) | — | [github.com/axllent/mailpit](https://github.com/axllent/mailpit/releases) | `{serverRoot}/mailpit/config.env` (env vars) |
 | Laravel Reverb | `127.0.0.1:7383` | `reverb.test` | [packagist.org/laravel/reverb](https://packagist.org/packages/laravel/reverb) (via Composer) | `{serverRoot}/reverb/.env` |
 | MaxIO | `127.0.0.1:9900` (S3 API) | `maxio.test`, `s3.maxio.test` | [github.com/coollabsio/maxio](https://github.com/coollabsio/maxio/releases) (always latest) | `{serverRoot}/maxio/config.env` |
-| ClickHouse | `127.0.0.1:8123` (HTTP), `127.0.0.1:9000` (native TCP) | — | [packages.clickhouse.com/tgz](https://packages.clickhouse.com/tgz/stable/) (binary only) | `{serverRoot}/clickhouse/config.xml` |
-| PHP-FPM (per version) | Unix socket | — | [static-php-cli](https://github.com/crazywhalecc/static-php-cli) | `{serverRoot}/php/{version}/php.ini` |
+| ClickHouse | `127.0.0.1:8123` (HTTP), `127.0.0.1:9000` (native TCP) | — | Linux: [packages.clickhouse.com/tgz](https://packages.clickhouse.com/tgz/stable/). macOS: [builds.clickhouse.com](https://builds.clickhouse.com/master/macos-aarch64/clickhouse). | `{serverRoot}/clickhouse/config.xml` |
+| PHP-FPM (per version) | Unix socket | — | Linux: GitHub `php-binaries-*`. macOS: [static-php.dev](https://static-php.dev) macos-aarch64. | `{serverRoot}/php/{version}/php.ini` |
 
 **Notes:**
 
-- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of devctl with automatic restart on crash.
-- PostgreSQL and ClickHouse run as supervised child processes but drop privileges to `DEVCTL_SITE_USER` (both refuse to start as root against non-root data).
-- PostgreSQL manages extensions via a small registry: [TimescaleDB Community Edition](https://github.com/timescale/timescaledb), [pgvector](https://github.com/pgvector/pgvector) (rebuilt from source with `OPTFLAGS=""` so Percona's `-march=native` AVX-512 binary is replaced with a portable build), and [pg_clickhouse](https://github.com/ClickHouse/pg_clickhouse) (Timescale + pg_clickhouse extracted from `.deb` files into the Percona tree — no APT). Stock contrib search modules already in the Percona tree (`pg_trgm`, `unaccent`, `fuzzystrmatch`, `btree_gin`) are wired with `CREATE EXTENSION` on **`template1`** and every connectable database except `template0`. Timescale sets `shared_preload_libraries` and runs `CREATE EXTENSION` on the default `postgres` database. When ClickHouse is also installed (either install order), `pg_clickhouse` is wired into **`template1`** only (`CREATE EXTENSION` + foreign server `clickhouse` + user mapping for the superuser), so new databases inherit the FDW. Status: Services → PostgreSQL → Settings, or `devctl postgres:extensions`.
+- Supervised services (Valkey, MySQL, Meilisearch, Typesense, Mailpit, Reverb, MaxIO, ClickHouse, PHP-FPM) run as direct child processes of the parent daemon. There is no per-service systemd unit or Homebrew formula.
+- PostgreSQL and ClickHouse run as supervised child processes but drop privileges to `DEVCTL_SITE_USER` on Linux (both refuse to start as root against non-root data).
+- PostgreSQL manages extensions via a small registry: [TimescaleDB Community Edition](https://github.com/timescale/timescaledb), [pgvector](https://github.com/pgvector/pgvector) (rebuilt from source with `OPTFLAGS=""` so Percona's `-march=native` AVX-512 binary is replaced with a portable build), and [pg_clickhouse](https://github.com/ClickHouse/pg_clickhouse). On Linux, Timescale + pg_clickhouse extract from `.deb` files into the Percona tree (no APT). On macOS they compile against the nested EDB `pg_config`. Stock contrib search modules already in the tree (`pg_trgm`, `unaccent`, `fuzzystrmatch`, `btree_gin`) are wired with `CREATE EXTENSION` on **`template1`** and every connectable database except `template0`. Timescale sets `shared_preload_libraries` and runs `CREATE EXTENSION` on the default `postgres` database. When ClickHouse is also installed (either install order), `pg_clickhouse` is wired into **`template1`** only (`CREATE EXTENSION` + foreign server `clickhouse` + user mapping for the superuser), so new databases inherit the FDW. Status: Services → PostgreSQL → Settings, or `devctl postgres:extensions`.
 - Valkey's service ID is `redis` for Laravel `.env` compatibility (`REDIS_HOST`, `REDIS_PORT`, etc.).
 - Config files are written once on install and never overwritten on restart. User edits are preserved.
 - Mailpit is configured via `MP_*` environment variables in `config.env` rather than a native config file.
@@ -355,7 +382,7 @@ devctl includes a built-in DNS server that runs as an in-process goroutine (no s
 **Default behaviour:**
 
 - Listens on `127.0.0.1:5354` (UDP and TCP)
-- Intercepts `*.test` queries and returns your primary LAN IP
+- Intercepts `*.test` queries. When Target IP is empty, a query from loopback returns `127.0.0.1` (so a browser on this machine can use port 443). A query from another host returns the current LAN IP (re-detected on every query).
 - Forwards all other queries to the system upstream resolver (read from `/run/systemd/resolve/resolv.conf`, falling back to `/etc/resolv.conf`, then `8.8.8.8`)
 
 ### Configuring via the dashboard
@@ -366,7 +393,7 @@ Open the gear icon on the DNS Server row in the Services tab:
 |---|---|
 | Port | UDP/TCP port the server listens on (default `5354`) |
 | TLD(s) | Comma-separated list of TLDs to intercept (default `.test`) |
-| Target IP | IP address returned for intercepted queries. Click **Auto-detect** to use your primary LAN IP. |
+| Target IP | IP address returned for intercepted queries. Leave empty for split answers (`127.0.0.1` to this machine, LAN IP to other hosts; DHCP-safe). Click **Auto-detect** to pin the current LAN IP. |
 | System DNS | One-click integration with `systemd-resolved` to route `.test` queries system-wide |
 
 ### systemd-resolved integration
@@ -389,11 +416,15 @@ Domains=~test
 
 Reverse with `sudo devctl unelevate resolver`.
 
+### macOS resolver
+
+On macOS, `sudo devctl elevate resolver` writes `/etc/resolver/<tld>` so `*.test` queries go to `127.0.0.1:5354`. Empty Target IP answers `127.0.0.1` to this Mac so Chrome uses loopback. Caddy listens on every interface at `:8080` and `:8443`. Browsers still use port 443 — `sudo devctl elevate ports` installs pf redirects for 80/443. Reverse the resolver with `sudo devctl unelevate resolver`.
+
 ---
 
 ## Sites
 
-devctl auto-discovers PHP projects in your configured sites watch directory (default: `~/sites`) and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA. Newly discovered sites are automatically assigned the latest installed PHP version.
+devctl auto-discovers PHP projects in your configured sites watch directory (default `~/ddev/sites` on Linux, `~/Code/sites` on macOS) and creates `*.test` vhosts with automatic HTTPS via Caddy's internal CA. Newly discovered sites are automatically assigned the latest installed PHP version.
 
 When a site directory is removed from disk, devctl automatically deregisters it — both at startup (stale entries are pruned on boot) and at runtime (the filesystem watcher detects deletions and removes the site immediately).
 
@@ -601,20 +632,24 @@ The service worker registers automatically on first load. It has no caching stra
 
 ## Elevation
 
-Day-to-day devctl runs as your user under a systemd **system** unit with:
+Day-to-day devctl runs as your user.
+
+**Linux** uses a systemd **system** unit with:
 
 - `User=` / `Group=` set to your site user
 - `AmbientCapabilities=CAP_NET_BIND_SERVICE` so supervised Caddy can bind ports 80/443 without `setcap` on the Caddy binary (and without re-elevating after Caddy updates)
+
+**macOS** uses a LaunchAgent (`~/Library/LaunchAgents/ai.devctl.plist`, label `ai.devctl`). Caddy listens on all interfaces at `:8080` and `:8443`. `sudo devctl elevate ports` installs a pf redirect from 80/443 (every interface, so a DHCP/LAN A record reaches Caddy) and from loopback port 53 to 5354. `sudo devctl elevate trust` adds the Caddy CA to the System keychain.
 
 One-shot privileged OS setup uses **typed elevate targets** (sudo only for these):
 
 ```sh
 sudo devctl elevate              # trust + resolver + ports (default)
 sudo devctl elevate trust        # install Caddy local CA into the system trust store
-sudo devctl elevate resolver     # systemd-resolved drop-in for *.test
-sudo devctl elevate ports        # write/refresh unit with User= + AmbientCapabilities
-sudo devctl elevate install      # unit + enable + apt allowlist deps + resolver
-sudo devctl unelevate            # reverse trust + resolver (+ strip ambient from unit)
+sudo devctl elevate resolver     # systemd-resolved drop-in (Linux) or /etc/resolver/<tld> (macOS)
+sudo devctl elevate ports        # Linux: write/refresh unit with User= + AmbientCapabilities. macOS: pf rdr 80→8080, 443→8443
+sudo devctl elevate install      # Linux: unit + enable + apt allowlist deps + resolver
+sudo devctl unelevate            # reverse trust + resolver (+ strip ambient from unit / remove pf)
 devctl elevate:status            # no root — show which targets are configured
 ```
 
@@ -626,7 +661,7 @@ Self-update and API restart re-exec the process in place — **no sudo** after a
 
 ## CLI
 
-The devctl binary doubles as a CLI that talks to the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`). Day-to-day commands work without root; only `elevate` / `unelevate` / `install` / `uninstall` need sudo.
+The devctl binary doubles as a CLI that talks to the running daemon at `127.0.0.1:4000` (or `$DEVCTL_ADDR`). Day-to-day commands work without root. On Linux, `elevate` / `unelevate` / `install` / `uninstall` need sudo. On macOS, only `elevate` / `unelevate` need sudo.
 
 ```sh
 devctl services:list              # list all services and status
@@ -728,7 +763,8 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 | Port | Service | Configurable |
 |---|---|---|
 | `127.0.0.1:4000` | devctl dashboard | Yes — Settings → Dashboard |
-| `:80` / `:443` | Caddy | No |
+| `:80` / `:443` | Caddy (Linux) | No |
+| `:8080` / `:8443` | Caddy (macOS; pf can redirect 80/443) | No |
 | `127.0.0.1:2019` | Caddy Admin API | Yes — Settings |
 | `127.0.0.1:5354` | DNS server (UDP+TCP) | Yes — Services → DNS → Settings |
 | `127.0.0.1:9912` | PHP dump receiver (TCP) | Yes — Settings → PHP Dump Server |
@@ -748,9 +784,9 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 
 ## Data Paths
 
-All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir}/server` (e.g. `~/sites/server`). The sites directory is chosen during `devctl install` and stored in the SQLite database.
+All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir}/server` (`~/ddev/sites/server` on Linux, `~/Code/sites/server` on macOS). The sites directory is chosen during `devctl install` and stored in the SQLite database.
 
-`{serverRoot}` is set in the systemd unit as `DEVCTL_SERVER_ROOT` and is the single source of truth — it is never hardcoded.
+`{serverRoot}` is set as `DEVCTL_SERVER_ROOT` in the systemd unit (Linux) or LaunchAgent plist (macOS) and is the single source of truth — it is never hardcoded.
 
 | Path | Contents |
 |---|---|
@@ -761,8 +797,8 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, …) |
 | `{serverRoot}/caddy/` | Caddy binary, env file, internal CA data |
 | `{serverRoot}/valkey/` | Valkey binary, `valkey.conf`, data |
-| `{serverRoot}/postgres/` | PostgreSQL binary tarball, TimescaleDB extension files, `data/` directory |
-| `{serverRoot}/mysql/` | MySQL binaries (extracted from `.deb`), `data/` directory |
+| `{serverRoot}/postgres/` | PostgreSQL binaries, extension files, `data/` directory |
+| `{serverRoot}/mysql/` | MySQL binaries, `data/` directory |
 | `{serverRoot}/meilisearch/` | Meilisearch binary, `config.toml`, index data |
 | `{serverRoot}/typesense/` | Typesense binary, `typesense.ini`, data |
 | `{serverRoot}/mailpit/` | Mailpit binary, `config.env`, email storage |
@@ -770,8 +806,9 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/maxio/` | MaxIO binary, `config.env`, object data |
 | `{serverRoot}/clickhouse/` | ClickHouse binary, `config.xml`, `users.xml`, data |
 | `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
-| `/etc/systemd/system/devctl.service` | Systemd unit file |
-| `/etc/profile.d/devctl.sh` | Adds `{serverRoot}/bin` to `PATH` for all users |
+| `/etc/systemd/system/devctl.service` | Linux systemd unit file |
+| `~/Library/LaunchAgents/ai.devctl.plist` | macOS LaunchAgent |
+| `/etc/profile.d/devctl.sh` | Linux: adds `{serverRoot}/bin` to `PATH` for all users |
 
 ---
 
@@ -785,7 +822,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | Database | SQLite (`modernc.org/sqlite`), sqlc (codegen), goose (migrations) |
 | Frontend | Vue 3, TypeScript, Pinia, Vite 7, Tailwind CSS v4, shadcn-vue |
 | Proxy / TLS | Caddy with internal CA, wildcard `*.test` certs |
-| Service unit | systemd system service |
+| Service unit | systemd system service (Linux) or LaunchAgent `ai.devctl` (macOS) |
 
 ### Build commands
 
@@ -793,10 +830,25 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 make dev          # go run . (backend only, no frontend rebuild)
 make dev-ui       # Vite HMR dev server (frontend only)
 make build        # build-ui + go build
-make install      # build + install binary + systemd unit (requires root)
+make install      # build + install binary + parent unit (Linux uses sudo internally; macOS does not)
 make sqlc         # regenerate db/queries/*.go from db/queries/*.sql
 make db-migrate   # apply goose migrations to {serverRoot}/devctl/devctl.db
 ```
+
+### Testing
+
+Integration tests must not run against the host dashboard at `http://127.0.0.1:4000`. They run inside a Linux machine:
+
+- **Linux host:** Incus container (`scripts/test-env.sh`)
+- **macOS host:** OrbStack Ubuntu 24.04 VM (`scripts/test-env-orb.sh`) when Incus is not installed
+
+```sh
+make build
+make test-env                    # one terminal — starts the machine, blocks until Ctrl+C
+DEVCTL_CONTAINER=devctl-test-xxx make test-api   # other terminal
+```
+
+On macOS, `make test-env` cross-compiles `linux/arm64` and creates an OrbStack machine named `devctl-test-<timestamp>`. `make test-cleanup` / `make test-cleanup-all` destroy Incus containers or OrbStack machines.
 
 ### Package layout
 
@@ -824,7 +876,7 @@ make db-migrate   # apply goose migrations to {serverRoot}/devctl/devctl.db
 - **Frontend is embedded** in the binary via `//go:embed ui/dist`; run `make build-ui` before `go build` for a working UI.
 - **All REST calls** in the frontend go through `frontend/src/lib/api.ts` — never call `fetch()` directly in components or stores.
 - **Never hardcode paths** — always use the `paths` package or `DEVCTL_SERVER_ROOT`.
-- The binary **requires root** — enforced at startup, logged to the systemd journal.
+- The daemon **refuses to run as root**. Privileged one-shots use `sudo devctl elevate`.
 
 ### Screenshots
 
