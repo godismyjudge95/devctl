@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -30,14 +31,45 @@ func (e contribSearchExtension) Label() string          { return e.label }
 func (e contribSearchExtension) PreloadLibrary() string { return "" }
 func (e contribSearchExtension) RequiresPeer() string   { return "" }
 
+func pgExtensionLibrary(pgDir, id string) string {
+	dirs := []string{
+		filepath.Join(pgDir, "lib"),
+		filepath.Join(pgDir, "lib", "postgresql"),
+	}
+	for _, dir := range dirs {
+		for _, ext := range []string{".so", ".dylib"} {
+			p := filepath.Join(dir, id+ext)
+			if fileExists(p) {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+func pgExtensionControl(pgDir, id string) string {
+	for _, p := range []string{
+		filepath.Join(pgDir, "share", "extension", id+".control"),
+		filepath.Join(pgDir, "share", "postgresql", "extension", id+".control"),
+	} {
+		if fileExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
 func (e contribSearchExtension) IsFilesInstalled(pgDir string) bool {
-	return fileExists(filepath.Join(pgDir, "lib", e.id+".so")) &&
-		fileExists(filepath.Join(pgDir, "share", "extension", e.id+".control"))
+	return pgExtensionLibrary(pgDir, e.id) != "" && pgExtensionControl(pgDir, e.id) != ""
 }
 
 func (e contribSearchExtension) InstallFiles(_ context.Context, w io.Writer, pgDir string) error {
 	if e.IsFilesInstalled(pgDir) {
 		fmt.Fprintf(w, "postgres: %s already present in Percona tree\n", e.id)
+		return nil
+	}
+	if runtime.GOOS == "darwin" {
+		fmt.Fprintf(w, "postgres: skipping %s on darwin (no contrib library)\n", e.id)
 		return nil
 	}
 	return fmt.Errorf("postgres: %s files missing under %s (expected lib/%s.so and share/extension/%s.control)", e.id, pgDir, e.id, e.id)
@@ -48,7 +80,7 @@ func (e contribSearchExtension) UpdateFiles(ctx context.Context, w io.Writer, pg
 }
 
 func (e contribSearchExtension) FilesVersion(pgDir string) string {
-	return parseControlDefaultVersion(filepath.Join(pgDir, "share", "extension", e.id+".control"))
+	return parseControlDefaultVersion(pgExtensionControl(pgDir, e.id))
 }
 
 func (e contribSearchExtension) IsWired(env ExtensionEnv) bool {

@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -64,7 +65,12 @@ func TestContribSearchExtension_IsFilesInstalled(t *testing.T) {
 func TestContribSearchExtension_InstallFiles(t *testing.T) {
 	ext := contribSearchExtension{id: "unaccent", label: "unaccent"}
 	empty := t.TempDir()
-	if err := ext.InstallFiles(t.Context(), io.Discard, empty); err == nil {
+	err := ext.InstallFiles(t.Context(), io.Discard, empty)
+	if runtime.GOOS == "darwin" {
+		if err != nil {
+			t.Fatalf("darwin missing contrib should skip, got %v", err)
+		}
+	} else if err == nil {
 		t.Fatal("expected error when files missing")
 	}
 
@@ -133,5 +139,27 @@ func writeFakeContribFiles(t *testing.T, pgDir, id string) {
 	}
 	if err := os.WriteFile(filepath.Join(extDir, id+".control"), []byte("default_version = '1.0'\n"), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPgExtensionLibrary_EDBDarwinLayout(t *testing.T) {
+	root := t.TempDir()
+	lib := filepath.Join(root, "lib", "postgresql")
+	share := filepath.Join(root, "share", "postgresql", "extension")
+	if err := os.MkdirAll(lib, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(share, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lib, "pg_trgm.dylib"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(share, "pg_trgm.control"), []byte("default_version = '1.6'\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ext := contribSearchExtension{id: "pg_trgm", label: "pg_trgm"}
+	if !ext.IsFilesInstalled(root) {
+		t.Fatal("expected EDB darwin contrib paths to count as installed")
 	}
 }

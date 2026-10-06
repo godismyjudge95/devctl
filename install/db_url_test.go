@@ -1,6 +1,7 @@
 package install
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/danielgormly/devctl/dist"
@@ -23,6 +24,19 @@ func TestEDBPostgresZipURL(t *testing.T) {
 	want := "https://get.enterprisedb.com/postgresql/postgresql-18.4-1-osx-binaries.zip"
 	if got != want {
 		t.Fatalf("edbPostgresZipURL = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresLibEnvAssign(t *testing.T) {
+	got := postgresLibEnvAssign("/tmp/pg")
+	if runtime.GOOS == "darwin" {
+		if got != "DYLD_LIBRARY_PATH=/tmp/pg/lib" {
+			t.Fatalf("got %q", got)
+		}
+		return
+	}
+	if got != "LD_LIBRARY_PATH=/tmp/pg/lib" {
+		t.Fatalf("got %q", got)
 	}
 }
 

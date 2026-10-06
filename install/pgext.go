@@ -147,7 +147,7 @@ func InstallManagedPostgresExtensions(ctx context.Context, w io.Writer, env Exte
 	}
 	pgDir := env.PGDir()
 	for _, ext := range managedPostgresExtensions() {
-		if runtime.GOOS == "darwin" && (ext.ID() == "timescaledb" || ext.ID() == "pgvector") {
+		if runtime.GOOS == "darwin" && (ext.ID() == "timescaledb" || ext.ID() == "pgvector" || ext.ID() == "pg_clickhouse") {
 			fmt.Fprintf(w, "postgres: skipping %s on darwin (no vendor binary)\n", ext.ID())
 			continue
 		}
@@ -282,8 +282,8 @@ func EnsureClickHousePostgresBridge(ctx context.Context, w io.Writer, serverRoot
 func runPSQL(ctx context.Context, env ExtensionEnv, database, sql string) error {
 	pgDir := env.PGDir()
 	cmd := fmt.Sprintf(
-		`PGPASSWORD=%q LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 -c %q`,
-		postgresDevPassword, pgDir, pgDir, postgresSuperuser, database, sql,
+		`PGPASSWORD=%q %s %q -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 -c %q`,
+		postgresDevPassword, postgresLibEnvAssign(pgDir), postgresPSQLBin(pgDir), postgresSuperuser, database, sql,
 	)
 	if out, err := runuser.RunAsUserW(ctx, io.Discard, env.SiteUser, env.SiteHome, "", cmd); err != nil {
 		return fmt.Errorf("psql %s: %w\n%s", database, err, out)
@@ -295,8 +295,8 @@ func runPSQL(ctx context.Context, env ExtensionEnv, database, sql string) error 
 func runPSQLQuery(ctx context.Context, env ExtensionEnv, database, sql string) (string, error) {
 	pgDir := env.PGDir()
 	cmd := fmt.Sprintf(
-		`PGPASSWORD=%q LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 -t -A -c %q`,
-		postgresDevPassword, pgDir, pgDir, postgresSuperuser, database, sql,
+		`PGPASSWORD=%q %s %q -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 -t -A -c %q`,
+		postgresDevPassword, postgresLibEnvAssign(pgDir), postgresPSQLBin(pgDir), postgresSuperuser, database, sql,
 	)
 	out, err := runuser.RunAsUserW(ctx, io.Discard, env.SiteUser, env.SiteHome, "", cmd)
 	if err != nil {
@@ -306,7 +306,7 @@ func runPSQLQuery(ctx context.Context, env ExtensionEnv, database, sql string) (
 }
 
 func pgIsReady(pgDir string) bool {
-	readyCmd := fmt.Sprintf("LD_LIBRARY_PATH=%s/lib %s/bin/pg_isready -h 127.0.0.1 -p 5432 -q", pgDir, pgDir)
+	readyCmd := fmt.Sprintf("%s %s/bin/pg_isready -h 127.0.0.1 -p 5432 -q", postgresLibEnvAssign(pgDir), pgDir)
 	_, err := runShell(context.Background(), readyCmd)
 	return err == nil
 }

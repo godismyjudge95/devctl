@@ -81,6 +81,22 @@ func edbPostgresZipURL() string {
 	return fmt.Sprintf("https://get.enterprisedb.com/postgresql/postgresql-%s-1-osx-binaries.zip", postgresVersion)
 }
 
+func postgresLibEnvAssign(pgDir string) string {
+	lib := filepath.Join(pgDir, "lib")
+	if runtime.GOOS == "darwin" {
+		return "DYLD_LIBRARY_PATH=" + lib
+	}
+	return "LD_LIBRARY_PATH=" + lib
+}
+
+func postgresPSQLBin(pgDir string) string {
+	p := filepath.Join(pgDir, "bin", "psql.bin")
+	if fileExists(p) {
+		return p
+	}
+	return filepath.Join(pgDir, "bin", "psql")
+}
+
 // PostgresInstaller downloads the Percona Distribution for PostgreSQL binary
 // tarball to {serverRoot}/postgres/, initialises the data directory as
 // siteUser (PostgreSQL refuses to start as root), and runs postgres as a
@@ -466,6 +482,18 @@ func extractFromZipStrip(zipPath, destDir, stripPrefix string) error {
 		if err != nil {
 			return err
 		}
+		if f.Mode()&os.ModeSymlink != 0 {
+			target, readErr := io.ReadAll(rc)
+			rc.Close()
+			if readErr != nil {
+				return readErr
+			}
+			_ = os.Remove(destPath)
+			if err := os.Symlink(string(target), destPath); err != nil {
+				return fmt.Errorf("symlink %s: %w", destPath, err)
+			}
+			continue
+		}
 		out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
 		if err != nil {
 			rc.Close()
@@ -515,13 +543,17 @@ func writePostgresConfigEnv(pgDir string) error {
 
 // postgresClientEnv returns env vars for client wrappers.
 func postgresClientEnv(pgDir string) map[string]string {
+	libKey := "LD_LIBRARY_PATH"
+	if runtime.GOOS == "darwin" {
+		libKey = "DYLD_LIBRARY_PATH"
+	}
 	return map[string]string{
-		"LD_LIBRARY_PATH": filepath.Join(pgDir, "lib"),
-		"PGHOST":          "127.0.0.1",
-		"PGPORT":          "5432",
-		"PGUSER":          postgresSuperuser,
-		"PGPASSWORD":      postgresDevPassword,
-		"PGDATABASE":      "postgres",
+		libKey:       filepath.Join(pgDir, "lib"),
+		"PGHOST":     "127.0.0.1",
+		"PGPORT":     "5432",
+		"PGUSER":     postgresSuperuser,
+		"PGPASSWORD": postgresDevPassword,
+		"PGDATABASE": "postgres",
 	}
 }
 
@@ -639,8 +671,8 @@ func postgresMigrateSQL(siteUser string) string {
 // runPostgresSingleUserSQL runs SQL against a stopped cluster via postgres --single.
 func runPostgresSingleUserSQL(pgDir, siteUser, siteHome, sql string) error {
 	cmd := fmt.Sprintf(
-		`printf '%%s\n' %q | LD_LIBRARY_PATH=%q/lib %q/bin/postgres --single -D %q/data postgres`,
-		sql, pgDir, pgDir, pgDir,
+		`printf '%%s\n' %q | %s %q --single -D %q/data postgres`,
+		sql, postgresLibEnvAssign(pgDir), filepath.Join(pgDir, "bin", "postgres"), pgDir,
 	)
 	if out, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", cmd); err != nil {
 		return fmt.Errorf("%w\n%s", err, out)
@@ -655,23 +687,23 @@ func ensurePostgresRoleAndPassword(pgDir, siteUser, siteHome string) error {
 	dataDir := filepath.Join(pgDir, "data")
 	migrateSQL := postgresMigrateSQL(siteUser)
 
-	readyCmd := fmt.Sprintf("LD_LIBRARY_PATH=%s/lib %s/bin/pg_isready -h %s -p 5432 -q", pgDir, pgDir, dataDir)
+	readyCmd := fmt.Sprintf("%s %s/bin/pg_isready -h %s -p 5432 -q", postgresLibEnvAssign(pgDir), pgDir, dataDir)
 	if _, err := runShell(context.Background(), readyCmd); err != nil {
 		return runPostgresSingleUserSQL(pgDir, siteUser, siteHome, migrateSQL)
 	}
 
 	connectUser := postgresSuperuser
 	tryRoot := fmt.Sprintf(
-		`LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -tAc "SELECT 1"`,
-		pgDir, pgDir, dataDir, postgresSuperuser,
+		`%s %q -h %q -U %q -d postgres -tAc "SELECT 1"`,
+		postgresLibEnvAssign(pgDir), postgresPSQLBin(pgDir), dataDir, postgresSuperuser,
 	)
 	if _, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", tryRoot); err != nil && siteUser != "" && siteUser != postgresSuperuser {
 		connectUser = siteUser
 	}
 
 	cmd := fmt.Sprintf(
-		`LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h %q -U %q -d postgres -c %q`,
-		pgDir, pgDir, dataDir, connectUser, migrateSQL,
+		`%s %q -h %q -U %q -d postgres -c %q`,
+		postgresLibEnvAssign(pgDir), postgresPSQLBin(pgDir), dataDir, connectUser, migrateSQL,
 	)
 	if out, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", cmd); err != nil {
 		return fmt.Errorf("postgres: migrate role/password: %w\n%s", err, out)
