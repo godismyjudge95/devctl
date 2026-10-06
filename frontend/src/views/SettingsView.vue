@@ -129,7 +129,7 @@ async function trustCert() {
       <Card>
         <CardHeader>
           <CardTitle>Sites</CardTitle>
-          <CardDescription>Root directory watched for auto-discovered sites.</CardDescription>
+          <CardDescription>Root directory watched for auto-discovered sites. ~ and $HOME are expanded. Install default: ~/ddev/sites on Linux, ~/Code/sites on macOS.</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="grid gap-1.5">
@@ -138,7 +138,7 @@ async function trustCert() {
               id="sites_watch_dir"
               v-model="store.settings['sites_watch_dir']"
               @change="save('sites_watch_dir', store.settings['sites_watch_dir'] ?? '')"
-              placeholder="$HOME/sites"
+              placeholder="~/Code/sites"
               class="font-mono"
             />
           </div>

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/paths"
 )
 
 // settingDefaults maps setting keys to their runtime fallback values,
@@ -31,6 +32,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	out := make(map[string]string, len(rows))
 	for _, row := range rows {
+		if row.Key == "sites_watch_dir" {
+			out[row.Key] = paths.ExpandHome(row.Value)
+			continue
+		}
 		out[row.Key] = row.Value
 	}
 	writeJSON(w, out)
@@ -44,6 +49,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for k, v := range input {
+		if k == "sites_watch_dir" {
+			v = paths.ExpandHome(v)
+		}
 		if err := s.queries.SetSetting(context.Background(), dbq.SetSettingParams{Key: k, Value: v}); err != nil {
 			writeError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -69,6 +77,10 @@ func (s *Server) handleGetResolvedSettings(w http.ResponseWriter, r *http.Reques
 	}
 	for _, row := range rows {
 		if row.Value != "" {
+			if row.Key == "sites_watch_dir" {
+				out[row.Key] = paths.ExpandHome(row.Value)
+				continue
+			}
 			out[row.Key] = row.Value
 		}
 	}

@@ -20,7 +20,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saving.value = true
     try {
       await putSettings(updates)
-      Object.assign(settings.value, updates)
+      settings.value = await getResolvedSettings()
     } finally {
       saving.value = false
     }

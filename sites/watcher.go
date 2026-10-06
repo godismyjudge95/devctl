@@ -27,6 +27,7 @@ func NewWatcher(manager *Manager) (*Watcher, error) {
 // Watch starts watching dir for new direct-child directories. It blocks
 // until ctx is cancelled.
 func (w *Watcher) Watch(ctx context.Context, dir string) error {
+	dir = filepath.Clean(dir)
 	// Ensure the directory exists.
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err

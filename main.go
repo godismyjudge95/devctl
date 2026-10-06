@@ -24,6 +24,7 @@ import (
 	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/selfinstall"
 	"github.com/danielgormly/devctl/selfupdate"
@@ -147,9 +148,13 @@ func run() error {
 
 	caddyAdminURL := "http://localhost:2019"
 	dumpTCPPort := ":" + getSetting(ctx, queries, database, "dump_tcp_port", "9912")
-	sitesWatchDir := getSetting(ctx, queries, database, "sites_watch_dir", "")
+	rawWatch := getSetting(ctx, queries, database, "sites_watch_dir", "")
+	sitesWatchDir := paths.ExpandHome(rawWatch)
 	if sitesWatchDir == "" {
 		sitesWatchDir = filepath.Dir(cfg.ServerRoot)
+	}
+	if sitesWatchDir != rawWatch {
+		_ = queries.SetSetting(ctx, dbq.SetSettingParams{Key: "sites_watch_dir", Value: sitesWatchDir})
 	}
 	pollIntervalSec := getSetting(ctx, queries, database, "service_poll_interval", "5")
 	pollInterval := parseDuration(pollIntervalSec)
