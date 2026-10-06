@@ -7,6 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/danielgormly/devctl/dnsserver"
+	"github.com/danielgormly/devctl/elevate"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 //
 //	GET /api/dns/detect-ip
 func (s *Server) handleDNSDetectIP(w http.ResponseWriter, r *http.Request) {
-	ip := dnsserver.DetectLANIP()
+	ip := dnsserver.DefaultTargetIP()
 	writeJSON(w, map[string]string{"ip": ip})
 }
 
@@ -108,8 +109,7 @@ func (s *Server) handleDNSTeardown(w http.ResponseWriter, r *http.Request) {
 
 // dnsSystemConfigured returns true when the devctl drop-in file exists.
 func dnsSystemConfigured() bool {
-	_, err := os.Stat(resolvedDropinFile)
-	return err == nil
+	return elevate.ResolverConfigured()
 }
 
 // restartResolved runs systemctl restart systemd-resolved.

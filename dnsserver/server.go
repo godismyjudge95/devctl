@@ -22,7 +22,7 @@ type Config struct {
 	// Port is the UDP/TCP port to listen on (e.g. "5354").
 	Port string
 	// TargetIP is the IPv4 address returned for intercepted TLD queries.
-	// When empty, DetectLANIP() is used as a fallback.
+	// When empty, each A query uses DetectLANIP() so a DHCP change is visible.
 	TargetIP string
 	// TLDs is a list of TLD strings to intercept (e.g. [".test"]).
 	// Each entry may or may not include a leading dot; the server normalises them.
@@ -41,9 +41,6 @@ type Server struct {
 func New(cfg Config) *Server {
 	if cfg.Port == "" {
 		cfg.Port = "5354"
-	}
-	if cfg.TargetIP == "" {
-		cfg.TargetIP = DetectLANIP()
 	}
 	if len(cfg.TLDs) == 0 {
 		cfg.TLDs = []string{".test"}
@@ -84,8 +81,12 @@ func (s *Server) Run(ctx context.Context, logW io.Writer) error {
 
 	go func() {
 		defer wg.Done()
+		target := s.cfg.TargetIP
+		if target == "" {
+			target = "auto"
+		}
 		fmt.Fprintf(logW, "dns: listening on UDP %s (target=%s tlds=%v upstream=%s)\n",
-			addr, s.cfg.TargetIP, s.cfg.TLDs, s.cfg.Upstream)
+			addr, target, s.cfg.TLDs, s.cfg.Upstream)
 		if err := udpServer.ListenAndServe(); err != nil {
 			errCh <- fmt.Errorf("udp: %w", err)
 		}
@@ -136,8 +137,14 @@ func (s *Server) handleQuery(logW io.Writer) dns.HandlerFunc {
 		q := r.Question[0]
 		name := strings.ToLower(q.Name) // FQDN with trailing dot
 
-		if q.Qtype == dns.TypeA && s.matchesTLD(name) {
-			s.replyWithIP(w, r, name, logW)
+		if s.matchesTLD(name) {
+			if q.Qtype == dns.TypeA {
+				s.replyWithIP(w, r, name, logW)
+				return
+			}
+			// Do not forward other types for intercepted TLDs. AAAA/HTTPS
+			// would otherwise hit a loopback upstream and hang on Darwin.
+			s.replyNoData(w, r)
 			return
 		}
 
@@ -162,7 +169,7 @@ func (s *Server) matchesTLD(fqdn string) bool {
 
 // replyWithIP writes an A record response pointing to TargetIP.
 func (s *Server) replyWithIP(w dns.ResponseWriter, r *dns.Msg, name string, logW io.Writer) {
-	ip := net.ParseIP(s.cfg.TargetIP).To4()
+	ip := net.ParseIP(s.answerIP(w.RemoteAddr())).To4()
 	if ip == nil {
 		dns.HandleFailed(w, r)
 		return
@@ -185,6 +192,13 @@ func (s *Server) replyWithIP(w dns.ResponseWriter, r *dns.Msg, name string, logW
 	}
 }
 
+func (s *Server) replyNoData(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.Authoritative = true
+	_ = w.WriteMsg(m)
+}
+
 // forward proxies the query to the upstream resolver.
 func (s *Server) forward(w dns.ResponseWriter, r *dns.Msg, logW io.Writer) {
 	c := new(dns.Client)
@@ -198,6 +212,38 @@ func (s *Server) forward(w dns.ResponseWriter, r *dns.Msg, logW io.Writer) {
 	if err := w.WriteMsg(resp); err != nil {
 		fmt.Fprintf(logW, "dns: write forward reply: %v\n", err)
 	}
+}
+
+func (s *Server) answerIP(remote net.Addr) string {
+	if s.cfg.TargetIP != "" {
+		return s.cfg.TargetIP
+	}
+	// Local stub resolvers query from loopback. A LAN A record makes Chrome
+	// on this machine connect to its own LAN IP:443, which Darwin pf rdr
+	// does not intercept, so the browser gets connection refused.
+	if isLoopbackAddr(remote) {
+		return "127.0.0.1"
+	}
+	return DetectLANIP()
+}
+
+func isLoopbackAddr(addr net.Addr) bool {
+	if addr == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		host = addr.String()
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// DefaultTargetIP is the A-record address for intercepted TLDs when unset.
+// It is the current LAN IPv4 so *.test reaches this machine (Caddy already
+// listens on all interfaces; Darwin still needs pf for ports 80/443).
+func DefaultTargetIP() string {
+	return DetectLANIP()
 }
 
 // DetectLANIP returns the primary LAN IPv4 address of the machine by
@@ -230,7 +276,7 @@ func SystemUpstream() string {
 }
 
 // parseResolvConf reads a resolv.conf-style file and returns the first
-// nameserver entry that is not 127.0.0.53, formatted as host:53.
+// nameserver entry that is not a loopback stub, formatted as host:53.
 func parseResolvConf(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -249,7 +295,7 @@ func parseResolvConf(path string) string {
 			continue
 		}
 		ns := fields[1]
-		if ns == "127.0.0.53" {
+		if ns == "127.0.0.53" || ns == "127.0.0.1" || ns == "::1" {
 			continue
 		}
 		return ns + ":53"

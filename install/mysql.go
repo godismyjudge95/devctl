@@ -24,6 +24,15 @@ func mysqlTarballURL(a dist.Asset) string {
 	return fmt.Sprintf("https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-%s-%s.tar.gz", mysqlDarwinVersion, a.Token)
 }
 
+// mysqldUserFlag is --user=root on Linux so mysqld can drop privileges after
+// a root start. Darwin runs as the site user, so the flag is omitted.
+func mysqldUserFlag() string {
+	if runtime.GOOS == "darwin" {
+		return ""
+	}
+	return " --user=root"
+}
+
 // mysqlDebURL returns the CDN URL for one of the Ubuntu-specific MySQL
 // community .deb packages. These debs bundle their own private copies of
 // libabsl / libprotobuf-lite under usr/lib/mysql/private/, so no MySQL
@@ -171,8 +180,9 @@ func (m *MySQLInstaller) installDarwinTarball(ctx context.Context, w io.Writer) 
 
 	fmt.Fprintln(w, "mysql: initialising data directory...")
 	initCmd := fmt.Sprintf(
-		"%s --initialize-insecure --user=root --datadir=%s --basedir=%s",
+		"%s --initialize-insecure%s --datadir=%s --basedir=%s",
 		filepath.Join(binDir, "mysqld"),
+		mysqldUserFlag(),
 		dataDir,
 		mysqlDir,
 	)
@@ -271,9 +281,10 @@ func (m *MySQLInstaller) installLinuxDebs(ctx context.Context, w io.Writer) erro
 	// 6. Initialise the data directory.
 	fmt.Fprintln(w, "mysql: initialising data directory...")
 	initCmd := fmt.Sprintf(
-		"LD_LIBRARY_PATH=%s %s --initialize-insecure --user=root --datadir=%s --basedir=%s",
+		"LD_LIBRARY_PATH=%s %s --initialize-insecure%s --datadir=%s --basedir=%s",
 		libDir,
 		filepath.Join(binDir, "mysqld"),
+		mysqldUserFlag(),
 		dataDir,
 		mysqlDir,
 	)

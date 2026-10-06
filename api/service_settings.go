@@ -104,7 +104,7 @@ func (s *Server) handleGetServiceSettings(w http.ResponseWriter, r *http.Request
 		}
 		targetIP, _ := s.queries.GetSetting(r.Context(), "dns_target_ip")
 		if targetIP == "" {
-			targetIP = dnsserver.DetectLANIP()
+			targetIP = dnsserver.DefaultTargetIP()
 		}
 		tld, _ := s.queries.GetSetting(r.Context(), "dns_tld")
 		if tld == "" {

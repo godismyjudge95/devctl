@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/config"
 	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/internal/versioncache"
@@ -540,7 +541,7 @@ func (s *Server) mysqlDef(ctx context.Context, def services.Definition) services
 	if err != nil || bindAddr == "" {
 		bindAddr = "127.0.0.1"
 	}
-	def.ManagedArgs = fmt.Sprintf("--defaults-file=./my.cnf --user=root --port=%s --bind-address=%s", port, bindAddr)
+	def.ManagedArgs = config.MySQLManagedArgs(port, bindAddr)
 	return def
 }
 
@@ -573,8 +574,8 @@ func (s *Server) dnsDef(ctx context.Context, def services.Definition) services.D
 		port = "5354"
 	}
 	targetIP, err := s.queries.GetSetting(ctx, "dns_target_ip")
-	if err != nil || targetIP == "" {
-		targetIP = dnsserver.DetectLANIP()
+	if err != nil {
+		targetIP = ""
 	}
 	tldStr, err := s.queries.GetSetting(ctx, "dns_tld")
 	if err != nil || tldStr == "" {

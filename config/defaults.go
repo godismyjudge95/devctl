@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"io"
+	"runtime"
 	"time"
 
 	"github.com/danielgormly/devctl/dist"
@@ -86,12 +87,12 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			ID:                    "mysql",
 			Label:                 "MySQL",
 			Description:           "Popular open-source relational database",
-			InstallVersion:        "8.4.8",
+			InstallVersion:        mysqlInstallVersion(),
 			Installable:           true,
 			HasCredentials:        true,
 			Managed:               true,
 			ManagedCmd:            mysqlDir + "/bin/mysqld",
-			ManagedArgs:           "--defaults-file=./my.cnf --user=root",
+			ManagedArgs:           MySQLManagedArgs("", ""),
 			ManagedDir:            mysqlDir,
 			ManagedEnvFile:        mysqlDir + "/mysql.env",
 			Version:               mysqlDir + "/bin/mysql --version",
@@ -182,7 +183,6 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			RunFunc: func(ctx context.Context, logW io.Writer) error {
 				return dnsserver.New(dnsserver.Config{
 					Port:     "5354",
-					TargetIP: dnsserver.DetectLANIP(),
 					TLDs:     []string{".test"},
 					Upstream: dnsserver.SystemUpstream(),
 				}).Run(ctx, logW)
@@ -239,4 +239,27 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 		}
 	}
 	return out
+}
+
+// MySQLManagedArgs is the mysqld command line. Darwin omits --user because
+// the nested daemon already runs as the site user.
+func MySQLManagedArgs(port, bindAddr string) string {
+	args := "--defaults-file=./my.cnf"
+	if runtime.GOOS != "darwin" {
+		args += " --user=root"
+	}
+	if port != "" {
+		args += " --port=" + port
+	}
+	if bindAddr != "" {
+		args += " --bind-address=" + bindAddr
+	}
+	return args
+}
+
+func mysqlInstallVersion() string {
+	if runtime.GOOS == "darwin" {
+		return "8.4.11"
+	}
+	return "8.4.8"
 }
