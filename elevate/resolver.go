@@ -29,11 +29,18 @@ func DarwinResolverContent(port string) string {
 // ResolverConfigured reports whether the OS DNS stub exists.
 func ResolverConfigured() bool {
 	if runtime.GOOS == "darwin" {
-		_, err := os.Stat(DarwinResolverPath("test"))
-		return err == nil
+		data, err := os.ReadFile(DarwinResolverPath("test"))
+		if err != nil {
+			return false
+		}
+		return darwinResolverFileConfigured(string(data))
 	}
 	_, err := os.Stat(ResolvedDropinFile)
 	return err == nil
+}
+
+func darwinResolverFileConfigured(body string) bool {
+	return strings.Contains(body, "nameserver 127.0.0.1") && strings.Contains(body, "port ")
 }
 
 func helperInstallResolver(args []string) error {

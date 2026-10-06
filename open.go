@@ -6,10 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/danielgormly/devctl/db"
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/paths"
 )
 
@@ -50,7 +53,11 @@ func runOpen() error {
 				}
 				url := scheme + "://" + site.Domain
 				fmt.Println(url)
-				cmd := exec.Command("xdg-open", url)
+				openCmd := "xdg-open"
+				if runtime.GOOS == "darwin" {
+					openCmd = "open"
+				}
+				cmd := exec.Command(openCmd, url)
 				if err := cmd.Start(); err != nil {
 					return fmt.Errorf("xdg-open: %w", err)
 				}
@@ -67,22 +74,42 @@ func runOpen() error {
 	return fmt.Errorf("no site found for %q\nhint: run 'devctl' to start the daemon and auto-discover sites", cwd)
 }
 
-// resolveServerRootForOpen reads DEVCTL_SERVER_ROOT from the systemd service
-// file. Falls back to {HOME}/sites/server for legacy installs.
+// resolveServerRootForOpen reads DEVCTL_SERVER_ROOT from the environment,
+// then from the parent unit file (LaunchAgent on Darwin, systemd on Linux).
+// Falls back to {HOME}/sites/server for legacy installs.
 func resolveServerRootForOpen() string {
-	data, err := os.ReadFile(devctlServiceFile)
-	if err == nil {
-		prefix := "Environment=DEVCTL_SERVER_ROOT="
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, prefix) {
-				if v := strings.TrimPrefix(line, prefix); v != "" {
-					return v
-				}
+	if v := os.Getenv("DEVCTL_SERVER_ROOT"); v != "" {
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	candidates := []string{devctlServiceFile}
+	if runtime.GOOS == "darwin" {
+		candidates = []string{elevate.LaunchAgentPath(home), devctlServiceFile}
+	}
+	for _, f := range candidates {
+		if v := parseServerRootFromUnit(f); v != "" {
+			return v
+		}
+	}
+	return filepath.Join(home, "sites", "server")
+}
+
+func parseServerRootFromUnit(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	if m := regexp.MustCompile(`<key>DEVCTL_SERVER_ROOT</key>\s*<string>([^<]+)</string>`).FindStringSubmatch(string(data)); len(m) == 2 {
+		return m[1]
+	}
+	prefix := "Environment=DEVCTL_SERVER_ROOT="
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			if v := strings.TrimPrefix(line, prefix); v != "" {
+				return v
 			}
 		}
 	}
-	// Legacy fallback.
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "sites", "server")
+	return ""
 }

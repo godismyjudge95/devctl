@@ -18,10 +18,14 @@ const (
 )
 
 // PFAnchorContent is the rdr rules that send 80/443 to Caddy's Darwin ports.
+// Rules apply on every interface so a DHCP/LAN A record reaches Caddy.
 func PFAnchorContent(httpPort, httpsPort string) string {
 	httpPort = strings.TrimPrefix(httpPort, ":")
 	httpsPort = strings.TrimPrefix(httpsPort, ":")
-	return fmt.Sprintf("rdr pass on lo0 inet proto tcp from any to any port 80 -> 127.0.0.1 port %s\nrdr pass on lo0 inet proto tcp from any to any port 443 -> 127.0.0.1 port %s\n", httpPort, httpsPort)
+	return fmt.Sprintf(
+		"rdr pass inet proto tcp from any to any port 80 -> 127.0.0.1 port %s\n"+
+			"rdr pass inet proto tcp from any to any port 443 -> 127.0.0.1 port %s\n",
+		httpPort, httpsPort)
 }
 
 func pfConfSnippet() string {
@@ -29,6 +33,38 @@ func pfConfSnippet() string {
 		`rdr-anchor "` + PFAnchorName + `"` + "\n" +
 		`load anchor "` + PFAnchorName + `" from "` + PFAnchorPath + `"` + "\n" +
 		pfEnd + "\n"
+}
+
+// mergePFConf inserts the devctl rdr-anchor in the translation section.
+// Appending after filter anchors makes pfctl reject the file (rule order).
+func mergePFConf(body string) string {
+	body = stripPFConfSnippetString(body)
+	snippet := pfConfSnippet()
+	needle := `rdr-anchor "com.apple/*"`
+	if i := strings.Index(body, needle); i >= 0 {
+		i += len(needle)
+		if i < len(body) && body[i] == '\n' {
+			i++
+		}
+		return body[:i] + snippet + body[i:]
+	}
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return body + snippet
+}
+
+func stripPFConfSnippetString(body string) string {
+	start := strings.Index(body, pfBegin)
+	end := strings.Index(body, pfEnd)
+	if start < 0 || end < 0 || end < start {
+		return body
+	}
+	end += len(pfEnd)
+	if end < len(body) && body[end] == '\n' {
+		end++
+	}
+	return body[:start] + body[end:]
 }
 
 func helperInstallPF(args []string) error {
@@ -91,13 +127,11 @@ func ensurePFConfSnippet() error {
 		return fmt.Errorf("read %s: %w", PFConfPath, err)
 	}
 	body := string(data)
-	if strings.Contains(body, pfBegin) {
+	merged := mergePFConf(body)
+	if merged == body {
 		return nil
 	}
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	return writeFileAtomic(PFConfPath, []byte(body+pfConfSnippet()), 0644)
+	return writeFileAtomic(PFConfPath, []byte(merged), 0644)
 }
 
 func stripPFConfSnippet() error {
@@ -108,17 +142,10 @@ func stripPFConfSnippet() error {
 		}
 		return err
 	}
-	body := string(data)
-	start := strings.Index(body, pfBegin)
-	end := strings.Index(body, pfEnd)
-	if start < 0 || end < 0 || end < start {
+	out := stripPFConfSnippetString(string(data))
+	if out == string(data) {
 		return nil
 	}
-	end += len(pfEnd)
-	if end < len(body) && body[end] == '\n' {
-		end++
-	}
-	out := body[:start] + body[end:]
 	return writeFileAtomic(PFConfPath, []byte(out), 0644)
 }
 

@@ -1,5 +1,5 @@
 // Package selfinstall implements the "devctl install" sub-command, which
-// installs devctl as a systemd system service without any manual steps.
+// installs the parent daemon (systemd on Linux, LaunchAgent on Darwin).
 package selfinstall
 
 import (
@@ -9,10 +9,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -30,11 +33,49 @@ import (
 const serviceDir = "/etc/systemd/system"
 const serviceName = "devctl.service"
 
+func parentUnitPath(siteHome string) string {
+	if runtime.GOOS == "darwin" {
+		return elevate.LaunchAgentPath(siteHome)
+	}
+	return filepath.Join(serviceDir, serviceName)
+}
+
+func uidString(username string) string {
+	u, err := user.Lookup(username)
+	if err != nil {
+		return ""
+	}
+	return u.Uid
+}
+
+func launchctlLoad(plist, uid string) error {
+	if uid == "" {
+		return errors.New("launchctl: empty uid")
+	}
+	domain := "gui/" + uid
+	label := domain + "/" + elevate.LaunchAgentLabel
+	_ = exec.Command("launchctl", "enable", label).Run()
+	_ = exec.Command("launchctl", "bootout", label).Run()
+	out, err := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
+	if err != nil {
+		// Already loaded, or still draining after bootout: restart in place.
+		if err2 := exec.Command("launchctl", "kickstart", "-k", label).Run(); err2 == nil {
+			return nil
+		}
+		_ = exec.Command("launchctl", "enable", label).Run()
+		out2, err2 := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
+		if err2 != nil {
+			return fmt.Errorf("launchctl bootstrap: %w\n%s%s", err, out, out2)
+		}
+	}
+	return nil
+}
+
 // Run is the entry point for `devctl install`. args is os.Args[2:].
 func Run(args []string) error {
 	fs := flag.NewFlagSet("devctl install", flag.ContinueOnError)
 	flagUser := fs.String("user", "", "non-root user whose sites dir devctl will manage (auto-detected from SUDO_USER if omitted)")
-	flagSitesDir := fs.String("sites-dir", "", "directory where sites are stored (default: ~/sites)")
+	flagSitesDir := fs.String("sites-dir", "", "directory where sites are stored (Linux: ~/ddev/sites, macOS: ~/Code/sites)")
 	flagPath := fs.String("path", "", "directory to install the devctl binary into (default: /usr/local/bin)")
 	flagYes := fs.Bool("yes", false, "skip all confirmation prompts (for scripted installs)")
 	fs.SetOutput(os.Stderr)
@@ -43,7 +84,11 @@ func Run(args []string) error {
 		return err
 	}
 
-	if os.Getuid() != 0 {
+	if runtime.GOOS == "darwin" {
+		if os.Getuid() == 0 {
+			return errors.New("darwin install must run as the site user, not root (LaunchAgent is per-user)")
+		}
+	} else if os.Getuid() != 0 {
 		return errors.New("must be run as root — re-run with: sudo devctl install")
 	}
 
@@ -75,7 +120,7 @@ func Run(args []string) error {
 	}
 
 	// --- 2. Resolve sites directory ---
-	existingServiceFile := filepath.Join(serviceDir, serviceName)
+	existingServiceFile := parentUnitPath(siteHome)
 	sitesDir, err := resolveSitesDir(*flagSitesDir, siteHome, *flagYes, r, existingServiceFile)
 	if err != nil {
 		return err
@@ -109,15 +154,19 @@ func Run(args []string) error {
 	if !*flagYes {
 		fmt.Println("devctl will perform the following steps:")
 		fmt.Printf("  1. Copy binary      → %s\n", binaryDest)
-		fmt.Printf("  2. Write service    → %s (User=%s + AmbientCapabilities)\n", existingServiceFile, siteUser)
+		fmt.Printf("  2. Write service    → %s\n", existingServiceFile)
 		fmt.Printf("  3. Set sites dir    → %s (saved to DB)\n", sitesDir)
 		fmt.Printf("  4. Link binary      → %s/devctl\n", binDir)
 		fmt.Println("  5. Download dev tools (sqlite3, ...)")
 		fmt.Printf("  6. Chown server tree → %s\n", siteUser)
 		fmt.Printf("  7. Configure shell PATH for %s\n", siteUser)
-		fmt.Println("  8. systemctl daemon-reload")
-		fmt.Println("  9. systemctl enable devctl")
-		fmt.Println(" 10. systemctl start devctl")
+		if runtime.GOOS == "darwin" {
+			fmt.Println("  8. launchctl bootstrap gui/<uid>/ai.devctl")
+		} else {
+			fmt.Println("  8. systemctl daemon-reload")
+			fmt.Println("  9. systemctl enable devctl")
+			fmt.Println(" 10. systemctl start devctl")
+		}
 		fmt.Println()
 		fmt.Println("  Then (optional): sudo devctl elevate trust / resolver")
 		fmt.Println()
@@ -152,6 +201,13 @@ func Run(args []string) error {
 			return os.Chown(binaryDest, uid, gid)
 		}},
 		{"Writing service file", func() error {
+			if runtime.GOOS == "darwin" {
+				if err := os.MkdirAll(filepath.Dir(existingServiceFile), 0755); err != nil {
+					return err
+				}
+				content := elevate.BuildLaunchAgentPlist(binaryDest, siteUser, siteHome, serverRoot)
+				return os.WriteFile(existingServiceFile, []byte(content), 0644)
+			}
 			content := buildServiceFile(binaryDest, siteUser, siteHome, serverRoot)
 			return os.WriteFile(existingServiceFile, []byte(content), 0644)
 		}},
@@ -207,14 +263,16 @@ func Run(args []string) error {
 			}
 			return WritePATHSetup(binDir, siteHome, siteUser, uid, gid)
 		}},
-		{"Running daemon-reload", func() error {
-			return systemctl("daemon-reload")
-		}},
-		{"Enabling service", func() error {
-			return systemctl("enable", "devctl")
-		}},
-		{"Starting service", func() error {
-			// Restart when already active so a replaced binary picks up a new UI embed.
+		{"Starting parent daemon", func() error {
+			if runtime.GOOS == "darwin" {
+				return launchctlLoad(existingServiceFile, uidString(siteUser))
+			}
+			if err := systemctl("daemon-reload"); err != nil {
+				return err
+			}
+			if err := systemctl("enable", "devctl"); err != nil {
+				return err
+			}
 			if serviceIsActive() {
 				return systemctl("restart", "devctl")
 			}
@@ -234,9 +292,13 @@ func Run(args []string) error {
 
 	fmt.Println()
 	fmt.Print("Waiting for devctl to start")
-	if err := waitForActive(5 * time.Second); err != nil {
+	wait := 5 * time.Second
+	if runtime.GOOS == "darwin" {
+		wait = 30 * time.Second
+	}
+	if err := waitForActive(wait); err != nil {
 		fmt.Println()
-		return fmt.Errorf("service did not become active within 5s: %w", err)
+		return fmt.Errorf("service did not become active within %s: %w", wait, err)
 	}
 	fmt.Println(" active ✓")
 	fmt.Println()
@@ -272,6 +334,11 @@ func resolveUser(flagVal string, skipPrompt bool, r *bufio.Reader) (username, ho
 	}
 
 	detected := os.Getenv("SUDO_USER")
+	if detected == "" && runtime.GOOS == "darwin" {
+		if cu, err := user.Current(); err == nil {
+			detected = cu.Username
+		}
+	}
 
 	if skipPrompt {
 		if detected == "" {
@@ -347,7 +414,7 @@ func resolveSitesDir(flagVal, siteHome string, skipPrompt bool, r *bufio.Reader,
 	}
 
 	// On reinstall, prefer the sites dir from the existing service file.
-	defaultDir := filepath.Join(siteHome, "sites")
+	defaultDir := paths.DefaultSitesDir(siteHome)
 	if detected := detectServerRoot(serviceFile); detected != "" {
 		defaultDir = filepath.Dir(detected)
 	}
@@ -491,16 +558,34 @@ func buildServiceFile(binaryPath, siteUser, siteHome, serverRoot string) string 
 // waitForActive polls `systemctl is-active devctl` until it returns "active"
 // or the deadline is exceeded.
 func waitForActive(timeout time.Duration) error {
+	if runtime.GOOS == "darwin" {
+		return waitForDashboard(timeout)
+	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		out, err := exec.Command("systemctl", "is-active", "devctl").Output()
 		if err == nil && strings.TrimSpace(string(out)) == "active" {
 			return nil
 		}
-		fmt.Print(".")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
-	return errors.New("timed out waiting for active status")
+	return errors.New("service did not become active")
+}
+
+func waitForDashboard(timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get("http://127.0.0.1:4000/")
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode > 0 {
+				return nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return errors.New("dashboard did not respond on 127.0.0.1:4000")
 }
 
 func systemctl(args ...string) error {
@@ -580,7 +665,11 @@ func Uninstall(args []string) error {
 		return err
 	}
 
-	if os.Getuid() != 0 {
+	if runtime.GOOS == "darwin" {
+		if os.Getuid() == 0 {
+			return errors.New("darwin uninstall must run as the site user, not root")
+		}
+	} else if os.Getuid() != 0 {
 		return errors.New("must be run as root — re-run with: sudo devctl uninstall")
 	}
 
@@ -599,7 +688,12 @@ func Uninstall(args []string) error {
 	// Read siteHome and serverRoot from the service file early, before we remove anything.
 	// These are needed later for service purge. Errors are non-fatal.
 	siteHome := readSiteHome()
-	serviceFile := filepath.Join(serviceDir, serviceName)
+	if siteHome == "" {
+		if cu, err := user.Current(); err == nil {
+			siteHome = cu.HomeDir
+		}
+	}
+	serviceFile := parentUnitPath(siteHome)
 	serverRoot := detectServerRoot(serviceFile)
 	if serverRoot == "" && siteHome != "" {
 		// Fallback for installs that predate DEVCTL_SERVER_ROOT.
@@ -614,13 +708,17 @@ func Uninstall(args []string) error {
 	isEnabled := serviceIsEnabled()
 
 	fmt.Println("The following steps will be performed:")
-	if isActive {
-		fmt.Println("  1. systemctl stop devctl")
+	if runtime.GOOS == "darwin" {
+		fmt.Println("  1. launchctl bootout ai.devctl")
+	} else {
+		if isActive {
+			fmt.Println("  1. systemctl stop devctl")
+		}
+		if isEnabled {
+			fmt.Println("  2. systemctl disable devctl")
+		}
 	}
-	if isEnabled {
-		fmt.Println("  2. systemctl disable devctl")
-	}
-	fmt.Printf("  3. Remove service file  %s\n", serviceFile)
+	fmt.Printf("  Remove service file  %s\n", serviceFile)
 	fmt.Println()
 
 	if !*flagYes {
@@ -638,21 +736,33 @@ func Uninstall(args []string) error {
 	}
 
 	// Stop and disable the service.
-	if isActive {
-		fmt.Print("Stopping service... ")
-		if err := systemctl("stop", "devctl"); err != nil {
+	if runtime.GOOS == "darwin" {
+		fmt.Print("Unloading LaunchAgent... ")
+		cu, err := user.Current()
+		if err != nil {
 			fmt.Println("✗")
-			return fmt.Errorf("stop devctl: %w", err)
+			return fmt.Errorf("current user: %w", err)
 		}
+		label := "gui/" + cu.Uid + "/" + elevate.LaunchAgentLabel
+		_ = exec.Command("launchctl", "bootout", label).Run()
 		fmt.Println("✓")
-	}
-	if isEnabled {
-		fmt.Print("Disabling service... ")
-		if err := systemctl("disable", "devctl"); err != nil {
-			fmt.Println("✗")
-			return fmt.Errorf("disable devctl: %w", err)
+	} else {
+		if isActive {
+			fmt.Print("Stopping service... ")
+			if err := systemctl("stop", "devctl"); err != nil {
+				fmt.Println("✗")
+				return fmt.Errorf("stop devctl: %w", err)
+			}
+			fmt.Println("✓")
 		}
-		fmt.Println("✓")
+		if isEnabled {
+			fmt.Print("Disabling service... ")
+			if err := systemctl("disable", "devctl"); err != nil {
+				fmt.Println("✗")
+				return fmt.Errorf("disable devctl: %w", err)
+			}
+			fmt.Println("✓")
+		}
 	}
 
 	fmt.Print("Removing service file... ")
@@ -664,12 +774,14 @@ func Uninstall(args []string) error {
 	}
 	fmt.Println("✓")
 
-	fmt.Print("Running daemon-reload... ")
-	if err := systemctl("daemon-reload"); err != nil {
-		fmt.Println("✗")
-		return fmt.Errorf("daemon-reload: %w", err)
+	if runtime.GOOS != "darwin" {
+		fmt.Print("Running daemon-reload... ")
+		if err := systemctl("daemon-reload"); err != nil {
+			fmt.Println("✗")
+			return fmt.Errorf("daemon-reload: %w", err)
+		}
+		fmt.Println("✓")
 	}
-	fmt.Println("✓")
 
 	fmt.Println()
 
@@ -744,6 +856,9 @@ func Uninstall(args []string) error {
 func readSiteHome() string {
 	name := os.Getenv("SUDO_USER")
 	if name == "" {
+		if cu, err := user.Current(); err == nil {
+			return cu.HomeDir
+		}
 		return ""
 	}
 	u, err := user.Lookup(name)
@@ -805,6 +920,9 @@ func detectBinaryPath(serviceFile string) string {
 	if err != nil {
 		return ""
 	}
+	if m := regexp.MustCompile(`<string>([^<]+)</string>\s*<string>daemon</string>`).FindStringSubmatch(string(data)); len(m) == 2 {
+		return m[1]
+	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "ExecStart=") {
@@ -819,28 +937,28 @@ func detectBinaryPath(serviceFile string) string {
 // detectServerRoot reads DEVCTL_SERVER_ROOT from an Environment= line in the
 // service file. Returns an empty string if not found (pre-DEVCTL_SERVER_ROOT installs).
 func detectServerRoot(serviceFile string) string {
-	data, err := os.ReadFile(serviceFile)
-	if err != nil {
-		return ""
-	}
-	prefix := "Environment=DEVCTL_SERVER_ROOT="
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimPrefix(line, prefix)
-		}
-	}
-	return ""
+	return elevate.DetectServerRoot(serviceFile)
 }
 
 // serviceIsActive returns true if `systemctl is-active devctl` reports "active".
 func serviceIsActive() bool {
+	if runtime.GOOS == "darwin" {
+		cu, err := user.Current()
+		if err != nil {
+			return false
+		}
+		label := "gui/" + cu.Uid + "/" + elevate.LaunchAgentLabel
+		return exec.Command("launchctl", "print", label).Run() == nil
+	}
 	out, err := exec.Command("systemctl", "is-active", "devctl").Output()
 	return err == nil && strings.TrimSpace(string(out)) == "active"
 }
 
 // serviceIsEnabled returns true if `systemctl is-enabled devctl` reports "enabled".
 func serviceIsEnabled() bool {
+	if runtime.GOOS == "darwin" {
+		return serviceIsActive()
+	}
 	out, err := exec.Command("systemctl", "is-enabled", "devctl").Output()
 	if err != nil {
 		return false
@@ -873,23 +991,68 @@ func pathBlock(binDir string) string {
 // back to parsing /etc/passwd directly (macOS, containers without getent).
 // Returns an empty string if the shell cannot be determined.
 func getUserShell(username string) string {
+	if runtime.GOOS == "darwin" {
+		if sh := darwinUserShell(username); sh != "" {
+			return sh
+		}
+	}
+
 	// Try getent first (available on Linux, not always on macOS).
 	if out, err := exec.Command("getent", "passwd", username).Output(); err == nil {
-		return shellFromPasswdLine(strings.TrimSpace(string(out)))
+		if sh := shellFromPasswdLine(strings.TrimSpace(string(out))); sh != "" {
+			return sh
+		}
 	}
 
 	// Fallback: scan /etc/passwd directly.
 	data, err := os.ReadFile("/etc/passwd")
 	if err != nil {
-		return ""
+		return darwinShellFallback()
 	}
 	prefix := username + ":"
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, prefix) {
-			return shellFromPasswdLine(line)
+			if sh := shellFromPasswdLine(line); sh != "" {
+				return sh
+			}
+			break
 		}
 	}
-	return ""
+	return darwinShellFallback()
+}
+
+func darwinUserShell(username string) string {
+	out, err := exec.Command("dscl", ".", "-read", "/Users/"+username, "UserShell").Output()
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(out))
+	_, after, ok := strings.Cut(line, ":")
+	if !ok {
+		return ""
+	}
+	return cleanShellName(filepath.Base(strings.TrimSpace(after)))
+}
+
+func darwinShellFallback() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	if s := os.Getenv("SHELL"); s != "" {
+		if sh := cleanShellName(filepath.Base(s)); sh != "" {
+			return sh
+		}
+	}
+	return "zsh"
+}
+
+func cleanShellName(sh string) string {
+	switch sh {
+	case "", "false", "nologin", "true":
+		return ""
+	default:
+		return sh
+	}
 }
 
 // shellFromPasswdLine extracts the base shell name from a colon-delimited
@@ -899,7 +1062,7 @@ func shellFromPasswdLine(line string) string {
 	if len(parts) < 7 {
 		return ""
 	}
-	return filepath.Base(strings.TrimSpace(parts[6]))
+	return cleanShellName(filepath.Base(strings.TrimSpace(parts[6])))
 }
 
 // shellTargets returns the list of shell config files that should receive the

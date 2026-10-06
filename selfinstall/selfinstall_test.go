@@ -4,9 +4,12 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/danielgormly/devctl/paths"
 )
 
 // ---------------------------------------------------------------------------
@@ -299,6 +302,20 @@ func TestShellTargets_UnknownShell_WithProfile(t *testing.T) {
 // written by WritePATHSetup are owned by the target user (uid/gid), not root.
 // This matters because devctl install runs as root but should not leave files
 // in the user's home directory owned by root.
+func TestDarwinUserShellParsesDscl(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("dscl is darwin-only")
+	}
+	cu, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh := getUserShell(cu.Username)
+	if sh == "" {
+		t.Fatalf("getUserShell(%q) empty on darwin", cu.Username)
+	}
+}
+
 func TestWritePATHSetup_FileOwnedByTargetUser(t *testing.T) {
 	dir := t.TempDir()
 	binDir := "/home/alice/sites/server/bin"
@@ -444,7 +461,8 @@ Environment=DEVCTL_SERVER_ROOT=/home/daniel/ddev/sites/server
 }
 
 // TestResolveSitesDir_FallsBackToDefaultWhenNoServiceFile verifies that when
-// there is no existing service file, resolveSitesDir falls back to ~/sites.
+// there is no existing service file, resolveSitesDir falls back to the
+// OS default (Linux ~/ddev/sites, Darwin ~/Code/sites).
 func TestResolveSitesDir_FallsBackToDefaultWhenNoServiceFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	missingFile := filepath.Join(tmpDir, "devctl.service") // does not exist
@@ -453,7 +471,7 @@ func TestResolveSitesDir_FallsBackToDefaultWhenNoServiceFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSitesDir: %v", err)
 	}
-	want := "/home/alice/sites"
+	want := paths.DefaultSitesDir("/home/alice")
 	if got != want {
 		t.Errorf("resolveSitesDir = %q, want %q", got, want)
 	}
@@ -510,5 +528,72 @@ func TestDetectBinaryPath_ReturnsEmptyWhenMissing(t *testing.T) {
 	got := detectBinaryPath("/nonexistent/devctl.service")
 	if got != "" {
 		t.Errorf("expected empty string for missing file, got %q", got)
+	}
+}
+
+func TestParentUnitPath(t *testing.T) {
+	got := parentUnitPath("/Users/alice")
+	if runtime.GOOS == "darwin" {
+		want := "/Users/alice/Library/LaunchAgents/ai.devctl.plist"
+		if got != want {
+			t.Errorf("parentUnitPath = %q, want %q", got, want)
+		}
+		return
+	}
+	if got != "/etc/systemd/system/devctl.service" {
+		t.Errorf("parentUnitPath = %q, want /etc/systemd/system/devctl.service", got)
+	}
+}
+
+func TestDetectServerRoot_ReadsFromLaunchAgentPlist(t *testing.T) {
+	dir := t.TempDir()
+	plist := filepath.Join(dir, "ai.devctl.plist")
+	content := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>DEVCTL_SERVER_ROOT</key>
+		<string>/Users/alice/sites/server</string>
+	</dict>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alice/sites/server/devctl/devctl</string>
+		<string>daemon</string>
+	</array>
+</dict>
+</plist>
+`
+	if err := os.WriteFile(plist, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := detectServerRoot(plist)
+	want := "/Users/alice/sites/server"
+	if got != want {
+		t.Errorf("detectServerRoot plist = %q, want %q", got, want)
+	}
+}
+
+func TestDetectBinaryPath_ReadsFromLaunchAgentPlist(t *testing.T) {
+	dir := t.TempDir()
+	plist := filepath.Join(dir, "ai.devctl.plist")
+	content := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/alice/sites/server/devctl/devctl</string>
+		<string>daemon</string>
+	</array>
+</dict>
+</plist>
+`
+	if err := os.WriteFile(plist, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := detectBinaryPath(plist)
+	want := "/Users/alice/sites/server/devctl/devctl"
+	if got != want {
+		t.Errorf("detectBinaryPath plist = %q, want %q", got, want)
 	}
 }

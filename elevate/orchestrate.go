@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/danielgormly/devctl/dist"
+	"github.com/danielgormly/devctl/paths"
 )
 
 // Target names for elevate / unelevate.
@@ -257,6 +258,20 @@ func elevatePortsDarwin(facts Facts, w io.Writer) error {
 		return err
 	}
 	plist := LaunchAgentPath(facts.SiteHome)
+	listen := dist.ListenHTTPFor("darwin")
+	httpPort, httpsPort := "8080", "8443"
+	if len(listen) >= 2 {
+		httpPort = strings.TrimPrefix(listen[0], ":")
+		httpsPort = strings.TrimPrefix(listen[1], ":")
+	}
+	if _, err := os.Stat(plist); err == nil {
+		fmt.Fprintf(w, "    LaunchAgent present — installing pf rdr 80→%s 443→%s only\n", httpPort, httpsPort)
+		if err := RunHelperSelf(w, w, "install-pf", "--http", httpPort, "--https", httpsPort); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "    ok\n")
+		return nil
+	}
 	fmt.Fprintf(w, "    writing LaunchAgent %s\n", plist)
 	if err := RunHelperSelf(w, w,
 		"write-plist",
@@ -274,12 +289,6 @@ func elevatePortsDarwin(facts Facts, w io.Writer) error {
 		"--user", facts.SiteUser,
 	); err != nil {
 		return err
-	}
-	listen := dist.ListenHTTPFor("darwin")
-	httpPort, httpsPort := "8080", "8443"
-	if len(listen) >= 2 {
-		httpPort = strings.TrimPrefix(listen[0], ":")
-		httpsPort = strings.TrimPrefix(listen[1], ":")
 	}
 	fmt.Fprintf(w, "    installing pf rdr 80→%s 443→%s\n", httpPort, httpsPort)
 	if err := RunHelperSelf(w, w, "install-pf", "--http", httpPort, "--https", httpsPort); err != nil {
@@ -413,8 +422,12 @@ func ensureFactsForUnit(facts *Facts) error {
 		if facts.ServerRoot == "" {
 			if v := os.Getenv("DEVCTL_SERVER_ROOT"); v != "" {
 				facts.ServerRoot = v
+			} else if detected := DetectServerRoot(LaunchAgentPath(facts.SiteHome)); detected != "" {
+				facts.ServerRoot = detected
+			} else if detected := DetectServerRoot(ServiceUnitPath); detected != "" {
+				facts.ServerRoot = detected
 			} else {
-				facts.ServerRoot = filepath.Join(u.HomeDir, "ddev", "sites", "server")
+				facts.ServerRoot = paths.DefaultServerRoot(u.HomeDir)
 			}
 		}
 	}

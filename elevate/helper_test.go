@@ -47,15 +47,51 @@ func TestDarwinResolverContent(t *testing.T) {
 	}
 }
 
+func TestDarwinResolverFileConfigured(t *testing.T) {
+	if !darwinResolverFileConfigured(DarwinResolverContent("5354")) {
+		t.Fatal("devctl resolver stub should count as configured")
+	}
+	if darwinResolverFileConfigured("nameserver 127.0.0.1\n") {
+		t.Fatal("Herd leftover without port should not count as configured")
+	}
+}
+
 func TestPFAnchorContent(t *testing.T) {
 	got := PFAnchorContent("8080", "8443")
-	want := "rdr pass on lo0 inet proto tcp from any to any port 80 -> 127.0.0.1 port 8080\nrdr pass on lo0 inet proto tcp from any to any port 443 -> 127.0.0.1 port 8443\n"
+	want := "rdr pass inet proto tcp from any to any port 80 -> 127.0.0.1 port 8080\nrdr pass inet proto tcp from any to any port 443 -> 127.0.0.1 port 8443\n"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
 	got2 := PFAnchorContent(":8080", ":8443")
 	if got2 != want {
 		t.Fatalf("colon prefix: got %q want %q", got2, want)
+	}
+}
+
+func TestMergePFConfInsertsBeforeFilter(t *testing.T) {
+	body := `scrub-anchor "com.apple/*"
+nat-anchor "com.apple/*"
+rdr-anchor "com.apple/*"
+dummynet-anchor "com.apple/*"
+anchor "com.apple/*"
+load anchor "com.apple" from "/etc/pf.anchors/com.apple"
+`
+	got := mergePFConf(body)
+	apple := strings.Index(got, `rdr-anchor "com.apple/*"`)
+	dev := strings.Index(got, `rdr-anchor "devctl"`)
+	filter := strings.Index(got, "\nanchor \"com.apple/*\"")
+	if apple < 0 || dev < 0 || filter < 0 {
+		t.Fatalf("missing markers:\n%s", got)
+	}
+	if !(apple < dev && dev < filter) {
+		t.Fatalf("order apple=%d devctl=%d filter=%d\n%s", apple, dev, filter, got)
+	}
+	relocated := mergePFConf(body + pfConfSnippet())
+	if strings.Count(relocated, pfBegin) != 1 {
+		t.Fatalf("expected one snippet after relocate:\n%s", relocated)
+	}
+	if strings.Index(relocated, `rdr-anchor "devctl"`) > strings.Index(relocated, "\nanchor \"com.apple/*\"") {
+		t.Fatalf("relocated snippet still after filter:\n%s", relocated)
 	}
 }
 
@@ -105,6 +141,52 @@ ExecStart=/usr/local/bin/devctl daemon
 	}
 	if UnitRunsAsUser(path) {
 		t.Fatal("old unit should not report User=")
+	}
+}
+
+func TestDetectServerRootPlist(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ai.devctl.plist")
+	body := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>HOME</key>
+	<string>/Users/alice</string>
+	<key>DEVCTL_SERVER_ROOT</key>
+	<string>/Users/alice/Code/sites/server</string>
+</dict>
+</plist>
+`
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := DetectServerRoot(path)
+	want := "/Users/alice/Code/sites/server"
+	if got != want {
+		t.Fatalf("DetectServerRoot plist = %q, want %q", got, want)
+	}
+}
+
+func TestDetectServerRootUnit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "devctl.service")
+	body := `[Service]
+Environment=DEVCTL_SERVER_ROOT=/home/alice/ddev/sites/server
+ExecStart=/home/alice/ddev/sites/server/devctl/devctl daemon
+`
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := DetectServerRoot(path)
+	want := "/home/alice/ddev/sites/server"
+	if got != want {
+		t.Fatalf("DetectServerRoot unit = %q, want %q", got, want)
+	}
+}
+
+func TestDetectServerRootMissing(t *testing.T) {
+	if got := DetectServerRoot(filepath.Join(t.TempDir(), "missing")); got != "" {
+		t.Fatalf("missing file = %q, want empty", got)
 	}
 }
 
