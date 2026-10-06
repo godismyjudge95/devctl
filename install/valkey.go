@@ -2,6 +2,7 @@ package install
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	_ "embed"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/danielgormly/devctl/dist"
@@ -20,17 +22,26 @@ import (
 //go:embed valkey.conf
 var valkeyConfTemplate []byte
 
-// valkeyTarURL returns the download URL for the given Valkey version.
-// Valkey ships distro-specific builds; we prefer noble (Ubuntu 24.04 / glibc
-// 2.39) on noble systems and fall back to jammy (Ubuntu 22.04 / glibc 2.35)
-// everywhere else — including Debian bookworm (glibc 2.36).
-func valkeyTarURL(ctx context.Context, version string) string {
-	codename, _ := lsbReleaseName(ctx)
-	distro := "jammy"
-	if codename == "noble" {
-		distro = "noble"
+// valkeyDownloadURL is the vendor archive for this platform.
+// Linux: official valkey.io jammy/noble tarballs.
+// Darwin: Laravel Herd redistributes a universal Mach-O zip from
+// download.herdphp.com — valkey.io has no macOS artifact.
+func valkeyDownloadURL(ctx context.Context, version string) (string, error) {
+	a, err := dist.For("valkey")
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf("https://download.valkey.io/releases/valkey-%s-%s-x86_64.tar.gz", version, distro)
+	if runtime.GOOS == "darwin" {
+		return "https://download.herdphp.com/services/valkey/" + a.File, nil
+	}
+	distro := a.Token
+	if strings.HasPrefix(distro, "jammy-") {
+		codename, _ := lsbReleaseName(ctx)
+		if codename == "noble" {
+			distro = "noble-" + strings.TrimPrefix(distro, "jammy-")
+		}
+	}
+	return fmt.Sprintf("https://download.valkey.io/releases/valkey-%s-%s.tar.gz", version, distro), nil
 }
 
 // ValkeyInstaller downloads the Valkey binary to
@@ -69,8 +80,12 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")
 	binPath := filepath.Join(valkeyDir, "valkey-server")
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s.tar.gz", latest))
-	defer os.Remove(tmpTar)
+	dlURL, err := valkeyDownloadURL(ctx, latest)
+	if err != nil {
+		return err
+	}
+	tmpArchive := filepath.Join(os.TempDir(), filepath.Base(dlURL))
+	defer os.Remove(tmpArchive)
 
 	// 1. Create directory.
 	fmt.Fprintln(w, "valkey: creating directory...")
@@ -78,31 +93,32 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		return fmt.Errorf("valkey: create dir: %w", err)
 	}
 
-	// 2. Determine the correct tarball URL for this system.
-	url := valkeyTarURL(ctx, latest)
-
-	// 3. Download tarball.
 	fmt.Fprintf(w, "valkey: downloading %s...\n", latest)
-	if err := curlDownloadW(ctx, w, url, tmpTar); err != nil {
+	if err := curlDownloadW(ctx, w, dlURL, tmpArchive); err != nil {
 		return fmt.Errorf("valkey: download: %w", err)
 	}
 
-	// 4. Extract valkey-server binary from tarball.
 	fmt.Fprintln(w, "valkey: extracting binary...")
-	if err := extractFromTar(tmpTar, "valkey-server", binPath); err != nil {
-		return fmt.Errorf("valkey: extract: %w", err)
+	if strings.HasSuffix(dlURL, ".zip") {
+		if err := extractValkeyZip(tmpArchive, valkeyDir); err != nil {
+			return fmt.Errorf("valkey: extract zip: %w", err)
+		}
+	} else {
+		if err := extractFromTar(tmpArchive, "valkey-server", binPath); err != nil {
+			return fmt.Errorf("valkey: extract: %w", err)
+		}
+		cliBinPath := filepath.Join(valkeyDir, "valkey-cli")
+		if err := extractFromTar(tmpArchive, "valkey-cli", cliBinPath); err == nil {
+			_ = os.Chmod(cliBinPath, 0755)
+		}
 	}
 	if err := os.Chmod(binPath, 0755); err != nil {
 		return fmt.Errorf("valkey: chmod binary: %w", err)
 	}
 
-	// 5. Also extract valkey-cli if present in the tarball.
 	cliBinPath := filepath.Join(valkeyDir, "valkey-cli")
-	if err := extractFromTar(tmpTar, "valkey-cli", cliBinPath); err == nil {
-		_ = os.Chmod(cliBinPath, 0755)
-	}
 
-	// 6. Symlink server (and cli if present) into the shared bin dir.
+	// Symlink server (and cli if present) into the shared bin dir.
 	// Both valkey-{server,cli} and redis-{server,cli} aliases are created so
 	// that muscle-memory commands and scripts that reference the Redis names
 	// continue to work out of the box.
@@ -150,6 +166,13 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 // If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
 // that value is returned immediately without hitting GitHub.
 func (v *ValkeyInstaller) LatestVersion(ctx context.Context) (string, error) {
+	if runtime.GOOS == "darwin" {
+		a, err := dist.For("valkey")
+		if err != nil {
+			return "", err
+		}
+		return a.Token, nil
+	}
 	if v2 := preResolvedVersionFromCtx(ctx); v2 != "" {
 		return v2, nil
 	}
@@ -163,22 +186,19 @@ func (v *ValkeyInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("valkey: update: %w", err)
 	}
-	// Valkey tags have no "v" prefix (e.g. "9.0.3"). Detect which distro to use.
-	codename, _ := lsbReleaseName(ctx)
-	distro := "jammy"
-	if codename == "noble" {
-		distro = "noble"
+	dlURL, err := valkeyDownloadURL(ctx, latest)
+	if err != nil {
+		return err
 	}
-	dlURL := fmt.Sprintf("https://download.valkey.io/releases/valkey-%s-%s-x86_64.tar.gz", latest, distro)
 
 	valkeyDir := paths.ServiceDir(v.serverRoot, "valkey")
 	binPath := filepath.Join(valkeyDir, "valkey-server")
 	cliBinPath := filepath.Join(valkeyDir, "valkey-cli")
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("valkey-%s-update.tar.gz", latest))
-	defer os.Remove(tmpTar)
+	tmpArchive := filepath.Join(os.TempDir(), filepath.Base(dlURL))
+	defer os.Remove(tmpArchive)
 
 	fmt.Fprintf(w, "valkey: downloading %s...\n", latest)
-	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+	if err := curlDownloadW(ctx, w, dlURL, tmpArchive); err != nil {
 		return fmt.Errorf("valkey: update download: %w", err)
 	}
 
@@ -188,14 +208,20 @@ func (v *ValkeyInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "valkey: replacing binary...")
-	if err := extractFromTar(tmpTar, "valkey-server", binPath); err != nil {
-		return fmt.Errorf("valkey: update extract: %w", err)
+	if strings.HasSuffix(dlURL, ".zip") {
+		if err := extractValkeyZip(tmpArchive, valkeyDir); err != nil {
+			return fmt.Errorf("valkey: update extract: %w", err)
+		}
+	} else {
+		if err := extractFromTar(tmpArchive, "valkey-server", binPath); err != nil {
+			return fmt.Errorf("valkey: update extract: %w", err)
+		}
+		_ = extractFromTar(tmpArchive, "valkey-cli", cliBinPath)
 	}
 	if err := os.Chmod(binPath, 0755); err != nil {
 		return fmt.Errorf("valkey: update chmod: %w", err)
 	}
-	// Also update valkey-cli if present.
-	if err := extractFromTar(tmpTar, "valkey-cli", cliBinPath); err == nil {
+	if fileExists(cliBinPath) {
 		_ = os.Chmod(cliBinPath, 0755)
 	}
 
@@ -503,4 +529,48 @@ func extractNamedFromTar(tarPath, memberName, destPath string) error {
 		return out.Close()
 	}
 	return fmt.Errorf("%s not found in archive", memberName)
+}
+
+// extractValkeyZip copies files from the Herd universal zip (bin/valkey-server
+// plus bundled libssl/libcrypto) into destDir so @executable_path loads.
+func extractValkeyZip(zipPath, destDir string) error {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return err
+	}
+	for _, f := range r.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		base := filepath.Base(f.Name)
+		if base == "" || base == "." || base == ".." {
+			continue
+		}
+		dest := filepath.Join(destDir, base)
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, copyErr := io.Copy(out, rc)
+		rc.Close()
+		if cerr := out.Close(); copyErr == nil {
+			copyErr = cerr
+		}
+		if copyErr != nil {
+			return copyErr
+		}
+	}
+	if !fileExists(filepath.Join(destDir, "valkey-server")) {
+		return fmt.Errorf("zip has no valkey-server")
+	}
+	return nil
 }

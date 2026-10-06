@@ -1,7 +1,6 @@
 package dist
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -39,12 +38,13 @@ func TestLinuxAmd64HasBinaryServices(t *testing.T) {
 	}
 }
 
-func TestDarwinArm64SkipsValkeyTimescalePgvector(t *testing.T) {
-	for _, name := range []string{"valkey", "timescale", "pgvector"} {
-		_, err := Lookup("darwin", "arm64", name)
-		if !errors.Is(err, ErrUnsupported) {
-			t.Errorf("darwin/arm64/%s: err = %v, want ErrUnsupported", name, err)
-		}
+func TestDarwinArm64ValkeyHerdZip(t *testing.T) {
+	a, err := Lookup("darwin", "arm64", "valkey")
+	if err != nil {
+		t.Fatalf("darwin/arm64/valkey: %v", err)
+	}
+	if a.Token != "8.1.10" || a.File != "8.1.10-universal.zip" {
+		t.Errorf("darwin valkey = %+v", a)
 	}
 }
 
@@ -59,12 +59,21 @@ func TestListenHTTPFor(t *testing.T) {
 	}
 }
 
+func TestHTTPPortFor(t *testing.T) {
+	if HTTPPortFor("linux") != 80 || HTTPSPortFor("linux") != 443 {
+		t.Errorf("linux ports = %d/%d", HTTPPortFor("linux"), HTTPSPortFor("linux"))
+	}
+	if HTTPPortFor("darwin") != 8080 || HTTPSPortFor("darwin") != 8443 {
+		t.Errorf("darwin ports = %d/%d", HTTPPortFor("darwin"), HTTPSPortFor("darwin"))
+	}
+}
+
 func TestAllowsFor(t *testing.T) {
 	if !AllowsFor("linux", "amd64", "redis") {
 		t.Error("linux/amd64 redis should be allowed")
 	}
-	if AllowsFor("darwin", "arm64", "redis") {
-		t.Error("darwin/arm64 redis should be skipped")
+	if !AllowsFor("darwin", "arm64", "redis") {
+		t.Error("darwin/arm64 redis should be allowed")
 	}
 	if !AllowsFor("darwin", "arm64", "caddy") {
 		t.Error("darwin/arm64 caddy should be allowed")

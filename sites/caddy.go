@@ -300,6 +300,29 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 	defer respListen.Body.Close()
 	io.Copy(io.Discard, respListen.Body)
 
+	// Caddy only treats the configured http_port as plain HTTP. Darwin listens
+	// on 8080/8443, so those must be set or every listen address becomes TLS.
+	httpPortBody, _ := json.Marshal(dist.HTTPPort())
+	respHTTPPort, err := c.http.Do(mustRequest("PUT", c.adminURL+"/config/apps/http/http_port", httpPortBody))
+	if err != nil {
+		return fmt.Errorf("caddy PUT http_port: %w", err)
+	}
+	defer respHTTPPort.Body.Close()
+	io.Copy(io.Discard, respHTTPPort.Body)
+	if respHTTPPort.StatusCode != http.StatusOK {
+		return fmt.Errorf("caddy PUT http_port returned %d", respHTTPPort.StatusCode)
+	}
+	httpsPortBody, _ := json.Marshal(dist.HTTPSPort())
+	respHTTPSPort, err := c.http.Do(mustRequest("PUT", c.adminURL+"/config/apps/http/https_port", httpsPortBody))
+	if err != nil {
+		return fmt.Errorf("caddy PUT https_port: %w", err)
+	}
+	defer respHTTPSPort.Body.Close()
+	io.Copy(io.Discard, respHTTPSPort.Body)
+	if respHTTPSPort.StatusCode != http.StatusOK {
+		return fmt.Errorf("caddy PUT https_port returned %d", respHTTPSPort.StatusCode)
+	}
+
 	// Caddy otherwise tries to install its CA into the OS trust store and
 	// prints a Homebrew certutil hint. elevate/trust.go owns trust.
 	pkiBody, _ := json.Marshal(map[string]interface{}{
@@ -343,6 +366,9 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 	}
 	defer respTLS2.Body.Close()
 	io.Copy(io.Discard, respTLS2.Body)
+	if respTLS2.StatusCode != http.StatusOK {
+		return fmt.Errorf("caddy PUT tls returned %d", respTLS2.StatusCode)
+	}
 
 	// Ensure the devctl.test reverse-proxy route is present.
 	if err := c.UpsertVhost(VhostConfig{

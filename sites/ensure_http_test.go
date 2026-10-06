@@ -28,6 +28,12 @@ func TestEnsureHTTPServer_PatchesListenAndSkipsTrustInstall(t *testing.T) {
 	if !strings.Contains(joined, "PATCH /config/apps/http/servers/devctl/listen") {
 		t.Fatalf("missing PATCH listen, calls:\n%s", joined)
 	}
+	if !strings.Contains(joined, "PUT /config/apps/http/http_port") {
+		t.Fatalf("missing PUT http_port, calls:\n%s", joined)
+	}
+	if !strings.Contains(joined, "PUT /config/apps/http/https_port") {
+		t.Fatalf("missing PUT https_port, calls:\n%s", joined)
+	}
 	foundPKI := false
 	for _, call := range calls {
 		if !strings.Contains(call, "PUT /config/apps/pki") {

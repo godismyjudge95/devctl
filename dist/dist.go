@@ -76,6 +76,9 @@ var assetTable = []assetRow{
 
 	{GOOS: "linux", GOARCH: "amd64", Name: "valkey", Asset: Asset{Token: "jammy-x86_64", File: "valkey-linux-x86_64.tar.gz"}},
 	{GOOS: "linux", GOARCH: "arm64", Name: "valkey", Asset: Asset{Token: "jammy-aarch64", File: "valkey-linux-aarch64.tar.gz"}},
+	// Official valkey.io ships Linux tarballs only. Laravel Herd redistributes
+	// Valkey 8.1.10 as a universal Mach-O zip (libssl next to the binary).
+	{GOOS: "darwin", GOARCH: "arm64", Name: "valkey", Asset: Asset{Token: "8.1.10", File: "8.1.10-universal.zip"}},
 
 	{GOOS: "darwin", GOARCH: "arm64", Name: "mysql", Asset: Asset{Token: "macos15-arm64", File: "mysql-macos15-arm64.tar.gz"}},
 	{GOOS: "darwin", GOARCH: "arm64", Name: "postgres", Asset: Asset{Token: "osx-binaries", File: "postgresql-osx-binaries.zip"}},
@@ -109,6 +112,32 @@ func ListenHTTPFor(goos string) []string {
 		return []string{":8080", ":8443"}
 	}
 	return []string{":80", ":443"}
+}
+
+// HTTPPort is the plain-HTTP port Caddy automatic HTTPS should treat as HTTP.
+func HTTPPort() int {
+	return HTTPPortFor(runtime.GOOS)
+}
+
+// HTTPPortFor is HTTPPort for goos.
+func HTTPPortFor(goos string) int {
+	if goos == "darwin" {
+		return 8080
+	}
+	return 80
+}
+
+// HTTPSPort is the TLS port Caddy automatic HTTPS should treat as HTTPS.
+func HTTPSPort() int {
+	return HTTPSPortFor(runtime.GOOS)
+}
+
+// HTTPSPortFor is HTTPSPort for goos.
+func HTTPSPortFor(goos string) int {
+	if goos == "darwin" {
+		return 8443
+	}
+	return 443
 }
 
 // catalogName maps a service ID to a dist table name.
