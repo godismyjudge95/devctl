@@ -15,10 +15,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
+
+func meilisearchBinaryURL(latest string, a dist.Asset) string {
+	return fmt.Sprintf("https://github.com/meilisearch/meilisearch/releases/download/%s/%s", latest, a.File)
+}
 
 //go:embed meilisearch-config.toml
 var meilisearchConfigTemplate []byte
@@ -53,7 +58,11 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 	if err != nil {
 		return fmt.Errorf("meilisearch: resolve latest version: %w", err)
 	}
-	dlURL := fmt.Sprintf("https://github.com/meilisearch/meilisearch/releases/download/%s/meilisearch-linux-amd64", latest)
+	a, err := dist.For("meilisearch")
+	if err != nil {
+		return fmt.Errorf("meilisearch: %w", err)
+	}
+	dlURL := meilisearchBinaryURL(latest, a)
 
 	meiliDir := paths.ServiceDir(m.serverRoot, "meilisearch")
 	binPath := filepath.Join(meiliDir, "meilisearch")
@@ -175,7 +184,11 @@ func (m *MeilisearchInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("meilisearch: update: %w", err)
 	}
-	dlURL := fmt.Sprintf("https://github.com/meilisearch/meilisearch/releases/download/%s/meilisearch-linux-amd64", latest)
+	a, err := dist.For("meilisearch")
+	if err != nil {
+		return fmt.Errorf("meilisearch: %w", err)
+	}
+	dlURL := meilisearchBinaryURL(latest, a)
 
 	meiliDir := paths.ServiceDir(m.serverRoot, "meilisearch")
 	binPath := filepath.Join(meiliDir, "meilisearch")
@@ -190,7 +203,7 @@ func (m *MeilisearchInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 
 	// ---------- Step 2: download new binary ----------
 	fmt.Fprintf(w, "meilisearch: downloading %s...\n", latest)
-	tmpBin := filepath.Join(os.TempDir(), "meilisearch-update-linux-amd64")
+	tmpBin := filepath.Join(os.TempDir(), "meilisearch-update-"+strings.TrimPrefix(a.File, "meilisearch-"))
 	defer os.Remove(tmpBin)
 	if err := curlDownloadW(ctx, w, dlURL, tmpBin); err != nil {
 		return fmt.Errorf("meilisearch: update download: %w", err)

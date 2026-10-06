@@ -165,7 +165,7 @@ func (c *CaddyInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 
 	caddyDir := paths.ServiceDir(c.serverRoot, "caddy")
 	binPath := filepath.Join(caddyDir, "caddy")
-	tmpTar := filepath.Join(os.TempDir(), "caddy-update-"+a.File)
+	tmpTar := filepath.Join(os.TempDir(), "caddy-update-"+strings.TrimPrefix(a.File, "caddy-"))
 	defer os.Remove(tmpTar)
 
 	fmt.Fprintf(w, "caddy: downloading %s...\n", latest)

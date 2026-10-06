@@ -8,10 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
+
+func typesenseTarballURL(latest string, a dist.Asset) string {
+	return fmt.Sprintf("https://dl.typesense.org/releases/%s/typesense-server-%s-%s.tar.gz", latest, latest, a.Token)
+}
 
 // TypesenseInstaller downloads the Typesense binary to
 // {serverRoot}/typesense/, generates an API key, writes config.env,
@@ -43,7 +48,11 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("typesense: resolve latest version: %w", err)
 	}
-	dlURL := fmt.Sprintf("https://dl.typesense.org/releases/%s/typesense-server-%s-linux-amd64.tar.gz", latest, latest)
+	a, err := dist.For("typesense")
+	if err != nil {
+		return fmt.Errorf("typesense: %w", err)
+	}
+	dlURL := typesenseTarballURL(latest, a)
 
 	tsDir := paths.ServiceDir(t.serverRoot, "typesense")
 	binPath := filepath.Join(tsDir, "typesense-server")
@@ -149,7 +158,11 @@ func (t *TypesenseInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("typesense: update: %w", err)
 	}
-	dlURL := fmt.Sprintf("https://dl.typesense.org/releases/%s/typesense-server-%s-linux-amd64.tar.gz", latest, latest)
+	a, err := dist.For("typesense")
+	if err != nil {
+		return fmt.Errorf("typesense: %w", err)
+	}
+	dlURL := typesenseTarballURL(latest, a)
 
 	tsDir := paths.ServiceDir(t.serverRoot, "typesense")
 	binPath := filepath.Join(tsDir, "typesense-server")

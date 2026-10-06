@@ -6,10 +6,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
+
+func mailpitTarballURL(latest string, a dist.Asset) string {
+	return fmt.Sprintf("https://github.com/axllent/mailpit/releases/download/%s/%s", latest, a.File)
+}
 
 // MailpitInstaller downloads the Mailpit binary to
 // {serverRoot}/mailpit/ and writes config.env with Laravel .env keys.
@@ -39,13 +45,17 @@ func (m *MailpitInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("mailpit: resolve latest version: %w", err)
 	}
-	dlURL := fmt.Sprintf("https://github.com/axllent/mailpit/releases/download/%s/mailpit-linux-amd64.tar.gz", latest)
+	a, err := dist.For("mailpit")
+	if err != nil {
+		return fmt.Errorf("mailpit: %w", err)
+	}
+	dlURL := mailpitTarballURL(latest, a)
 
 	mailpitDir := paths.ServiceDir(m.serverRoot, "mailpit")
 	binPath := filepath.Join(mailpitDir, "mailpit")
 	dataDir := filepath.Join(mailpitDir, "data")
 	envPath := filepath.Join(mailpitDir, "config.env")
-	tmpTar := filepath.Join(os.TempDir(), "mailpit-linux-amd64.tar.gz")
+	tmpTar := filepath.Join(os.TempDir(), a.File)
 	defer os.Remove(tmpTar)
 
 	// 1. Create directories.
@@ -121,11 +131,15 @@ func (m *MailpitInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("mailpit: update: %w", err)
 	}
-	dlURL := fmt.Sprintf("https://github.com/axllent/mailpit/releases/download/%s/mailpit-linux-amd64.tar.gz", latest)
+	a, err := dist.For("mailpit")
+	if err != nil {
+		return fmt.Errorf("mailpit: %w", err)
+	}
+	dlURL := mailpitTarballURL(latest, a)
 
 	mailpitDir := paths.ServiceDir(m.serverRoot, "mailpit")
 	binPath := filepath.Join(mailpitDir, "mailpit")
-	tmpTar := filepath.Join(os.TempDir(), "mailpit-update-linux-amd64.tar.gz")
+	tmpTar := filepath.Join(os.TempDir(), "mailpit-update-"+strings.TrimPrefix(a.File, "mailpit-"))
 	defer os.Remove(tmpTar)
 
 	fmt.Fprintf(w, "mailpit: downloading %s...\n", latest)

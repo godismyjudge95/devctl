@@ -11,11 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/internal/httplog"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
 )
+
+func maxioTarballURL(tag, ver string, a dist.Asset) string {
+	return fmt.Sprintf("https://github.com/coollabsio/maxio/releases/download/%s/maxio-%s-%s.tar.gz", tag, a.Token, ver)
+}
 
 // MaxIOInstaller downloads the MaxIO binary to {serverRoot}/maxio/,
 // writes config.env with default credentials, creates the data directory, and
@@ -58,13 +63,16 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	// 2. Resolve the latest release version and download URL.
 	fmt.Fprintln(w, "maxio: fetching latest release info...")
+	a, err := dist.For("maxio")
+	if err != nil {
+		return fmt.Errorf("maxio: %w", err)
+	}
 	version, dlURL, err := maxioLatestRelease(ctx)
 	if err != nil {
 		return fmt.Errorf("maxio: resolve release: %w", err)
 	}
 
-	// 3. Download tar.gz archive.
-	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("maxio-%s-linux-amd64.tar.gz", version))
+	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("maxio-%s-%s.tar.gz", version, a.Token))
 	defer os.Remove(tmpTar)
 
 	fmt.Fprintf(w, "maxio: downloading %s...\n", version)
@@ -257,18 +265,21 @@ func (m *MaxIOInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 
 // maxioLatestRelease queries the GitHub Releases API for coollabsio/maxio and
 // returns the latest version string (without "v" prefix) and the browser
-// download URL for the linux-amd64 tar.gz asset.
+// download URL for this platform's tar.gz asset.
 // If the context carries a pre-resolved version (via install.WithPreResolvedVersion),
 // the GitHub API call is skipped and the URL is constructed from that version.
 func maxioLatestRelease(ctx context.Context) (version, downloadURL string, err error) {
+	a, err := dist.For("maxio")
+	if err != nil {
+		return "", "", err
+	}
 	if v := preResolvedVersionFromCtx(ctx); v != "" {
 		tag := v
 		if !strings.HasPrefix(tag, "v") {
 			tag = "v" + tag
 		}
 		ver := strings.TrimPrefix(tag, "v")
-		dlURL := fmt.Sprintf("https://github.com/coollabsio/maxio/releases/download/%s/maxio-linux-amd64-%s.tar.gz", tag, ver)
-		return ver, dlURL, nil
+		return ver, maxioTarballURL(tag, ver, a), nil
 	}
 	apiURL := "https://api.github.com/repos/coollabsio/maxio/releases/latest"
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -309,12 +320,12 @@ func maxioLatestRelease(ctx context.Context) (version, downloadURL string, err e
 
 	version = strings.TrimPrefix(payload.TagName, "v")
 
-	// Find the linux-amd64 tar.gz asset.
+	// Find the platform tar.gz asset.
 	for _, asset := range payload.Assets {
-		if strings.Contains(asset.Name, "linux-amd64") && strings.HasSuffix(asset.Name, ".tar.gz") {
+		if strings.Contains(asset.Name, a.Token) && strings.HasSuffix(asset.Name, ".tar.gz") {
 			return version, asset.BrowserDownloadURL, nil
 		}
 	}
 
-	return "", "", fmt.Errorf("maxio: github releases: no linux-amd64 tar.gz asset found in release %s", payload.TagName)
+	return "", "", fmt.Errorf("maxio: github releases: no %s tar.gz asset found in release %s", a.Token, payload.TagName)
 }
