@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -68,11 +67,7 @@ func (e contribSearchExtension) InstallFiles(_ context.Context, w io.Writer, pgD
 		fmt.Fprintf(w, "postgres: %s already present in Percona tree\n", e.id)
 		return nil
 	}
-	if runtime.GOOS == "darwin" {
-		fmt.Fprintf(w, "postgres: skipping %s on darwin (no contrib library)\n", e.id)
-		return nil
-	}
-	return fmt.Errorf("postgres: %s files missing under %s (expected lib/%s.so and share/extension/%s.control)", e.id, pgDir, e.id, e.id)
+	return fmt.Errorf("postgres: %s files missing under %s (expected lib/%s%s and share/extension/%s.control)", e.id, pgDir, e.id, pgShlibExt(), e.id)
 }
 
 func (e contribSearchExtension) UpdateFiles(ctx context.Context, w io.Writer, pgDir string) error {

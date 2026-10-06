@@ -39,12 +39,12 @@ func (pgClickhouseExtension) IsFilesInstalled(pgDir string) bool {
 }
 
 func isPgClickhouseInstalled(pgDir string) bool {
-	return fileExists(filepath.Join(pgDir, "lib", "pg_clickhouse.so")) &&
-		fileExists(filepath.Join(pgDir, "share", "extension", "pg_clickhouse.control"))
+	return fileExists(pgShlibPath(pgDir, "pg_clickhouse")) &&
+		fileExists(pgExtensionControl(pgDir, "pg_clickhouse"))
 }
 
 func (pgClickhouseExtension) FilesVersion(pgDir string) string {
-	if v := parseControlDefaultVersion(filepath.Join(pgDir, "share", "extension", "pg_clickhouse.control")); v != "" {
+	if v := parseControlDefaultVersion(pgExtensionControl(pgDir, "pg_clickhouse")); v != "" {
 		return v
 	}
 	if isPgClickhouseInstalled(pgDir) {
@@ -62,6 +62,10 @@ func (e pgClickhouseExtension) InstallFiles(ctx context.Context, w io.Writer, pg
 }
 
 func (e pgClickhouseExtension) UpdateFiles(ctx context.Context, w io.Writer, pgDir string) error {
+	if runtime.GOOS == "darwin" && isPgClickhouseInstalled(pgDir) {
+		fmt.Fprintln(w, "postgres: pg_clickhouse already installed")
+		return nil
+	}
 	// Re-extract when control version is missing or older than pinned.
 	cur := e.FilesVersion(pgDir)
 	if isPgClickhouseInstalled(pgDir) && (cur == pgClickhouseExtVersion || cur == pgClickhouseVersion) {
@@ -152,6 +156,9 @@ func pgClickhouseDebURL() string {
 
 // installPgClickhouse downloads and extracts the prebuilt deb into the Percona tree.
 func installPgClickhouse(ctx context.Context, w io.Writer, pgDir string) error {
+	if runtime.GOOS == "darwin" {
+		return installPgClickhouseFromSource(ctx, w, pgDir)
+	}
 	libDir := filepath.Join(pgDir, "lib")
 	extDir := filepath.Join(pgDir, "share", "extension")
 	if err := os.MkdirAll(libDir, 0755); err != nil {

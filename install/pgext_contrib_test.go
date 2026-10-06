@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -66,11 +65,7 @@ func TestContribSearchExtension_InstallFiles(t *testing.T) {
 	ext := contribSearchExtension{id: "unaccent", label: "unaccent"}
 	empty := t.TempDir()
 	err := ext.InstallFiles(t.Context(), io.Discard, empty)
-	if runtime.GOOS == "darwin" {
-		if err != nil {
-			t.Fatalf("darwin missing contrib should skip, got %v", err)
-		}
-	} else if err == nil {
+	if err == nil {
 		t.Fatal("expected error when files missing")
 	}
 

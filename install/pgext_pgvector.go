@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -33,7 +34,7 @@ func (pgvectorExtension) IsFilesInstalled(pgDir string) bool {
 }
 
 func (pgvectorExtension) FilesVersion(pgDir string) string {
-	if v := parseControlDefaultVersion(filepath.Join(pgDir, "share", "extension", "vector.control")); v != "" {
+	if v := parseControlDefaultVersion(pgExtensionControl(pgDir, "vector")); v != "" {
 		return v
 	}
 	if isPgvectorPortable(pgDir) {
@@ -66,14 +67,11 @@ func (pgvectorExtension) Wire(context.Context, ExtensionEnv) (bool, error) {
 }
 
 func pgvectorPortableStampPath(pgDir string) string {
-	return filepath.Join(pgDir, "lib", ".devctl-pgvector-portable")
+	return filepath.Join(pgLibDir(pgDir), ".devctl-pgvector-portable")
 }
 
 func isPgvectorPortable(pgDir string) bool {
-	if !fileExists(filepath.Join(pgDir, "lib", "vector.so")) {
-		return false
-	}
-	if !fileExists(filepath.Join(pgDir, "share", "extension", "vector.control")) {
+	if pgExtensionLibrary(pgDir, "vector") == "" || pgExtensionControl(pgDir, "vector") == "" {
 		return false
 	}
 	data, err := os.ReadFile(pgvectorPortableStampPath(pgDir))
@@ -108,6 +106,12 @@ func installPgvectorPortable(ctx context.Context, w io.Writer, pgDir string) err
 	}
 	defer os.RemoveAll(tmpDir)
 
+	shim, err := writeDarwinPgConfigShim(filepath.Join(tmpDir, "bin"), pgConfig)
+	if err != nil {
+		return fmt.Errorf("postgres: pgvector pg_config shim: %w", err)
+	}
+	pgConfig = shim
+
 	tarball := filepath.Join(tmpDir, "pgvector.tar.gz")
 	if err := curlDownloadW(ctx, w, pgvectorSourceURL(), tarball); err != nil {
 		return fmt.Errorf("postgres: pgvector download: %w", err)
@@ -126,8 +130,10 @@ func installPgvectorPortable(ctx context.Context, w io.Writer, pgDir string) err
 	// PG_CONFIG must also be set on `make clean` — the Makefile evaluates
 	// $(shell $(PG_CONFIG) ...) at parse time, and pg_config is not on PATH.
 	buildCmd := fmt.Sprintf(
-		`make clean PG_CONFIG=%s && make PG_CONFIG=%s OPTFLAGS="" && make install PG_CONFIG=%s OPTFLAGS=""`,
-		shellQuote(pgConfig), shellQuote(pgConfig), shellQuote(pgConfig),
+		`PATH=%s:$PATH %s make clean PG_CONFIG=%s %s && PATH=%s:$PATH %s make PG_CONFIG=%s OPTFLAGS="" %s && PATH=%s:$PATH %s make install PG_CONFIG=%s OPTFLAGS="" %s`,
+		shellQuote(filepath.Dir(pgConfig)), darwinPGCompileVars(), shellQuote(pgConfig), darwinPGXSMakeArgs(),
+		shellQuote(filepath.Dir(pgConfig)), darwinPGCompileVars(), shellQuote(pgConfig), darwinPGXSMakeArgs(),
+		shellQuote(filepath.Dir(pgConfig)), darwinPGCompileVars(), shellQuote(pgConfig), darwinPGXSMakeArgs(),
 	)
 	if out, err := runShellInDirW(ctx, w, srcRoot, buildCmd); err != nil {
 		return fmt.Errorf("postgres: pgvector build: %w\n%s", err, out)
@@ -141,10 +147,19 @@ func installPgvectorPortable(ctx context.Context, w io.Writer, pgDir string) err
 }
 
 func ensurePgvectorBuildTools(ctx context.Context, w io.Writer) error {
-	if _, err := exec.LookPath("gcc"); err == nil {
-		if _, err := exec.LookPath("make"); err == nil {
-			return nil
+	ccOK := false
+	for _, name := range []string{"gcc", "clang", "cc"} {
+		if _, err := exec.LookPath(name); err == nil {
+			ccOK = true
+			break
 		}
+	}
+	_, makeErr := exec.LookPath("make")
+	if ccOK && makeErr == nil {
+		return nil
+	}
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("postgres: pgvector needs a C compiler and make (install Xcode Command Line Tools)")
 	}
 	fmt.Fprintln(w, "postgres: installing build-essential for pgvector...")
 	if err := aptInstallW(ctx, w, "build-essential"); err != nil {

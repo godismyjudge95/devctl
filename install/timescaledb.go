@@ -32,11 +32,13 @@ const (
 // isTimescaleInstalled reports whether the Community Edition files are present
 // (loader + versioned core .so + TSL .so + control file).
 func isTimescaleInstalled(pgDir string) bool {
-	lib := filepath.Join(pgDir, "lib")
-	return fileExists(filepath.Join(lib, "timescaledb.so")) &&
-		fileExists(filepath.Join(pgDir, "share", "extension", "timescaledb.control")) &&
-		fileExists(filepath.Join(lib, "timescaledb-"+timescaledbVersion+".so")) &&
-		fileExists(filepath.Join(lib, "timescaledb-tsl-"+timescaledbVersion+".so"))
+	lib := pgLibDir(pgDir)
+	ext := pgShareExtDir(pgDir)
+	sh := pgShlibExt()
+	return fileExists(filepath.Join(lib, "timescaledb"+sh)) &&
+		fileExists(filepath.Join(ext, "timescaledb.control")) &&
+		fileExists(filepath.Join(lib, "timescaledb-"+timescaledbVersion+sh)) &&
+		fileExists(filepath.Join(lib, "timescaledb-tsl-"+timescaledbVersion+sh))
 }
 
 // timescaleDebArch maps GOARCH to Debian package arch.
@@ -103,6 +105,9 @@ func installTimescale(ctx context.Context, w io.Writer, pgDir string) error {
 		}
 		return nil
 	}
+	if runtime.GOOS == "darwin" {
+		return installTimescaleFromSource(ctx, w, pgDir)
+	}
 
 	libDir := filepath.Join(pgDir, "lib")
 	extDir := filepath.Join(pgDir, "share", "extension")
@@ -142,6 +147,13 @@ func installTimescale(ctx context.Context, w io.Writer, pgDir string) error {
 // an existing Postgres install. Safe when Timescale was not previously installed
 // (including upgrades from Apache OSS builds that lack the TSL library).
 func updateTimescale(ctx context.Context, w io.Writer, pgDir string) error {
+	if runtime.GOOS == "darwin" {
+		lib := pgLibDir(pgDir)
+		sh := pgShlibExt()
+		_ = os.Remove(filepath.Join(lib, "timescaledb-"+timescaledbVersion+sh))
+		_ = os.Remove(filepath.Join(lib, "timescaledb-tsl-"+timescaledbVersion+sh))
+		return installTimescaleFromSource(ctx, w, pgDir)
+	}
 	// Force re-extract of versioned libraries (core + TSL).
 	libDir := filepath.Join(pgDir, "lib")
 	_ = os.Remove(filepath.Join(libDir, "timescaledb-"+timescaledbVersion+".so"))
@@ -359,15 +371,15 @@ func ensureTimescaleExtension(pgDir, siteUser, siteHome string) (ready bool, err
 	}
 
 	// Socket lives in /tmp by default for the Percona tarball — use TCP + password.
-	readyCmd := fmt.Sprintf("LD_LIBRARY_PATH=%s/lib %s/bin/pg_isready -h 127.0.0.1 -p 5432 -q", pgDir, pgDir)
+	readyCmd := fmt.Sprintf("%s %s/bin/pg_isready -h 127.0.0.1 -p 5432 -q", postgresLibEnvAssign(pgDir), pgDir)
 	if _, err := runShell(context.Background(), readyCmd); err != nil {
 		return false, nil // server not up — caller may retry
 	}
 
 	sql := `CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;`
 	cmd := fmt.Sprintf(
-		`PGPASSWORD=%q LD_LIBRARY_PATH=%q/lib %q/bin/psql.bin -h 127.0.0.1 -p 5432 -U %q -d postgres -v ON_ERROR_STOP=1 -c %q`,
-		postgresDevPassword, pgDir, pgDir, postgresSuperuser, sql,
+		`PGPASSWORD=%q %s %q -h 127.0.0.1 -p 5432 -U %q -d postgres -v ON_ERROR_STOP=1 -c %q`,
+		postgresDevPassword, postgresLibEnvAssign(pgDir), postgresPSQLBin(pgDir), postgresSuperuser, sql,
 	)
 	if out, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", cmd); err != nil {
 		return true, fmt.Errorf("postgres: CREATE EXTENSION timescaledb: %w\n%s", err, out)
