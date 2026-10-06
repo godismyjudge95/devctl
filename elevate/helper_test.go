@@ -82,6 +82,50 @@ ExecStart=/usr/local/bin/devctl daemon
 	}
 }
 
+func TestBuildLaunchAgentPlist(t *testing.T) {
+	s := BuildLaunchAgentPlist("/opt/devctl/devctl", "alice", "/Users/alice", "/Users/alice/sites/server")
+	for _, want := range []string{
+		"<string>ai.devctl</string>",
+		"<string>/opt/devctl/devctl</string>",
+		"<string>daemon</string>",
+		"<key>HOME</key>",
+		"<string>/Users/alice</string>",
+		"<key>DEVCTL_SITE_USER</key>",
+		"<string>alice</string>",
+		"<key>DEVCTL_SERVER_ROOT</key>",
+		"<string>/Users/alice/sites/server</string>",
+		"<key>RunAtLoad</key>",
+		"<true/>",
+		"<key>KeepAlive</key>",
+		"<true/>",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("plist missing %q\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "CAP_NET_BIND_SERVICE") {
+		t.Error("LaunchAgent must not set ambient capabilities")
+	}
+}
+
+func TestLaunchAgentPath(t *testing.T) {
+	got := LaunchAgentPath("/Users/alice")
+	want := "/Users/alice/Library/LaunchAgents/ai.devctl.plist"
+	if got != want {
+		t.Fatalf("LaunchAgentPath = %q, want %q", got, want)
+	}
+}
+
+func TestBuildLaunchAgentPlistEscapesXML(t *testing.T) {
+	s := BuildLaunchAgentPlist("/tmp/devctl&bin", "alice", "/Users/alice", "/tmp/a&b")
+	if !strings.Contains(s, "/tmp/devctl&amp;bin") {
+		t.Errorf("binary path not escaped:\n%s", s)
+	}
+	if !strings.Contains(s, "/tmp/a&amp;b") {
+		t.Errorf("server root not escaped:\n%s", s)
+	}
+}
+
 func TestParseCAFingerprint(t *testing.T) {
 	// Minimal self-signed-looking PEM is hard; test error paths.
 	_, err := ParseCAFingerprint([]byte("not pem"))

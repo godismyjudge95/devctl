@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -202,6 +203,13 @@ func unelevateResolver(w io.Writer) error {
 }
 
 func elevatePorts(facts Facts, w io.Writer) error {
+	if runtime.GOOS == "darwin" {
+		return elevatePortsDarwin(facts, w)
+	}
+	return elevatePortsLinux(facts, w)
+}
+
+func elevatePortsLinux(facts Facts, w io.Writer) error {
 	if err := ensureFactsForUnit(&facts); err != nil {
 		return err
 	}
@@ -238,7 +246,71 @@ func elevatePorts(facts Facts, w io.Writer) error {
 	return nil
 }
 
+func elevatePortsDarwin(facts Facts, w io.Writer) error {
+	if err := ensureFactsForUnit(&facts); err != nil {
+		return err
+	}
+	plist := LaunchAgentPath(facts.SiteHome)
+	fmt.Fprintf(w, "    writing LaunchAgent %s\n", plist)
+	if err := RunHelperSelf(w, w,
+		"write-plist",
+		"--binary", facts.BinaryPath,
+		"--user", facts.SiteUser,
+		"--home", facts.SiteHome,
+		"--server-root", facts.ServerRoot,
+	); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "    chown %s → %s\n", facts.ServerRoot, facts.SiteUser)
+	if err := RunHelperSelf(w, w,
+		"chown-tree",
+		"--path", facts.ServerRoot,
+		"--user", facts.SiteUser,
+	); err != nil {
+		return err
+	}
+	u, err := user.Lookup(facts.SiteUser)
+	if err != nil {
+		return fmt.Errorf("lookup user: %w", err)
+	}
+	domain := "gui/" + u.Uid
+	label := domain + "/" + LaunchAgentLabel
+	fmt.Fprintf(w, "    loading %s\n", label)
+	_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
+	if err := RunHelperSelf(w, w, "launchctl", "bootstrap", domain, plist); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "    ok — daemon runs as %s under launchd\n", facts.SiteUser)
+	return nil
+}
+
 func unelevatePorts(facts Facts, w io.Writer) error {
+	if runtime.GOOS == "darwin" {
+		return unelevatePortsDarwin(facts, w)
+	}
+	return unelevatePortsLinux(facts, w)
+}
+
+func unelevatePortsDarwin(facts Facts, w io.Writer) error {
+	if err := ensureFactsForUnit(&facts); err != nil {
+		return err
+	}
+	u, err := user.Lookup(facts.SiteUser)
+	if err != nil {
+		return fmt.Errorf("lookup user: %w", err)
+	}
+	label := "gui/" + u.Uid + "/" + LaunchAgentLabel
+	fmt.Fprintf(w, "    unloading %s\n", label)
+	_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
+	plist := LaunchAgentPath(facts.SiteHome)
+	if err := os.Remove(plist); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove plist: %w", err)
+	}
+	fmt.Fprintf(w, "    ok\n")
+	return nil
+}
+
+func unelevatePortsLinux(facts Facts, w io.Writer) error {
 	// Re-write unit without AmbientCapabilities (still User= to stay non-root).
 	if err := ensureFactsForUnit(&facts); err != nil {
 		return err
@@ -280,9 +352,10 @@ func elevateInstall(facts Facts, w io.Writer) error {
 	if err := elevatePorts(facts, w); err != nil {
 		return err
 	}
-	// Best-effort apt deps.
-	fmt.Fprintf(w, "    installing allowlisted apt packages (best-effort)\n")
-	_ = RunHelperSelf(w, w, "apt-install", "libnss3-tools", "libreadline-dev", "libnuma1", "build-essential")
+	if runtime.GOOS == "linux" {
+		fmt.Fprintf(w, "    installing allowlisted apt packages (best-effort)\n")
+		_ = RunHelperSelf(w, w, "apt-install", "libnss3-tools", "libreadline-dev", "libnuma1", "build-essential")
+	}
 	// trust + resolver after service is up (CA may need Caddy).
 	// Caller may re-run elevate for trust after Caddy is ready.
 	fmt.Fprintf(w, "    note: run `sudo devctl elevate trust` after Caddy has issued the local CA if trust failed\n")

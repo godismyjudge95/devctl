@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -62,6 +63,9 @@ func UnitRunsAsUser(unitPath string) bool {
 }
 
 func helperWriteUnit(args []string) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("write-unit is linux-only; use write-plist")
+	}
 	flags, _, err := parseFlags(args)
 	if err != nil {
 		return err

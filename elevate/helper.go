@@ -58,12 +58,16 @@ func RunHelper(args []string) error {
 		return helperUninstallCA(rest)
 	case "write-unit":
 		return helperWriteUnit(rest)
+	case "write-plist":
+		return helperWritePlist(rest)
 	case "chown-tree":
 		return helperChownTree(rest)
 	case "apt-install":
 		return helperAptInstall(rest)
 	case "systemctl":
 		return helperSystemctl(rest)
+	case "launchctl":
+		return helperLaunchctl(rest)
 	default:
 		return fmt.Errorf("devctl helper: unknown operation %q", op)
 	}
