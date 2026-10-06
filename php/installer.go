@@ -1,7 +1,9 @@
 package php
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -51,16 +53,16 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: resolve release assets: %w", ver, err)
 	}
 
-	// 3. Download FPM binary directly from the exact PHP binaries release.
-	if err := curlDownload(ctx, fpmURL, fpmBin); err != nil {
+	// 3. Download FPM binary.
+	if err := installPHPBinary(ctx, fpmURL, fpmBin, "php-fpm"); err != nil {
 		return fmt.Errorf("php %s: download fpm: %w", ver, err)
 	}
 	if err := os.Chmod(fpmBin, 0755); err != nil {
 		return fmt.Errorf("php %s: chmod fpm: %w", ver, err)
 	}
 
-	// 4. Download CLI binary directly from the exact PHP binaries release.
-	if err := curlDownload(ctx, cliURL, cliBin); err != nil {
+	// 4. Download CLI binary.
+	if err := installPHPBinary(ctx, cliURL, cliBin, "php"); err != nil {
 		return fmt.Errorf("php %s: download cli: %w", ver, err)
 	}
 	if err := os.Chmod(cliBin, 0755); err != nil {
@@ -139,6 +141,60 @@ func Uninstall(ctx context.Context, ver string, serverRoot string) error {
 	}
 
 	return nil
+}
+
+func installPHPBinary(ctx context.Context, url, dest, binName string) error {
+	if !strings.Contains(url, ".tar.gz") {
+		return curlDownload(ctx, url, dest)
+	}
+	tmp := dest + ".tar.gz"
+	defer os.Remove(tmp)
+	if err := curlDownload(ctx, url, tmp); err != nil {
+		return err
+	}
+	return extractNamedFromTarGz(tmp, binName, dest)
+}
+
+func extractNamedFromTarGz(tarPath, binName, dest string) error {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if filepath.Base(hdr.Name) != binName {
+			continue
+		}
+		out, err := os.OpenFile(dest+".extract", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return err
+		}
+		if err := out.Close(); err != nil {
+			return err
+		}
+		return os.Rename(dest+".extract", dest)
+	}
+	return fmt.Errorf("binary %q not found in tarball", binName)
 }
 
 // curlDownload fetches url and writes it to dest using curl.

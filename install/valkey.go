@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 	"github.com/ulikunitz/xz"
@@ -56,6 +57,9 @@ func (v *ValkeyInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if v.IsInstalled() {
 		fmt.Fprintln(w, "valkey: already installed")
 		return nil
+	}
+	if _, err := dist.For("valkey"); err != nil {
+		return fmt.Errorf("valkey: %w", err)
 	}
 
 	latest, err := v.LatestVersion(ctx)
@@ -338,7 +342,65 @@ func extractFromTarXz(tarXzPath, destDir string) error {
 	return nil
 }
 
-// extractFromTar finds the best entry whose base name matches binaryName in a
+// extractFromTarGzStrip extracts a .tar.gz into destDir, stripping the first
+// path component (the versioned top-level directory).
+func extractFromTarGzStrip(tarGzPath, destDir string) error {
+	f, err := os.Open(tarGzPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("tar next: %w", err)
+		}
+		parts := strings.SplitN(hdr.Name, "/", 2)
+		if len(parts) < 2 || parts[1] == "" {
+			continue
+		}
+		relPath := parts[1]
+		destPath := filepath.Join(destDir, relPath)
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(destPath, os.FileMode(hdr.Mode)|0755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", destPath, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				return fmt.Errorf("mkdir parent %s: %w", destPath, err)
+			}
+			out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+			if err != nil {
+				return fmt.Errorf("create %s: %w", destPath, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return fmt.Errorf("write %s: %w", destPath, err)
+			}
+			out.Close()
+		case tar.TypeSymlink:
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				return fmt.Errorf("mkdir parent for symlink %s: %w", destPath, err)
+			}
+			_ = os.Remove(destPath)
+			if err := os.Symlink(hdr.Linkname, destPath); err != nil {
+				return fmt.Errorf("symlink %s: %w", destPath, err)
+			}
+		}
+	}
+	return nil
+}
+
 // .tar.gz archive and writes it to destPath.
 //
 // When multiple matches exist (e.g. ClickHouse ships a tiny bash-completion

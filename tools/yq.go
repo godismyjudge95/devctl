@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/dist"
 )
 
 // YQ is the Tool definition for mikefarah/yq, a YAML/JSON/XML processor.
@@ -28,9 +30,13 @@ func fetchYQLatestRelease(ctx context.Context) (Release, error) {
 		return Release{}, fmt.Errorf("yq: %w", err)
 	}
 	version := strings.TrimPrefix(tag, "v")
+	a, err := dist.For("yq")
+	if err != nil {
+		return Release{}, err
+	}
 	downloadURL := fmt.Sprintf(
-		"https://github.com/mikefarah/yq/releases/download/%s/yq_linux_amd64",
-		tag,
+		"https://github.com/mikefarah/yq/releases/download/%s/%s",
+		tag, a.File,
 	)
 	return Release{Version: version, DownloadURL: downloadURL}, nil
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -146,6 +147,10 @@ func InstallManagedPostgresExtensions(ctx context.Context, w io.Writer, env Exte
 	}
 	pgDir := env.PGDir()
 	for _, ext := range managedPostgresExtensions() {
+		if runtime.GOOS == "darwin" && (ext.ID() == "timescaledb" || ext.ID() == "pgvector") {
+			fmt.Fprintf(w, "postgres: skipping %s on darwin (no vendor binary)\n", ext.ID())
+			continue
+		}
 		fmt.Fprintf(w, "postgres: ensuring extension %s...\n", ext.ID())
 		if err := ext.InstallFiles(ctx, w, pgDir); err != nil {
 			return err

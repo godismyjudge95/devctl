@@ -2,6 +2,7 @@ package install
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/internal/runuser"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
@@ -75,6 +77,10 @@ func perconaTarURL() string {
 	)
 }
 
+func edbPostgresZipURL() string {
+	return fmt.Sprintf("https://get.enterprisedb.com/postgresql/postgresql-%s-1-osx-binaries.zip", postgresVersion)
+}
+
 // PostgresInstaller downloads the Percona Distribution for PostgreSQL binary
 // tarball to {serverRoot}/postgres/, initialises the data directory as
 // siteUser (PostgreSQL refuses to start as root), and runs postgres as a
@@ -130,36 +136,45 @@ func (p *PostgresInstaller) InstallW(ctx context.Context, w io.Writer) error {
 
 	pgDir := p.postgresDir()
 	dataDir := filepath.Join(pgDir, "data")
-	// Basename must match scripts/download-artifacts.sh so the test curl shim
-	// can serve the cached tarball without hitting the network.
-	tmpTar := filepath.Join(os.TempDir(), perconaTarBasename())
-	defer os.Remove(tmpTar)
 
-	// 1. Install libreadline-dev — required by the Percona tarball binaries.
-	fmt.Fprintln(w, "postgres: installing libreadline-dev...")
-	if err := aptInstallW(ctx, w, "libreadline-dev"); err != nil {
-		return fmt.Errorf("postgres: install libreadline-dev: %w", err)
-	}
-
-	// 2. Create the install directory.
 	fmt.Fprintln(w, "postgres: creating directories...")
 	if err := os.MkdirAll(pgDir, 0755); err != nil {
 		return fmt.Errorf("postgres: create dir: %w", err)
 	}
 
-	// 3. Download the Percona tarball (~500 MB).
-	url := perconaTarURL()
-	fmt.Fprintf(w, "postgres: downloading Percona PostgreSQL %s...\n", postgresVersion)
-	if err := curlDownloadW(ctx, w, url, tmpTar); err != nil {
-		return fmt.Errorf("postgres: download: %w", err)
-	}
-
-	// 4. Extract only the percona-postgresql<major>/ subtree from the tarball,
-	//    stripping that prefix so bin/, lib/, share/, etc. land directly in pgDir.
-	fmt.Fprintln(w, "postgres: extracting tarball (server only)...")
-	subtree := fmt.Sprintf("percona-postgresql%s", postgresMajor)
-	if err := extractPercona(tmpTar, subtree, pgDir); err != nil {
-		return fmt.Errorf("postgres: extract: %w", err)
+	if runtime.GOOS == "darwin" {
+		a, err := dist.For("postgres")
+		if err != nil {
+			return fmt.Errorf("postgres: %w", err)
+		}
+		tmpZip := filepath.Join(os.TempDir(), a.File)
+		defer os.Remove(tmpZip)
+		url := edbPostgresZipURL()
+		fmt.Fprintf(w, "postgres: downloading EDB PostgreSQL %s...\n", postgresVersion)
+		if err := curlDownloadW(ctx, w, url, tmpZip); err != nil {
+			return fmt.Errorf("postgres: download: %w", err)
+		}
+		fmt.Fprintln(w, "postgres: extracting zip...")
+		if err := extractFromZipStrip(tmpZip, pgDir, "pgsql"); err != nil {
+			return fmt.Errorf("postgres: extract: %w", err)
+		}
+	} else {
+		tmpTar := filepath.Join(os.TempDir(), perconaTarBasename())
+		defer os.Remove(tmpTar)
+		fmt.Fprintln(w, "postgres: installing libreadline-dev...")
+		if err := aptInstallW(ctx, w, "libreadline-dev"); err != nil {
+			return fmt.Errorf("postgres: install libreadline-dev: %w", err)
+		}
+		url := perconaTarURL()
+		fmt.Fprintf(w, "postgres: downloading Percona PostgreSQL %s...\n", postgresVersion)
+		if err := curlDownloadW(ctx, w, url, tmpTar); err != nil {
+			return fmt.Errorf("postgres: download: %w", err)
+		}
+		fmt.Fprintln(w, "postgres: extracting tarball (server only)...")
+		subtree := fmt.Sprintf("percona-postgresql%s", postgresMajor)
+		if err := extractPercona(tmpTar, subtree, pgDir); err != nil {
+			return fmt.Errorf("postgres: extract: %w", err)
+		}
 	}
 
 	// 5. Transfer ownership of the entire postgres directory to siteUser when
@@ -416,6 +431,51 @@ func extractPercona(tarGzPath, subtreePrefix, destDir string) error {
 			if err := os.Symlink(hdr.Linkname, destPath); err != nil {
 				return fmt.Errorf("symlink %s: %w", destPath, err)
 			}
+		}
+	}
+	return nil
+}
+
+func extractFromZipStrip(zipPath, destDir, stripPrefix string) error {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	prefix := strings.TrimSuffix(stripPrefix, "/") + "/"
+	for _, f := range r.File {
+		name := strings.TrimPrefix(f.Name, "./")
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		rel := strings.TrimPrefix(name, prefix)
+		if rel == "" {
+			continue
+		}
+		destPath := filepath.Join(destDir, rel)
+		if f.FileInfo().IsDir() || strings.HasSuffix(name, "/") {
+			if err := os.MkdirAll(destPath, 0755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", destPath, err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("mkdir parent %s: %w", destPath, err)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, copyErr := io.Copy(out, rc)
+		out.Close()
+		rc.Close()
+		if copyErr != nil {
+			return fmt.Errorf("write %s: %w", destPath, copyErr)
 		}
 	}
 	return nil

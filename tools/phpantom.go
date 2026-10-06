@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/dist"
 )
 
 // PHPantom is the Tool definition for phpantom_lsp, a PHP language server.
@@ -28,9 +30,13 @@ func fetchPHPantomLatestRelease(ctx context.Context) (Release, error) {
 		return Release{}, fmt.Errorf("phpantom_lsp: %w", err)
 	}
 	version := strings.TrimPrefix(tag, "v")
+	a, err := dist.For("phpantom_lsp")
+	if err != nil {
+		return Release{}, err
+	}
 	downloadURL := fmt.Sprintf(
-		"https://github.com/PHPantom-dev/phpantom_lsp/releases/download/%s/phpantom_lsp-x86_64-unknown-linux-gnu.tar.gz",
-		tag,
+		"https://github.com/PHPantom-dev/phpantom_lsp/releases/download/%s/phpantom_lsp-%s.tar.gz",
+		tag, a.Token,
 	)
 	return Release{Version: version, DownloadURL: downloadURL}, nil
 }

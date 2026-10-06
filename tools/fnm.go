@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/dist"
 )
 
 // FNM is the Tool definition for fnm (Fast Node Manager), a fast
@@ -38,9 +40,13 @@ func fetchFNMLatestRelease(ctx context.Context) (Release, error) {
 	// Strip leading "v" for the Version field so it matches `fnm --version`
 	// output (e.g. tag "v1.39.0" → version "1.39.0").
 	version := strings.TrimPrefix(tag, "v")
+	a, err := dist.For("fnm")
+	if err != nil {
+		return Release{}, err
+	}
 	downloadURL := fmt.Sprintf(
-		"https://github.com/Schniz/fnm/releases/download/%s/fnm-linux.zip",
-		tag,
+		"https://github.com/Schniz/fnm/releases/download/%s/%s",
+		tag, a.File,
 	)
 
 	return Release{

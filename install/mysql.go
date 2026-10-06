@@ -6,15 +6,23 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
 
-// mysqlVersion is the MySQL 8.4 LTS version to install.
-// Update this constant to pick up a newer release.
+// mysqlVersion is the MySQL 8.4 LTS version to install on Linux (Ubuntu debs).
 const mysqlVersion = "8.4.8"
+
+// mysqlDarwinVersion is the official macos15-arm64 tarball. 8.4.8 has no Darwin build.
+const mysqlDarwinVersion = "8.4.11"
+
+func mysqlTarballURL(a dist.Asset) string {
+	return fmt.Sprintf("https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-%s-%s.tar.gz", mysqlDarwinVersion, a.Token)
+}
 
 // mysqlDebURL returns the CDN URL for one of the Ubuntu-specific MySQL
 // community .deb packages. These debs bundle their own private copies of
@@ -55,6 +63,9 @@ func (m *MySQLInstaller) Install(ctx context.Context) error {
 // existing installation. This fixes installations created before plugin
 // extraction was added. It is a no-op if all required files are already present.
 func EnsureMySQLPlugins(serverRoot string) error {
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
 	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
 	mysqldPath := filepath.Join(mysqlDir, "bin", "mysqld")
 	if !fileExists(mysqldPath) {
@@ -108,6 +119,79 @@ func (m *MySQLInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		fmt.Fprintln(w, "mysql: already installed")
 		return nil
 	}
+	if runtime.GOOS == "darwin" {
+		return m.installDarwinTarball(ctx, w)
+	}
+	return m.installLinuxDebs(ctx, w)
+}
+
+func (m *MySQLInstaller) installDarwinTarball(ctx context.Context, w io.Writer) error {
+	a, err := dist.For("mysql")
+	if err != nil {
+		return fmt.Errorf("mysql: %w", err)
+	}
+	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
+	dataDir := filepath.Join(mysqlDir, "data")
+	binDir := filepath.Join(mysqlDir, "bin")
+	tmpTar := filepath.Join(os.TempDir(), a.File)
+	defer os.Remove(tmpTar)
+
+	fmt.Fprintln(w, "mysql: creating directories...")
+	for _, dir := range []string{mysqlDir, dataDir, filepath.Join(mysqlDir, "mysql-files")} {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return fmt.Errorf("mysql: create dir %s: %w", dir, err)
+		}
+	}
+
+	url := mysqlTarballURL(a)
+	fmt.Fprintf(w, "mysql: downloading %s...\n", mysqlDarwinVersion)
+	if err := curlDownloadW(ctx, w, url, tmpTar); err != nil {
+		return fmt.Errorf("mysql: download: %w", err)
+	}
+	fmt.Fprintln(w, "mysql: extracting tarball...")
+	if err := extractFromTarGzStrip(tmpTar, mysqlDir); err != nil {
+		return fmt.Errorf("mysql: extract: %w", err)
+	}
+
+	fmt.Fprintln(w, "mysql: writing my.cnf...")
+	sockPath := filepath.Join(mysqlDir, "mysql.sock")
+	myCnf := fmt.Sprintf(
+		"[client]\nsocket=%s\n\n[mysqld]\nbasedir=%s\ndatadir=%s\nsocket=%s\npid-file=%s\nlog-error=%s\nport=3306\nbind-address=127.0.0.1\nsecure-file-priv=%s\n",
+		sockPath,
+		mysqlDir,
+		dataDir,
+		sockPath,
+		filepath.Join(mysqlDir, "mysql.pid"),
+		filepath.Join(mysqlDir, "mysql-error.log"),
+		filepath.Join(mysqlDir, "mysql-files"),
+	)
+	if err := os.WriteFile(filepath.Join(mysqlDir, "my.cnf"), []byte(myCnf), 0644); err != nil {
+		return fmt.Errorf("mysql: write my.cnf: %w", err)
+	}
+
+	fmt.Fprintln(w, "mysql: initialising data directory...")
+	initCmd := fmt.Sprintf(
+		"%s --initialize-insecure --user=root --datadir=%s --basedir=%s",
+		filepath.Join(binDir, "mysqld"),
+		dataDir,
+		mysqlDir,
+	)
+	if out, err := runShellW(ctx, w, initCmd); err != nil {
+		return fmt.Errorf("mysql: initialize: %w\n%s", err, out)
+	}
+
+	if m.siteUser != "" {
+		fmt.Fprintf(w, "mysql: chowning %s to %s...\n", mysqlDir, m.siteUser)
+		chownCmd := fmt.Sprintf("chown -R %s:%s %s", m.siteUser, m.siteUser, mysqlDir)
+		if out, err := runShellW(ctx, w, chownCmd); err != nil {
+			return fmt.Errorf("mysql: chown: %w\n%s", err, out)
+		}
+	}
+	fmt.Fprintln(w, "mysql: install complete")
+	return nil
+}
+
+func (m *MySQLInstaller) installLinuxDebs(ctx context.Context, w io.Writer) error {
 
 	mysqlDir := paths.ServiceDir(m.serverRoot, "mysql")
 	binDir := filepath.Join(mysqlDir, "bin")

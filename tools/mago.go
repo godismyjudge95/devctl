@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/dist"
 )
 
 // Mago is the Tool definition for mago, a toolchain for PHP development.
@@ -34,9 +36,13 @@ func fetchMagoLatestRelease(ctx context.Context) (Release, error) {
 
 	// mago tags have no leading "v" (e.g. "1.20.1"), so the tag is used
 	// as-is for both the Version field and the download URL.
+	a, err := dist.For("mago")
+	if err != nil {
+		return Release{}, err
+	}
 	downloadURL := fmt.Sprintf(
-		"https://github.com/carthage-software/mago/releases/download/%s/mago-%s-x86_64-unknown-linux-gnu.tar.gz",
-		tag, tag,
+		"https://github.com/carthage-software/mago/releases/download/%s/mago-%s-%s.tar.gz",
+		tag, tag, a.Token,
 	)
 
 	return Release{

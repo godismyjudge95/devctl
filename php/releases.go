@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/internal/httplog"
 )
 
@@ -256,6 +257,13 @@ func LatestReleaseManifest(ctx context.Context) (*ReleaseManifest, error) {
 }
 
 func AssetURLsForMinor(ctx context.Context, minor string) (cliURL, fpmURL string, manifest *ReleaseManifest, err error) {
+	if useStaticPHP() {
+		a, err := dist.For("php")
+		if err != nil {
+			return "", "", nil, err
+		}
+		return staticPHPAssetURLs(ctx, minor, a)
+	}
 	manifest, err = LatestReleaseManifest(ctx)
 	if err != nil {
 		return "", "", nil, err

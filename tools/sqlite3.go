@@ -16,14 +16,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/dist"
 )
 
-var (
-	// sqlitePathRe matches the relative download path for the linux/x64 tools
-	// bundle, e.g. "2024/sqlite-tools-linux-x64-3460100.zip", capturing
-	// sub-match 1 = full path, sub-match 2 = version integer string.
-	sqlitePathRe = regexp.MustCompile(`(\d{4}/sqlite-tools-linux-x64-(\d+)\.zip)`)
-)
+func sqliteToolsPathRe() *regexp.Regexp {
+	a, err := dist.For("sqlite3")
+	token := "linux-x64"
+	if err == nil && a.Token != "" {
+		token = a.Token
+	}
+	return regexp.MustCompile(`(\d{4}/sqlite-tools-` + regexp.QuoteMeta(token) + `-(\d+)\.zip)`)
+}
 
 // SQLite3 is the Tool definition for the official SQLite3 CLI binary.
 // It downloads the pre-compiled linux/x64 tools bundle from sqlite.org,
@@ -66,9 +70,9 @@ func fetchSQLite3LatestRelease(ctx context.Context) (Release, error) {
 		return Release{}, fmt.Errorf("sqlite3: read download page: %w", err)
 	}
 
-	match := sqlitePathRe.FindSubmatch(body)
+	match := sqliteToolsPathRe().FindSubmatch(body)
 	if match == nil {
-		return Release{}, fmt.Errorf("sqlite3: linux/x64 tools zip not found on download page")
+		return Release{}, fmt.Errorf("sqlite3: tools zip not found on download page")
 	}
 
 	relPath := string(match[1])    // e.g. "2024/sqlite-tools-linux-x64-3460100.zip"

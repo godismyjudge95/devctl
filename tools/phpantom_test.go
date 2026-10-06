@@ -9,7 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/danielgormly/devctl/dist"
 )
+
+func mustToolAsset(t *testing.T, name string) dist.Asset {
+	t.Helper()
+	a, err := dist.For(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
 
 func TestFetchPHPantomLatestRelease_BuildsLinuxURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +40,7 @@ func TestFetchPHPantomLatestRelease_BuildsLinuxURL(t *testing.T) {
 	if rel.Version != "0.10.0" {
 		t.Fatalf("Version = %q", rel.Version)
 	}
-	want := "https://github.com/PHPantom-dev/phpantom_lsp/releases/download/0.10.0/phpantom_lsp-x86_64-unknown-linux-gnu.tar.gz"
+	want := "https://github.com/PHPantom-dev/phpantom_lsp/releases/download/0.10.0/phpantom_lsp-" + mustToolAsset(t, "phpantom_lsp").Token + ".tar.gz"
 	if rel.DownloadURL != want {
 		t.Fatalf("DownloadURL = %q", rel.DownloadURL)
 	}
@@ -65,7 +76,7 @@ func TestFetchYQLatestRelease_StripsV(t *testing.T) {
 	if rel.Version != "4.53.6" {
 		t.Fatalf("Version = %q, want 4.53.6", rel.Version)
 	}
-	if !strings.Contains(rel.DownloadURL, "v4.53.6/yq_linux_amd64") {
+	if !strings.Contains(rel.DownloadURL, "v4.53.6/"+mustToolAsset(t, "yq").File) {
 		t.Fatalf("DownloadURL = %q", rel.DownloadURL)
 	}
 }
