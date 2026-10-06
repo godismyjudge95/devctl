@@ -22,6 +22,7 @@ type Site struct {
 	Framework      string  `json:"framework"`
 	ParentSiteID   *string `json:"parent_site_id"`
 	WorktreeBranch *string `json:"worktree_branch"`
+	ServiceVhost   int     `json:"service_vhost"`
 	CreatedAt      string  `json:"created_at"`
 	UpdatedAt      string  `json:"updated_at"`
 }
@@ -50,6 +51,30 @@ func TestGetSites_IfPopulated_FieldsAreNonEmpty(t *testing.T) {
 		}
 		if s.Domain == "" {
 			t.Errorf("site[%d] (id=%q): domain is empty", i, s.ID)
+		}
+	}
+}
+
+var serviceSiteDomains = map[string]bool{
+	"meilisearch.test": true,
+	"typesense.test":   true,
+	"maxio.test":       true,
+	"s3.maxio.test":    true,
+	"reverb.test":      true,
+	"devctl.test":      true,
+}
+
+// TestGetSites_ExcludesServiceVhosts verifies GET /api/sites is the user
+// sites panel: managed service domains must not appear.
+func TestGetSites_ExcludesServiceVhosts(t *testing.T) {
+	body := httpGet(t, "/api/sites")
+	sites := decodeJSON[[]Site](t, body)
+	for _, s := range sites {
+		if s.ServiceVhost != 0 {
+			t.Errorf("GET /api/sites included service vhost %s", s.Domain)
+		}
+		if serviceSiteDomains[s.Domain] {
+			t.Errorf("GET /api/sites included service domain %s", s.Domain)
 		}
 	}
 }
