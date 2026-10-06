@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -22,10 +23,11 @@ const (
 )
 
 type ReleaseManifest struct {
-	ReleaseTag  string                   `json:"release_tag"`
-	BuiltAt     string                   `json:"built_at"`
-	PHPVersions map[string]string        `json:"php_versions"`
-	Assets      map[string]ReleaseAssets `json:"assets"`
+	ReleaseTag     string                              `json:"release_tag"`
+	BuiltAt        string                              `json:"built_at"`
+	PHPVersions    map[string]string                   `json:"php_versions"`
+	Assets         map[string]ReleaseAssets            `json:"assets"`
+	PlatformAssets map[string]map[string]ReleaseAssets `json:"platform_assets,omitempty"`
 }
 
 type ReleaseAssets struct {
@@ -182,70 +184,76 @@ func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, er
 	if manifest.Assets == nil {
 		manifest.Assets = map[string]ReleaseAssets{}
 	}
+	if manifest.PlatformAssets == nil {
+		manifest.PlatformAssets = map[string]map[string]ReleaseAssets{}
+	}
 	return &manifest, nil
 }
 
 // synthesizeManifestFromAssets builds a ReleaseManifest by scanning release
-// assets named php-{minor}-{cli|fpm}-linux-x86_64. Patch versions are unknown
+// assets named php-{minor}-{cli|fpm}-{platform}. Patch versions are unknown
 // without a real manifest, so PHPVersions is left empty.
 func synthesizeManifestFromAssets(tag string, release *githubRelease) (*ReleaseManifest, error) {
-	assets := map[string]ReleaseAssets{}
+	type key struct {
+		minor, platform string
+	}
+	collected := map[key]ReleaseAssets{}
 	for _, asset := range release.Assets {
-		minor, kind, ok := parsePHPBinaryAssetName(asset.Name)
+		minor, kind, platform, ok := parsePHPBinaryAsset(asset.Name)
 		if !ok {
 			continue
 		}
-		entry := assets[minor]
+		k := key{minor, platform}
+		entry := collected[k]
 		switch kind {
 		case "cli":
 			entry.CLI = asset.Name
 		case "fpm":
 			entry.FPM = asset.Name
 		}
-		assets[minor] = entry
+		collected[k] = entry
 	}
-	// Keep only minors that have both CLI and FPM.
-	complete := map[string]ReleaseAssets{}
-	for minor, a := range assets {
-		if a.CLI != "" && a.FPM != "" {
-			complete[minor] = a
+	platformAssets := map[string]map[string]ReleaseAssets{}
+	assets := map[string]ReleaseAssets{}
+	for k, a := range collected {
+		if a.CLI == "" || a.FPM == "" {
+			continue
+		}
+		if platformAssets[k.platform] == nil {
+			platformAssets[k.platform] = map[string]ReleaseAssets{}
+		}
+		platformAssets[k.platform][k.minor] = a
+		if k.platform == "linux-x86_64" {
+			assets[k.minor] = a
 		}
 	}
-	if len(complete) == 0 {
-		return nil, fmt.Errorf("no php-{ver}-{cli|fpm}-linux-x86_64 assets found")
+	if len(assets) == 0 && len(platformAssets) == 0 {
+		return nil, fmt.Errorf("no php-{ver}-{cli|fpm}-{platform} assets found")
 	}
 	return &ReleaseManifest{
-		ReleaseTag:  tag,
-		PHPVersions: map[string]string{},
-		Assets:      complete,
+		ReleaseTag:     tag,
+		PHPVersions:    map[string]string{},
+		Assets:         assets,
+		PlatformAssets: platformAssets,
 	}, nil
+}
+
+var phpBinaryAssetRe = regexp.MustCompile(`^php-(\d+\.\d+)-(cli|fpm)-(linux-x86_64|macos-aarch64)$`)
+
+func parsePHPBinaryAsset(name string) (minor, kind, platform string, ok bool) {
+	m := phpBinaryAssetRe.FindStringSubmatch(name)
+	if m == nil {
+		return "", "", "", false
+	}
+	return m[1], m[2], m[3], true
 }
 
 // parsePHPBinaryAssetName extracts minor version and kind ("cli"/"fpm") from
 // names like php-8.4-cli-linux-x86_64. Returns ok=false when the name does not
 // match.
 func parsePHPBinaryAssetName(name string) (minor, kind string, ok bool) {
-	// php-<minor>-<kind>-linux-x86_64
-	const suffix = "-linux-x86_64"
-	if !strings.HasPrefix(name, "php-") || !strings.HasSuffix(name, suffix) {
-		return "", "", false
-	}
-	mid := strings.TrimSuffix(strings.TrimPrefix(name, "php-"), suffix) // e.g. "8.4-cli"
-	// Split on last hyphen so minors like "8.4" work; kind is the final segment.
-	i := strings.LastIndex(mid, "-")
-	if i <= 0 || i == len(mid)-1 {
-		return "", "", false
-	}
-	minor = mid[:i]
-	kind = mid[i+1:]
-	if kind != "cli" && kind != "fpm" {
-		return "", "", false
-	}
-	// Basic minor sanity: must look like N.N
-	if !strings.Contains(minor, ".") {
-		return "", "", false
-	}
-	return minor, kind, true
+	minor, kind, _, ok = parsePHPBinaryAsset(name)
+	return
 }
 
 func LatestReleaseManifest(ctx context.Context) (*ReleaseManifest, error) {
@@ -256,37 +264,72 @@ func LatestReleaseManifest(ctx context.Context) (*ReleaseManifest, error) {
 	return FetchReleaseManifest(ctx, tag)
 }
 
-func AssetURLsForMinor(ctx context.Context, minor string) (cliURL, fpmURL string, manifest *ReleaseManifest, err error) {
-	if useStaticPHP() {
-		a, err := dist.For("php")
-		if err != nil {
-			return "", "", nil, err
-		}
-		return staticPHPAssetURLs(ctx, minor, a)
+func phpPlatformToken() string {
+	a, err := dist.For("php")
+	if err != nil {
+		return "linux-x86_64"
 	}
+	return a.Token
+}
+
+// Lookup returns CLI/FPM asset names for minor on platform.
+// New manifests use platform_assets. Old manifests only fill assets (linux).
+func (m *ReleaseManifest) Lookup(minor, platform string) (ReleaseAssets, bool) {
+	if m == nil {
+		return ReleaseAssets{}, false
+	}
+	if len(m.PlatformAssets) > 0 {
+		a, ok := m.PlatformAssets[platform][minor]
+		if ok && a.CLI != "" && a.FPM != "" {
+			return a, true
+		}
+		return ReleaseAssets{}, false
+	}
+	if platform != "linux-x86_64" {
+		return ReleaseAssets{}, false
+	}
+	a, ok := m.Assets[minor]
+	if !ok || a.CLI == "" || a.FPM == "" {
+		return ReleaseAssets{}, false
+	}
+	return a, true
+}
+
+func AssetURLsForMinor(ctx context.Context, minor string) (cliURL, fpmURL string, manifest *ReleaseManifest, err error) {
+	return assetURLsForMinorOn(ctx, minor, phpPlatformToken())
+}
+
+func assetURLsForMinorOn(ctx context.Context, minor, platform string) (cliURL, fpmURL string, manifest *ReleaseManifest, err error) {
 	manifest, err = LatestReleaseManifest(ctx)
 	if err != nil {
 		return "", "", nil, err
 	}
-	assets, ok := manifest.Assets[minor]
+	assets, ok := manifest.Lookup(minor, platform)
 	if !ok {
-		return "", "", nil, fmt.Errorf("php %s is not available in release %s (available: %s)",
-			minor, manifest.ReleaseTag, strings.Join(sortedAssetMinors(manifest), ", "))
-	}
-	if assets.CLI == "" || assets.FPM == "" {
-		return "", "", nil, fmt.Errorf("php release %s has incomplete assets for %s", manifest.ReleaseTag, minor)
+		return "", "", nil, fmt.Errorf("php %s is not available for %s in release %s (available: %s)",
+			minor, platform, manifest.ReleaseTag, strings.Join(sortedAssetMinorsFor(manifest, platform), ", "))
 	}
 	base := githubDownloadBase() + "/" + manifest.ReleaseTag + "/"
 	return base + assets.CLI, base + assets.FPM, manifest, nil
 }
 
 func sortedAssetMinors(manifest *ReleaseManifest) []string {
-	if manifest == nil || len(manifest.Assets) == 0 {
+	return sortedAssetMinorsFor(manifest, phpPlatformToken())
+}
+
+func sortedAssetMinorsFor(manifest *ReleaseManifest, platform string) []string {
+	if manifest == nil {
 		return nil
 	}
-	minors := make([]string, 0, len(manifest.Assets))
-	for m := range manifest.Assets {
-		minors = append(minors, m)
+	var minors []string
+	if len(manifest.PlatformAssets) > 0 {
+		for m := range manifest.PlatformAssets[platform] {
+			minors = append(minors, m)
+		}
+	} else if platform == "linux-x86_64" {
+		for m := range manifest.Assets {
+			minors = append(minors, m)
+		}
 	}
 	sort.Strings(minors)
 	return minors

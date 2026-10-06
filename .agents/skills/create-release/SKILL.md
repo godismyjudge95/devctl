@@ -13,8 +13,8 @@ There are two independent release types in this repo:
 
 | Release type | Tag format | GitHub Actions triggered | Binary attached |
 |---|---|---|---|
-| devctl binary | `v1.2.3` | `release.yml` | `devctl` (linux-x86_64) |
-| PHP binaries | `php-binaries-YYYYMMDD.N` | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 7.0–8.5 plus `php-binaries.json` |
+| devctl binary | `v1.2.3` | `release.yml` | `devctl-linux-x86_64` and `devctl-macos-aarch64` |
+| PHP binaries | `php-binaries-YYYYMMDD.N` | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 7.0–8.5, `php-{ver}-{cli,fpm}-macos-aarch64` for 8.0–8.5, plus `php-binaries.json` |
 
 They are fully independent — you can do either or both. PHP binaries now use unique immutable tags, and devctl discovers the newest `php-binaries-*` release plus its `php-binaries.json` manifest at install/update time.
 
@@ -96,7 +96,7 @@ gh release create vX.Y.Z \
   --notes-file /tmp/release-notes.md
 ```
 
-`release.yml` will fire automatically and attach the `devctl` binary.
+`release.yml` will fire automatically. It builds Linux (`ubuntu-24.04`) and macOS (`macos-26` Apple silicon) in parallel, then a follow-up job attaches `devctl-linux-x86_64` and `devctl-macos-aarch64`. Use **workflow_dispatch** to test the builds without attaching files.
 
 > **Note:** If you need to move the tag after creation (e.g. because a commit was made after tagging), delete and re-create the tag, then re-publish the release — moving a tag puts the GitHub release back into draft:
 > ```sh
@@ -116,10 +116,11 @@ Release PHP binaries **separately** from the devctl binary. Do this when:
 
 PHP binaries use unique immutable tags such as `php-binaries-20260422.1`. Publishing a new PHP binaries release does not replace older ones; devctl discovers the newest matching release automatically.
 
-**Compile 8.x locally first.** GitHub Actions is a terrible place to iterate on static-php-cli failures. Prove the current extension list with the Docker mirror of the compile cells before tagging:
+**Compile 8.x locally first.** GitHub Actions is a terrible place to iterate on static-php-cli failures. Prove the current extension list before tagging:
 
 ```sh
-scripts/local-build-php8.sh 8.4
+scripts/local-build-php8.sh 8.4          # Linux (Docker / Alpine)
+scripts/local-build-php8-macos.sh 8.4    # macOS Apple silicon (native ./bin/spc)
 ```
 
 PHP 8.0 **is** compiled. Prove it with `scripts/local-build-php8.sh 8.0` after changing `scripts/patch-spc-for-php80.sh`. Keep the 8.0 pins (libxml2 2.12.10, libxslt 1.1.39, ICU 70.1, ImageMagick 7.1.2-30, imagick 3.8.1). After download, drop the zstd and brotli stub files (PHP 8.0 gen_stub cannot parse `const`; `zstd.c` / `brotli.c` already ship inline arginfo). Do not add protobuf or opentelemetry on 8.0 (current PECL needs PHP 8.1+). Do not add pcov on 8.0 (PECL cfg/704 zend_cfg fails the in-tree static make). Fix any 8.0–8.5 compile errors in `build-php.yml` / `scripts/php8-exts.sh` / `scripts/patch-spc-for-php8.sh` / `scripts/patch-spc-for-php80.sh` / the local script, then tag. The 8.1–8.5 list must keep **mysqli**, **sodium**, **spx**, and **pcov**. The 8.0 list must keep **mysqli**, **sodium**, and **spx**. Keep the libaom v3.12.1 and libevent 2.1.12 pins in `patch-spc-for-php8.sh` (current spc defaults fail the imagick/event compile). static-php-cli marks pcov shared-only; the patch enables a static compile (extract into `php-src/ext/pcov`, plus `config/spc-pcov-static.php` so config.m4 does not call php-config or overwrite `PHP_VERSION`).
@@ -150,7 +151,7 @@ gh release create "$PHP_TAG" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`), builds supported PHP minors in parallel (legacy 7.x with mysqli/pdo_pgsql/pdo_sqlite, compiled 8.0–8.5 with the custom set including mysqli/sodium/spx/pcov), and attaches the binaries plus `php-binaries.json` to this release.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`). It builds Linux 7.x plus Linux and macOS 8.0–8.5 in parallel (same custom 8.x extension set: mysqli/sodium/spx/pcov; 8.2+ also swoole). macOS 7.x is not built. The job attaches the binaries plus `php-binaries.json`.
 
 ### 2.4 Verify
 
@@ -160,11 +161,17 @@ php-7.0-cli-linux-x86_64 / php-7.0-fpm-linux-x86_64
 php-7.2-cli-linux-x86_64 / php-7.2-fpm-linux-x86_64
 php-7.4-cli-linux-x86_64 / php-7.4-fpm-linux-x86_64
 php-8.0-cli-linux-x86_64 / php-8.0-fpm-linux-x86_64
+php-8.0-cli-macos-aarch64 / php-8.0-fpm-macos-aarch64
 php-8.1-cli-linux-x86_64 / php-8.1-fpm-linux-x86_64
+php-8.1-cli-macos-aarch64 / php-8.1-fpm-macos-aarch64
 php-8.2-cli-linux-x86_64 / php-8.2-fpm-linux-x86_64
+php-8.2-cli-macos-aarch64 / php-8.2-fpm-macos-aarch64
 php-8.3-cli-linux-x86_64 / php-8.3-fpm-linux-x86_64
+php-8.3-cli-macos-aarch64 / php-8.3-fpm-macos-aarch64
 php-8.4-cli-linux-x86_64 / php-8.4-fpm-linux-x86_64
+php-8.4-cli-macos-aarch64 / php-8.4-fpm-macos-aarch64
 php-8.5-cli-linux-x86_64 / php-8.5-fpm-linux-x86_64
+php-8.5-cli-macos-aarch64 / php-8.5-fpm-macos-aarch64
 php-binaries.json
 ```
 
@@ -183,7 +190,7 @@ curl -sIL "https://github.com/godismyjudge95/devctl/releases/download/${PHP_TAG}
 - [ ] Remove stale backlog items if needed
 - [ ] `git add TODO.md && git commit -m "chore: prepare vX.Y.Z release"`
 - [ ] `git tag vX.Y.Z && git push origin main vX.Y.Z`
-- [ ] `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-notes.md` — `release.yml` attaches binary automatically
+- [ ] `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-notes.md` — `release.yml` attaches `devctl-linux-x86_64` and `devctl-macos-aarch64` automatically
 
 ## Checklist — PHP binaries release
 

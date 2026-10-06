@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.16.0 — 2026-10-06
 
+- GitHub releases now attach platform-named binaries: `devctl-linux-x86_64` and `devctl-macos-aarch64`. Self-update downloads the asset for the current OS.
+- PHP **8.0–8.5** static builds compile on macOS with the same extension set as Linux (**mysqli**, **sodium**, **spx**, **pcov**, **ffi**; **swoole** on 8.2+). macOS install uses GitHub `php-binaries-*` instead of static-php.dev. Legacy PHP **7.x** stays Linux-only.
 - PHP **8.0** static builds pin ImageMagick 7.1.2-30 and imagick 3.8.1 so CI does not pull a newer unversioned pair that fails the 8.0 compile. After download, 8.0 also drops the zstd and brotli stub files (PHP 8.0 gen_stub cannot parse `const`). Failed compile jobs now upload `spc.output.log` / `spc.shell.log`.
 
 ## v0.14.0 — 2026-08-27

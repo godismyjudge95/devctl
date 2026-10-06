@@ -117,20 +117,26 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 
 ### From a release binary
 
-Download the latest binary from the [Releases](https://github.com/godismyjudge95/devctl/releases) page, then run the interactive installer.
+Download the latest binary from the [Releases](https://github.com/godismyjudge95/devctl/releases) page, then run the interactive installer. Linux uses `devctl-linux-x86_64`. macOS (Apple silicon) uses `devctl-macos-aarch64`.
 
 **Linux:**
 
 ```sh
-chmod +x devctl
-sudo ./devctl install
+chmod +x devctl-linux-x86_64
+sudo ./devctl-linux-x86_64 install
 ```
 
 **macOS:**
 
 ```sh
-chmod +x devctl
-./devctl install
+chmod +x devctl-macos-aarch64
+./devctl-macos-aarch64 install
+```
+
+If macOS blocks the download (`com.apple.quarantine`), clear the attribute first:
+
+```sh
+xattr -d com.apple.quarantine ./devctl-macos-aarch64
 ```
 
 Do not run the macOS installer as root. It writes `~/Library/LaunchAgents/ai.devctl.plist` and loads it with `launchctl`.
@@ -189,7 +195,7 @@ When a newer version is available an amber **↑** button appears next to the **
 
 **How it works:**
 
-1. The current binary is downloaded from the GitHub release page and verified by running `--version`.
+1. The OS-specific binary is downloaded from the GitHub release (`devctl-linux-x86_64` on Linux, `devctl-macos-aarch64` on macOS) and verified by running `--version`.
 2. The running binary is backed up as `devctl.bak` next to the installed binary.
 3. The new binary replaces the current one atomically.
 4. Linux: `systemctl restart devctl`. macOS: LaunchAgent `KeepAlive` restarts the process.
@@ -252,7 +258,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 | Laravel Reverb | `127.0.0.1:7383` | `reverb.test` | [packagist.org/laravel/reverb](https://packagist.org/packages/laravel/reverb) (via Composer) | `{serverRoot}/reverb/.env` |
 | MaxIO | `127.0.0.1:9900` (S3 API) | `maxio.test`, `s3.maxio.test` | [github.com/coollabsio/maxio](https://github.com/coollabsio/maxio/releases) (always latest) | `{serverRoot}/maxio/config.env` |
 | ClickHouse | `127.0.0.1:8123` (HTTP), `127.0.0.1:9000` (native TCP) | — | Linux: [packages.clickhouse.com/tgz](https://packages.clickhouse.com/tgz/stable/). macOS: [builds.clickhouse.com](https://builds.clickhouse.com/master/macos-aarch64/clickhouse). | `{serverRoot}/clickhouse/config.xml` |
-| PHP-FPM (per version) | Unix socket | — | Linux: GitHub `php-binaries-*`. macOS: [static-php.dev](https://static-php.dev) macos-aarch64. | `{serverRoot}/php/{version}/php.ini` |
+| PHP-FPM (per version) | Unix socket | — | GitHub `php-binaries-*` (`linux-x86_64` and `macos-aarch64` for PHP 8.0–8.5; legacy 7.x is linux-only) | `{serverRoot}/php/{version}/php.ini` |
 
 **Notes:**
 

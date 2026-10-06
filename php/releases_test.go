@@ -259,6 +259,8 @@ func TestParsePHPBinaryAssetName(t *testing.T) {
 		{"php-8.4-cli-linux-x86_64", "8.4", "cli", true},
 		{"php-8.1-fpm-linux-x86_64", "8.1", "fpm", true},
 		{"php-7.4-cli-linux-x86_64", "7.4", "cli", true},
+		{"php-8.4-cli-macos-aarch64", "8.4", "cli", true},
+		{"php-8.4-fpm-macos-aarch64", "8.4", "fpm", true},
 		{"devctl", "", "", false},
 		{"php-binaries.json", "", "", false},
 		{"php-8.4-linux-x86_64", "", "", false},
@@ -309,6 +311,140 @@ func TestAssetURLsForMinor_WorksWithSynthesizedManifest(t *testing.T) {
 	}
 	if fpmURL != wantFPM {
 		t.Fatalf("fpmURL = %q, want %q", fpmURL, wantFPM)
+	}
+}
+
+func TestParsePHPBinaryAsset_Platform(t *testing.T) {
+	minor, kind, platform, ok := parsePHPBinaryAsset("php-8.4-cli-macos-aarch64")
+	if !ok || minor != "8.4" || kind != "cli" || platform != "macos-aarch64" {
+		t.Fatalf("got (%q, %q, %q, %v)", minor, kind, platform, ok)
+	}
+	_, _, linuxPlat, ok := parsePHPBinaryAsset("php-8.4-cli-linux-x86_64")
+	if !ok || linuxPlat != "linux-x86_64" {
+		t.Fatalf("linux platform = %q ok=%v", linuxPlat, ok)
+	}
+}
+
+func TestReleaseManifestLookup_PlatformAssets(t *testing.T) {
+	m := &ReleaseManifest{
+		Assets: map[string]ReleaseAssets{
+			"8.4": {CLI: "php-8.4-cli-linux-x86_64", FPM: "php-8.4-fpm-linux-x86_64"},
+		},
+		PlatformAssets: map[string]map[string]ReleaseAssets{
+			"linux-x86_64": {
+				"8.4": {CLI: "php-8.4-cli-linux-x86_64", FPM: "php-8.4-fpm-linux-x86_64"},
+			},
+			"macos-aarch64": {
+				"8.4": {CLI: "php-8.4-cli-macos-aarch64", FPM: "php-8.4-fpm-macos-aarch64"},
+			},
+		},
+	}
+	a, ok := m.Lookup("8.4", "macos-aarch64")
+	if !ok || a.CLI != "php-8.4-cli-macos-aarch64" {
+		t.Fatalf("macos lookup = %+v ok=%v", a, ok)
+	}
+	a, ok = m.Lookup("8.4", "linux-x86_64")
+	if !ok || a.CLI != "php-8.4-cli-linux-x86_64" {
+		t.Fatalf("linux lookup = %+v ok=%v", a, ok)
+	}
+	if _, ok = m.Lookup("7.0", "macos-aarch64"); ok {
+		t.Fatal("macos should not have 7.0")
+	}
+}
+
+func TestReleaseManifestLookup_OldLinuxOnlyManifest(t *testing.T) {
+	m := &ReleaseManifest{
+		Assets: map[string]ReleaseAssets{
+			"8.4": {CLI: "php-8.4-cli-linux-x86_64", FPM: "php-8.4-fpm-linux-x86_64"},
+		},
+	}
+	a, ok := m.Lookup("8.4", "linux-x86_64")
+	if !ok || a.FPM != "php-8.4-fpm-linux-x86_64" {
+		t.Fatalf("old linux lookup = %+v ok=%v", a, ok)
+	}
+	if _, ok = m.Lookup("8.4", "macos-aarch64"); ok {
+		t.Fatal("old manifest must not invent macos assets")
+	}
+}
+
+func TestAssetURLsForMinorOn_SelectsMacOS(t *testing.T) {
+	var serverURL string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"tag_name": "php-binaries-20261006.1"}})
+		case "/releases/tags/php-binaries-20261006.1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tag_name": "php-binaries-20261006.1",
+				"assets": []map[string]any{{
+					"name":                 manifestAssetName,
+					"browser_download_url": serverURL + "/download/php-binaries.json",
+				}},
+			})
+		case "/download/php-binaries.json":
+			_ = json.NewEncoder(w).Encode(ReleaseManifest{
+				ReleaseTag:  "php-binaries-20261006.1",
+				PHPVersions: map[string]string{"8.4": "8.4.23"},
+				Assets: map[string]ReleaseAssets{
+					"8.4": {CLI: "php-8.4-cli-linux-x86_64", FPM: "php-8.4-fpm-linux-x86_64"},
+				},
+				PlatformAssets: map[string]map[string]ReleaseAssets{
+					"linux-x86_64": {
+						"8.4": {CLI: "php-8.4-cli-linux-x86_64", FPM: "php-8.4-fpm-linux-x86_64"},
+					},
+					"macos-aarch64": {
+						"8.4": {CLI: "php-8.4-cli-macos-aarch64", FPM: "php-8.4-fpm-macos-aarch64"},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+	serverURL = ts.URL
+
+	t.Setenv("DEVCTL_PHP_RELEASES_API_BASE", ts.URL)
+	t.Setenv("DEVCTL_PHP_RELEASES_DOWNLOAD_BASE", serverURL+"/download")
+	cliURL, fpmURL, _, err := assetURLsForMinorOn(context.Background(), "8.4", "macos-aarch64")
+	if err != nil {
+		t.Fatalf("assetURLsForMinorOn: %v", err)
+	}
+	wantCLI := serverURL + "/download/php-binaries-20261006.1/php-8.4-cli-macos-aarch64"
+	wantFPM := serverURL + "/download/php-binaries-20261006.1/php-8.4-fpm-macos-aarch64"
+	if cliURL != wantCLI || fpmURL != wantFPM {
+		t.Fatalf("cli=%q fpm=%q", cliURL, fpmURL)
+	}
+}
+
+func TestFetchReleaseManifest_SynthesizesMacOSAssets(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/releases/tags/php-binaries-latest" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"tag_name": "php-binaries-latest",
+			"assets": []map[string]any{
+				{"name": "php-8.4-cli-linux-x86_64"},
+				{"name": "php-8.4-fpm-linux-x86_64"},
+				{"name": "php-8.4-cli-macos-aarch64"},
+				{"name": "php-8.4-fpm-macos-aarch64"},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEVCTL_PHP_RELEASES_API_BASE", ts.URL)
+	manifest, err := FetchReleaseManifest(context.Background(), "php-binaries-latest")
+	if err != nil {
+		t.Fatalf("FetchReleaseManifest: %v", err)
+	}
+	a, ok := manifest.Lookup("8.4", "macos-aarch64")
+	if !ok || a.CLI != "php-8.4-cli-macos-aarch64" {
+		t.Fatalf("synthesized macos = %+v ok=%v", a, ok)
+	}
+	if manifest.Assets["8.4"].CLI != "php-8.4-cli-linux-x86_64" {
+		t.Fatalf("linux assets key = %q", manifest.Assets["8.4"].CLI)
 	}
 }
 

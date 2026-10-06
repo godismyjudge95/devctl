@@ -28,10 +28,12 @@ jobs:
   # plus ImageMagick 7.1.2-30 / imagick 3.8.1 via scripts/patch-spc-for-php80.sh.
   # Do not use --prefer-pre-built: those sqlite libs often lack
   # SQLITE_ENABLE_COLUMN_METADATA.
-  # Prove 8.x compiles locally with scripts/local-build-php8.sh before tagging.
+  # Prove 8.x compiles locally with scripts/local-build-php8.sh (Linux) or
+  # scripts/local-build-php8-macos.sh (macOS) before tagging.
   package:
-    name: ${{ matrix.build == 'compile' && 'Build' || 'Package' }} PHP ${{ matrix.minor }} (linux-x86_64)
-    runs-on: ubuntu-latest
+    name: Build PHP ${{ matrix.minor }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'php-binaries')
 
     permissions:
@@ -44,21 +46,75 @@ jobs:
           - minor: "8.0"
             patch: "8.0.30"
             build: compile
+            os: ubuntu-latest
+            platform: linux-x86_64
+            spc: ./bin/spc-alpine-docker
           - minor: "8.1"
             patch: "8.1.34"
             build: compile
+            os: ubuntu-latest
+            platform: linux-x86_64
+            spc: ./bin/spc-alpine-docker
           - minor: "8.2"
             patch: "8.2.32"
             build: compile
+            os: ubuntu-latest
+            platform: linux-x86_64
+            spc: ./bin/spc-alpine-docker
           - minor: "8.3"
             patch: "8.3.32"
             build: compile
+            os: ubuntu-latest
+            platform: linux-x86_64
+            spc: ./bin/spc-alpine-docker
           - minor: "8.4"
             patch: "8.4.23"
             build: compile
+            os: ubuntu-latest
+            platform: linux-x86_64
+            spc: ./bin/spc-alpine-docker
           - minor: "8.5"
             patch: "8.5.8"
             build: compile
+            os: ubuntu-latest
+            platform: linux-x86_64
+            spc: ./bin/spc-alpine-docker
+          - minor: "8.0"
+            patch: "8.0.30"
+            build: compile
+            os: macos-26
+            platform: macos-aarch64
+            spc: ./bin/spc
+          - minor: "8.1"
+            patch: "8.1.34"
+            build: compile
+            os: macos-26
+            platform: macos-aarch64
+            spc: ./bin/spc
+          - minor: "8.2"
+            patch: "8.2.32"
+            build: compile
+            os: macos-26
+            platform: macos-aarch64
+            spc: ./bin/spc
+          - minor: "8.3"
+            patch: "8.3.32"
+            build: compile
+            os: macos-26
+            platform: macos-aarch64
+            spc: ./bin/spc
+          - minor: "8.4"
+            patch: "8.4.23"
+            build: compile
+            os: macos-26
+            platform: macos-aarch64
+            spc: ./bin/spc
+          - minor: "8.5"
+            patch: "8.5.8"
+            build: compile
+            os: macos-26
+            platform: macos-aarch64
+            spc: ./bin/spc
 
     steps:
       - name: Download and repackage static-php.dev common (PHP 8.0)
@@ -137,6 +193,24 @@ jobs:
             scripts/patch-spc-for-php80.sh
           sparse-checkout-cone-mode: false
 
+      - name: Confirm Apple Silicon
+        if: matrix.build == 'compile' && runner.os == 'macOS'
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Setup PHP (macOS builder)
+        if: matrix.build == 'compile' && runner.os == 'macOS'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer
+          extensions: curl, openssl, mbstring
+          ini-values: memory_limit=-1
+
+      - name: Install static-php-cli (macOS)
+        if: matrix.build == 'compile' && runner.os == 'macOS'
+        working-directory: spc
+        run: composer update --no-dev --classmap-authoritative --no-interaction --prefer-dist --no-plugins
+
       - name: Set extension list
         if: matrix.build == 'compile'
         id: exts
@@ -164,15 +238,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: spc/downloads
-          key: spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-v6
+          key: spc-2.8.5-8x-${{ matrix.patch }}-${{ matrix.platform }}-v6
           restore-keys: |
-            spc-2.8.5-8x-${{ matrix.patch }}-linux-x86_64-
-            spc-2.8.5-8x-${{ matrix.minor }}-linux-x86_64-
+            spc-2.8.5-8x-${{ matrix.patch }}-${{ matrix.platform }}-
+            spc-2.8.5-8x-${{ matrix.minor }}-${{ matrix.platform }}-
 
       - name: Check and fix build environment
         if: matrix.build == 'compile'
         working-directory: spc
-        run: ./bin/spc-alpine-docker doctor --auto-fix
+        run: ${{ matrix.spc }} doctor --auto-fix
 
       - name: Download PHP sources and dependency tarballs
         if: matrix.build == 'compile'
@@ -183,7 +257,7 @@ jobs:
           if [ "${{ matrix.minor }}" = "8.0" ]; then
             IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
           fi
-          ./bin/spc-alpine-docker download \
+          ${{ matrix.spc }} download \
             --with-php=${{ matrix.patch }} \
             --for-extensions=${{ steps.exts.outputs.list }} \
             --ignore-cache-sources="$IGNORE_CACHE" \
@@ -203,7 +277,7 @@ jobs:
         working-directory: spc
         run: |
           set -euo pipefail
-          ./bin/spc-alpine-docker build \
+          ${{ matrix.spc }} build \
             ${{ steps.exts.outputs.list }} \
             --build-cli \
             --build-fpm \
@@ -212,11 +286,11 @@ jobs:
           mkdir -p ../tmp_dist ../tmp_meta
           test -x buildroot/bin/php
           test -x buildroot/bin/php-fpm
-          cp buildroot/bin/php     "../tmp_dist/php-${{ matrix.minor }}-cli-linux-x86_64"
-          cp buildroot/bin/php-fpm "../tmp_dist/php-${{ matrix.minor }}-fpm-linux-x86_64"
-          chmod 755 "../tmp_dist/php-${{ matrix.minor }}-cli-linux-x86_64" "../tmp_dist/php-${{ matrix.minor }}-fpm-linux-x86_64"
+          cp buildroot/bin/php     "../tmp_dist/php-${{ matrix.minor }}-cli-${{ matrix.platform }}"
+          cp buildroot/bin/php-fpm "../tmp_dist/php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"
+          chmod 755 "../tmp_dist/php-${{ matrix.minor }}-cli-${{ matrix.platform }}" "../tmp_dist/php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"
 
-          CLI="../tmp_dist/php-${{ matrix.minor }}-cli-linux-x86_64"
+          CLI="../tmp_dist/php-${{ matrix.minor }}-cli-${{ matrix.platform }}"
           "$CLI" -v
           PHP_PATCH=$("$CLI" -v | awk 'NR==1 {print $2}')
           case "$PHP_PATCH" in
@@ -260,12 +334,13 @@ jobs:
             done
           fi
 
-          cat > "../tmp_meta/${{ matrix.minor }}.json" <<EOF
+          cat > "../tmp_meta/${{ matrix.minor }}-${{ matrix.platform }}.json" <<EOF
           {
             "minor": "${{ matrix.minor }}",
             "patch": "${PHP_PATCH}",
-            "cli": "php-${{ matrix.minor }}-cli-linux-x86_64",
-            "fpm": "php-${{ matrix.minor }}-fpm-linux-x86_64"
+            "platform": "${{ matrix.platform }}",
+            "cli": "php-${{ matrix.minor }}-cli-${{ matrix.platform }}",
+            "fpm": "php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"
           }
           EOF
 
@@ -273,7 +348,7 @@ jobs:
         if: failure() && matrix.build == 'compile'
         uses: actions/upload-artifact@v4
         with:
-          name: spc-logs-${{ matrix.minor }}
+          name: spc-logs-${{ matrix.minor }}-${{ matrix.platform }}
           path: |
             spc/log/spc.output.log
             spc/log/spc.shell.log
@@ -282,8 +357,8 @@ jobs:
       - name: Upload metadata artifact
         uses: actions/upload-artifact@v4
         with:
-          name: php-meta-${{ matrix.minor }}
-          path: tmp_meta/${{ matrix.minor }}.json
+          name: php-meta-${{ matrix.minor }}-${{ matrix.platform }}
+          path: tmp_meta/${{ matrix.minor }}-${{ matrix.platform }}.json
 
       - name: Upload binaries to release
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'php-binaries'))
@@ -291,8 +366,8 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            tmp_dist/php-${{ matrix.minor }}-cli-linux-x86_64
-            tmp_dist/php-${{ matrix.minor }}-fpm-linux-x86_64
+            tmp_dist/php-${{ matrix.minor }}-cli-${{ matrix.platform }}
+            tmp_dist/php-${{ matrix.minor }}-fpm-${{ matrix.platform }}
 
   # ── Legacy PHP 7.0 / 7.2 / 7.4 ────────────────────────────────────────────
   # Modern static-php-cli (main) applies PHP 8+ Alpine/libxml patches that break
@@ -451,6 +526,7 @@ jobs:
           {
             "minor": "${{ matrix.php }}",
             "patch": "${PHP_PATCH}",
+            "platform": "linux-x86_64",
             "cli": "php-${{ matrix.php }}-cli-linux-x86_64",
             "fpm": "php-${{ matrix.php }}-fpm-linux-x86_64"
           }
@@ -519,6 +595,22 @@ jobs:
 
           rows.sort(key=minor_key)
 
+          for row in rows:
+              platform = row.get('platform')
+              if not platform:
+                  cli = row.get('cli', '')
+                  platform = 'macos-aarch64' if cli.endswith('macos-aarch64') else 'linux-x86_64'
+                  row['platform'] = platform
+
+          linux_rows = [r for r in rows if r['platform'] == 'linux-x86_64']
+          platform_assets = {}
+          for row in rows:
+              platform_assets.setdefault(row['platform'], {})[row['minor']] = {
+                  'cli': row['cli'],
+                  'fpm': row['fpm'],
+              }
+
+          shipped = sorted({(r['platform'], r['minor']) for r in rows})
           manifest = {
               'release_tag': '${{ github.ref_name }}',
               'built_at': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
@@ -527,13 +619,14 @@ jobs:
                   row['minor']: {
                       'cli': row['cli'],
                       'fpm': row['fpm'],
-                  } for row in rows
+                  } for row in linux_rows
               },
+              'platform_assets': platform_assets,
           }
 
           Path('php-binaries.json').write_text(json.dumps(manifest, indent=2) + '\n')
           print(json.dumps(manifest, indent=2))
-          print(f'Shipped {len(rows)} PHP minor(s): {", ".join(r["minor"] for r in rows)}')
+          print('Shipped ' + ', '.join(f'{p}/{m}' for p, m in shipped))
           PY
 
       - name: Upload manifest to release

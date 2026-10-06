@@ -3,35 +3,81 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build Linux binary
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref_name, 'v')
-
+    name: ${{ matrix.name }}
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && startsWith(github.ref_name, 'v'))
+    runs-on: ${{ matrix.os }}
     permissions:
-      contents: write  # required to upload release assets
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            portable: devctl-linux-x86_64
+          - name: macos-aarch64
+            os: macos-26
+            goos: darwin
+            goarch: arm64
+            portable: devctl-macos-aarch64
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Confirm Apple Silicon
+        if: runner.os == 'macOS'
+        run: test "$(uname -m)" = "arm64"
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Build binary
+      - name: Build
         env:
-          GOOS: linux
-          GOARCH: amd64
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
+          mkdir -p dist
           go build \
             -ldflags "-X main.version=${{ github.ref_name }}" \
-            -o devctl \
+            -o "dist/${{ matrix.portable }}" \
             .
+          chmod +x "dist/${{ matrix.portable }}"
+          ls -lh dist
 
-      - name: Upload binary to release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: build
+    if: github.event_name == 'release' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach packages
         uses: softprops/action-gh-release@v2
         with:
-          files: devctl
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/*
+          fail_on_unmatched_files: true

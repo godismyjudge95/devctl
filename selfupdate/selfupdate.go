@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/danielgormly/devctl/internal/httplog"
@@ -73,6 +74,16 @@ func LatestVersion(ctx context.Context) (string, error) {
 	return payload.TagName, nil
 }
 
+// releaseAssetName is the GitHub release asset for this GOOS.
+// Names match the portable files from .github/workflows/release.yml
+// (linux-x86_64 / macos-aarch64).
+func releaseAssetName(goos string) string {
+	if goos == "darwin" {
+		return "devctl-macos-aarch64"
+	}
+	return "devctl-linux-x86_64"
+}
+
 // Update downloads the devctl binary for the given version, verifies it
 // executes, backs up the current binary, and replaces it atomically.
 //
@@ -96,7 +107,7 @@ func Update(ctx context.Context, currentBinaryPath, version string, w io.Writer)
 	defer os.RemoveAll(tmpDir)
 
 	tmpBin := filepath.Join(tmpDir, "devctl")
-	downloadURL := GithubDownloadBase + "/" + version + "/devctl"
+	downloadURL := GithubDownloadBase + "/" + version + "/" + releaseAssetName(runtime.GOOS)
 
 	fmt.Fprintf(w, "Downloading %s...\n", downloadURL)
 	if err := curlDownload(ctx, downloadURL, tmpBin); err != nil {

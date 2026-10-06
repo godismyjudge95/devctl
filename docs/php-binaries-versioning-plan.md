@@ -29,7 +29,7 @@ When both should ship from the same commit, create both tags on that commit. The
 
 - `.github/workflows/release.yml`
   - Runs only for `v*`
-  - Builds and uploads the `devctl` binary
+  - Builds and uploads `devctl-linux-x86_64` and `devctl-macos-aarch64`
 - `.github/workflows/build-php.yml`
   - Runs only for `php-binaries*`
   - Builds PHP 8.1 through 8.4 CLI and FPM binaries
