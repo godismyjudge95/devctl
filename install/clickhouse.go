@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
 )
@@ -60,11 +61,7 @@ func isClickHouseBinaryOK(path string) bool {
 		return false
 	}
 	defer f.Close()
-	var magic [4]byte
-	if _, err := io.ReadFull(f, magic[:]); err != nil {
-		return false
-	}
-	return magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
+	return dist.LooksLikeNative(f)
 }
 
 func (c *ClickHouseInstaller) Install(ctx context.Context) error {
@@ -85,14 +82,14 @@ func (c *ClickHouseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("clickhouse: resolve latest version: %w", err)
 	}
-	dlURL := clickhouseTarURL(latest)
+	a, err := dist.For("clickhouse")
+	if err != nil {
+		return fmt.Errorf("clickhouse: %w", err)
+	}
+	dlURL := clickhouseDownloadURL(latest, a)
 
 	chDir := paths.ServiceDir(c.serverRoot, "clickhouse")
 	binPath := filepath.Join(chDir, "clickhouse")
-	// Version-independent basename so the test curl shim can serve a cached
-	// artifact regardless of which latest version GitHub reports.
-	tmpTar := filepath.Join(os.TempDir(), "clickhouse-common-static-amd64.tgz")
-	defer os.Remove(tmpTar)
 
 	// 1. Create directories (data layout under the service dir).
 	fmt.Fprintln(w, "clickhouse: creating directories...")
@@ -109,22 +106,13 @@ func (c *ClickHouseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
-	// 2. Download the common-static tarball (contains the multi-call binary).
+	// 2. Download the binary (tarball on Linux, raw Mach-O on Darwin).
 	fmt.Fprintf(w, "clickhouse: downloading %s...\n", latest)
-	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+	if err := placeClickHouseBinary(ctx, w, dlURL, a, binPath, a.File); err != nil {
 		return fmt.Errorf("clickhouse: download: %w", err)
 	}
 
-	// 3. Extract the clickhouse binary.
-	fmt.Fprintln(w, "clickhouse: extracting binary...")
-	if err := extractFromTar(tmpTar, "clickhouse", binPath); err != nil {
-		return fmt.Errorf("clickhouse: extract: %w", err)
-	}
-	if err := os.Chmod(binPath, 0755); err != nil {
-		return fmt.Errorf("clickhouse: chmod binary: %w", err)
-	}
-
-	// 4. Symlink CLI multi-call names into the service dir and shared bin dir.
+	// 3. Symlink CLI multi-call names into the service dir and shared bin dir.
 	fmt.Fprintln(w, "clickhouse: linking CLI tools...")
 	binDir := paths.BinDir(c.serverRoot)
 	for _, name := range clickhouseCLINames {
@@ -215,13 +203,32 @@ func normalizeClickHouseVersion(tag string) string {
 	return v
 }
 
-// clickhouseTarURL returns the packages.clickhouse.com tarball URL for the
-// given bare version (e.g. "25.8.28.1").
-func clickhouseTarURL(version string) string {
+// clickhouseDownloadURL returns the vendor binary URL for this platform.
+func clickhouseDownloadURL(version string, a dist.Asset) string {
+	if strings.HasPrefix(a.Token, "macos-") {
+		return "https://builds.clickhouse.com/master/" + a.Token + "/clickhouse"
+	}
 	return fmt.Sprintf(
-		"https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-%s-amd64.tgz",
-		version,
+		"https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-%s-%s.tgz",
+		version, a.Token,
 	)
+}
+
+func placeClickHouseBinary(ctx context.Context, w io.Writer, dlURL string, a dist.Asset, binPath, tmpName string) error {
+	if strings.HasSuffix(a.File, ".tgz") {
+		tmpTar := filepath.Join(os.TempDir(), tmpName)
+		defer os.Remove(tmpTar)
+		if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+			return err
+		}
+		fmt.Fprintln(w, "clickhouse: extracting binary...")
+		if err := extractFromTar(tmpTar, "clickhouse", binPath); err != nil {
+			return err
+		}
+	} else if err := curlDownloadW(ctx, w, dlURL, binPath); err != nil {
+		return err
+	}
+	return os.Chmod(binPath, 0755)
 }
 
 // UpdateW stops ClickHouse, replaces the binary with the latest version.
@@ -231,16 +238,22 @@ func (c *ClickHouseInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("clickhouse: update: %w", err)
 	}
-	dlURL := clickhouseTarURL(latest)
+	a, err := dist.For("clickhouse")
+	if err != nil {
+		return fmt.Errorf("clickhouse: %w", err)
+	}
+	dlURL := clickhouseDownloadURL(latest, a)
 
 	chDir := paths.ServiceDir(c.serverRoot, "clickhouse")
 	binPath := filepath.Join(chDir, "clickhouse")
-	// Version-independent basename for the test curl shim (see InstallW).
-	tmpTar := filepath.Join(os.TempDir(), "clickhouse-common-static-update.tgz")
-	defer os.Remove(tmpTar)
 
 	fmt.Fprintf(w, "clickhouse: downloading %s...\n", latest)
-	if err := curlDownloadW(ctx, w, dlURL, tmpTar); err != nil {
+	tmpPath := filepath.Join(os.TempDir(), "clickhouse-common-static-update.tgz")
+	if !strings.HasSuffix(a.File, ".tgz") {
+		tmpPath = filepath.Join(os.TempDir(), a.File)
+	}
+	defer os.Remove(tmpPath)
+	if err := curlDownloadW(ctx, w, dlURL, tmpPath); err != nil {
 		return fmt.Errorf("clickhouse: update download: %w", err)
 	}
 
@@ -250,8 +263,14 @@ func (c *ClickHouseInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	}
 
 	fmt.Fprintln(w, "clickhouse: replacing binary...")
-	if err := extractFromTar(tmpTar, "clickhouse", binPath); err != nil {
-		return fmt.Errorf("clickhouse: update extract: %w", err)
+	if strings.HasSuffix(a.File, ".tgz") {
+		if err := extractFromTar(tmpPath, "clickhouse", binPath); err != nil {
+			return fmt.Errorf("clickhouse: update extract: %w", err)
+		}
+	} else if err := os.Rename(tmpPath, binPath); err != nil {
+		if copyErr := copyFile(tmpPath, binPath); copyErr != nil {
+			return fmt.Errorf("clickhouse: replace binary: %w", copyErr)
+		}
 	}
 	if err := os.Chmod(binPath, 0755); err != nil {
 		return fmt.Errorf("clickhouse: update chmod: %w", err)

@@ -1,6 +1,10 @@
 package install
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/danielgormly/devctl/dist"
+)
 
 func TestNormalizeClickHouseVersion(t *testing.T) {
 	cases := []struct {
@@ -22,10 +26,24 @@ func TestNormalizeClickHouseVersion(t *testing.T) {
 	}
 }
 
-func TestClickhouseTarURL(t *testing.T) {
-	got := clickhouseTarURL("25.8.28.1")
+func TestClickhouseDownloadURL(t *testing.T) {
+	linux, err := dist.Lookup("linux", "amd64", "clickhouse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := clickhouseDownloadURL("25.8.28.1", linux)
 	want := "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-25.8.28.1-amd64.tgz"
 	if got != want {
-		t.Errorf("clickhouseTarURL = %q, want %q", got, want)
+		t.Errorf("linux clickhouseDownloadURL = %q, want %q", got, want)
+	}
+
+	darwin, err := dist.Lookup("darwin", "arm64", "clickhouse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = clickhouseDownloadURL("25.8.28.1", darwin)
+	want = "https://builds.clickhouse.com/master/macos-aarch64/clickhouse"
+	if got != want {
+		t.Errorf("darwin clickhouseDownloadURL = %q, want %q", got, want)
 	}
 }
