@@ -48,18 +48,18 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          mkdir -p dist
+          mkdir -p out
           go build \
             -ldflags "-X main.version=${{ github.ref_name }}" \
-            -o "dist/${{ matrix.portable }}" \
+            -o "out/${{ matrix.portable }}" \
             .
-          chmod +x "dist/${{ matrix.portable }}"
-          ls -lh dist
+          chmod +x "out/${{ matrix.portable }}"
+          ls -lh out
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: dist
+          path: out/${{ matrix.portable }}
           if-no-files-found: error
 
   release:
@@ -72,12 +72,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: out
           merge-multiple: true
 
       - name: Attach packages
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: dist/*
+          files: |
+            out/devctl-linux-x86_64
+            out/devctl-macos-aarch64
           fail_on_unmatched_files: true
