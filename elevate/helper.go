@@ -30,6 +30,7 @@ const ServiceUnitPath = "/etc/systemd/system/devctl.service"
 const (
 	ResolvedDropinDir  = "/etc/systemd/resolved.conf.d"
 	ResolvedDropinFile = "/etc/systemd/resolved.conf.d/99-devctl-dns.conf"
+	DarwinResolverDir  = "/etc/resolver"
 )
 
 // CACertName is the filename used under the distro CA anchors directory.
@@ -51,7 +52,7 @@ func RunHelper(args []string) error {
 	case "install-resolver":
 		return helperInstallResolver(rest)
 	case "uninstall-resolver":
-		return helperUninstallResolver()
+		return helperUninstallResolver(rest)
 	case "install-ca":
 		return helperInstallCA(rest)
 	case "uninstall-ca":
@@ -68,6 +69,10 @@ func RunHelper(args []string) error {
 		return helperSystemctl(rest)
 	case "launchctl":
 		return helperLaunchctl(rest)
+	case "install-pf":
+		return helperInstallPF(rest)
+	case "uninstall-pf":
+		return helperUninstallPF()
 	default:
 		return fmt.Errorf("devctl helper: unknown operation %q", op)
 	}
@@ -88,6 +93,18 @@ func runPinned(name string, args ...string) error {
 		return fmt.Errorf("%s %v: %w\n%s", name, args, err, string(out))
 	}
 	return nil
+}
+
+func runPinnedCombined(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = "/"
+	cmd.Env = []string{
+		"PATH=" + pinnedPATH,
+		"DEBIAN_FRONTEND=noninteractive",
+		"LC_ALL=C",
+	}
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // writeFileAtomic writes content to path via a temp sibling + rename.

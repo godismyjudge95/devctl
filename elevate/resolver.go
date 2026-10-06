@@ -3,6 +3,8 @@ package elevate
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -13,8 +15,23 @@ func ResolverDropinContent(port, tld string) string {
 	return fmt.Sprintf("[Resolve]\nDNS=127.0.0.1:%s\nDomains=~%s\n", port, tld)
 }
 
-// ResolverConfigured reports whether the devctl drop-in exists.
+// DarwinResolverPath is /etc/resolver/<tld>.
+func DarwinResolverPath(tld string) string {
+	tld = strings.TrimPrefix(tld, ".")
+	return filepath.Join(DarwinResolverDir, tld)
+}
+
+// DarwinResolverContent is the macOS resolver stub for the in-process DNS.
+func DarwinResolverContent(port string) string {
+	return fmt.Sprintf("nameserver 127.0.0.1\nport %s\n", port)
+}
+
+// ResolverConfigured reports whether the OS DNS stub exists.
 func ResolverConfigured() bool {
+	if runtime.GOOS == "darwin" {
+		_, err := os.Stat(DarwinResolverPath("test"))
+		return err == nil
+	}
 	_, err := os.Stat(ResolvedDropinFile)
 	return err == nil
 }
@@ -43,6 +60,15 @@ func helperInstallResolver(args []string) error {
 		return fmt.Errorf("invalid tld %q", tld)
 	}
 
+	if runtime.GOOS == "darwin" {
+		path := DarwinResolverPath(tld)
+		if err := writeFileAtomic(path, []byte(DarwinResolverContent(port)), 0644); err != nil {
+			return fmt.Errorf("write resolver: %w", err)
+		}
+		fmt.Println("ok")
+		return nil
+	}
+
 	// Skip (not fail) if systemd-resolved is not available.
 	if _, err := os.Stat("/run/systemd/resolve"); err != nil {
 		if _, err2 := os.Stat("/lib/systemd/systemd-resolved"); err2 != nil {
@@ -65,7 +91,26 @@ func helperInstallResolver(args []string) error {
 	return nil
 }
 
-func helperUninstallResolver() error {
+func helperUninstallResolver(args []string) error {
+	flags, _, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+	tld := flags["tld"]
+	if tld == "" {
+		tld = "test"
+	}
+	tld = strings.TrimPrefix(tld, ".")
+
+	if runtime.GOOS == "darwin" {
+		path := DarwinResolverPath(tld)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove resolver: %w", err)
+		}
+		fmt.Println("ok")
+		return nil
+	}
+
 	if err := os.Remove(ResolvedDropinFile); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove drop-in: %w", err)
 	}

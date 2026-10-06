@@ -58,3 +58,21 @@ func TestListenHTTPFor(t *testing.T) {
 		t.Errorf("darwin listen = %v, want [:8080 :8443]", darwin)
 	}
 }
+
+func TestAllowsFor(t *testing.T) {
+	if !AllowsFor("linux", "amd64", "redis") {
+		t.Error("linux/amd64 redis should be allowed")
+	}
+	if AllowsFor("darwin", "arm64", "redis") {
+		t.Error("darwin/arm64 redis should be skipped")
+	}
+	if !AllowsFor("darwin", "arm64", "caddy") {
+		t.Error("darwin/arm64 caddy should be allowed")
+	}
+	if !AllowsFor("linux", "amd64", "mysql") {
+		t.Error("linux/amd64 mysql stays allowed until tarball rows exist")
+	}
+	if !AllowsFor("darwin", "arm64", "dns") {
+		t.Error("dns is in-process and always allowed")
+	}
+}

@@ -94,3 +94,33 @@ func ListenHTTPFor(goos string) []string {
 	}
 	return []string{":80", ":443"}
 }
+
+// catalogName maps a service ID to a dist table name.
+// IDs with no row on any OS are omitted so Allows stays true (apt or in-process).
+func catalogName(id string) (string, bool) {
+	switch id {
+	case "redis":
+		return "valkey", true
+	case "caddy", "mailpit", "meilisearch", "typesense", "maxio", "clickhouse", "yq", "php":
+		return id, true
+	default:
+		return "", false
+	}
+}
+
+// Allows reports whether this GOOS/GOARCH has a vendor binary for the service.
+// Services that are not in the download table (dns, reverb, mysql, postgres)
+// stay allowed so Linux apt installers keep working.
+func Allows(id string) bool {
+	return AllowsFor(runtime.GOOS, runtime.GOARCH, id)
+}
+
+// AllowsFor is Allows for an explicit GOOS/GOARCH.
+func AllowsFor(goos, goarch, id string) bool {
+	name, ok := catalogName(id)
+	if !ok {
+		return true
+	}
+	_, err := Lookup(goos, goarch, name)
+	return err == nil
+}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/dnsserver"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
@@ -27,7 +28,7 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 	reverbDir := paths.ServiceDir(serverRoot, "reverb")
 	maxioDir := paths.ServiceDir(serverRoot, "maxio")
 	clickhouseDir := paths.ServiceDir(serverRoot, "clickhouse")
-	return []services.Definition{
+	defs := []services.Definition{
 		{
 			ID:             "caddy",
 			Label:          "Caddy",
@@ -231,4 +232,11 @@ func DefaultServices(serverRoot, siteUser string) []services.Definition {
 			HealthCheckRetryDelay: 500 * time.Millisecond,
 		},
 	}
+	out := defs[:0]
+	for _, d := range defs {
+		if dist.Allows(d.ID) {
+			out = append(out, d)
+		}
+	}
+	return out
 }

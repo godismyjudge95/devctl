@@ -8,14 +8,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
-// Debian/Ubuntu anchors directory.
-const caCertsDir = "/usr/local/share/ca-certificates"
+const (
+	caCertsDir     = "/usr/local/share/ca-certificates"
+	darwinCADir    = "/Library/Application Support/devctl"
+	darwinKeychain = "/Library/Keychains/System.keychain"
+)
 
 // InstallCAPath returns the path where the devctl CA PEM is stored.
 func InstallCAPath() string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(darwinCADir, CACertName)
+	}
 	return filepath.Join(caCertsDir, CACertName)
 }
 
@@ -99,6 +106,10 @@ func helperInstallCA(args []string) error {
 		return fmt.Errorf("write ca cert: %w", err)
 	}
 
+	if runtime.GOOS == "darwin" {
+		return trustDarwinKeychain(pemPath, gotFP)
+	}
+
 	// Debian/Ubuntu.
 	if _, err := os.Stat("/usr/sbin/update-ca-certificates"); err == nil {
 		if err := runPinned("update-ca-certificates"); err != nil {
@@ -122,6 +133,23 @@ func helperInstallCA(args []string) error {
 	}
 
 	fmt.Println("ok (certificate written; no update-ca-certificates tool found — may need manual trust)")
+	return nil
+}
+
+func trustDarwinKeychain(pemPath, fingerprint string) error {
+	out, err := runPinnedCombined("security", "find-certificate", "-a", "-Z", darwinKeychain)
+	if err == nil && fingerprint != "" && strings.Contains(strings.ToUpper(out), strings.ToUpper(fingerprint)) {
+		fmt.Println("ok")
+		return nil
+	}
+	if err := runPinned("security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", darwinKeychain, pemPath); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			fmt.Println("ok")
+			return nil
+		}
+		return err
+	}
+	fmt.Println("ok")
 	return nil
 }
 
@@ -159,6 +187,23 @@ func helperUninstallCA(args []string) error {
 		if !strings.EqualFold(got, wantFP) {
 			return fmt.Errorf("installed ca fingerprint does not match — refusing to remove unrelated cert")
 		}
+	}
+
+	if runtime.GOOS == "darwin" {
+		fp := wantFP
+		if fp == "" {
+			if got, err := ParseCAFingerprint(data); err == nil {
+				fp = got
+			}
+		}
+		if fp != "" {
+			_ = runPinned("security", "delete-certificate", "-Z", strings.ToUpper(fp), darwinKeychain)
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		fmt.Println("ok")
+		return nil
 	}
 
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {

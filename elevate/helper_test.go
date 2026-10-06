@@ -33,6 +33,32 @@ func TestResolverDropinContent(t *testing.T) {
 	}
 }
 
+func TestDarwinResolverContent(t *testing.T) {
+	got := DarwinResolverContent("5354")
+	want := "nameserver 127.0.0.1\nport 5354\n"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if DarwinResolverPath("test") != "/etc/resolver/test" {
+		t.Fatalf("path = %q", DarwinResolverPath("test"))
+	}
+	if DarwinResolverPath(".test") != "/etc/resolver/test" {
+		t.Fatalf("leading-dot path = %q", DarwinResolverPath(".test"))
+	}
+}
+
+func TestPFAnchorContent(t *testing.T) {
+	got := PFAnchorContent("8080", "8443")
+	want := "rdr pass on lo0 inet proto tcp from any to any port 80 -> 127.0.0.1 port 8080\nrdr pass on lo0 inet proto tcp from any to any port 443 -> 127.0.0.1 port 8443\n"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	got2 := PFAnchorContent(":8080", ":8443")
+	if got2 != want {
+		t.Fatalf("colon prefix: got %q want %q", got2, want)
+	}
+}
+
 func TestBuildServiceFileAmbient(t *testing.T) {
 	s := BuildServiceFile("/opt/devctl/devctl", "alice", "/home/alice", "/home/alice/sites/server")
 	for _, want := range []string{

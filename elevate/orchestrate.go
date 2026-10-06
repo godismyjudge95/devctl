@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/danielgormly/devctl/dist"
 )
 
 // Target names for elevate / unelevate.
@@ -114,7 +116,7 @@ func Unelevate(facts Facts, targets []string, w io.Writer) error {
 		case TargetTrust:
 			err = unelevateTrust(facts, w)
 		case TargetResolver:
-			err = unelevateResolver(w)
+			err = unelevateResolver(facts, w)
 		case TargetPorts:
 			err = unelevatePorts(facts, w)
 		default:
@@ -197,9 +199,13 @@ func elevateResolver(facts Facts, w io.Writer) error {
 	return RunHelperSelf(w, w, "install-resolver", "--port", port, "--tld", tld)
 }
 
-func unelevateResolver(w io.Writer) error {
-	fmt.Fprintf(w, "    removing systemd-resolved drop-in\n")
-	return RunHelperSelf(w, w, "uninstall-resolver")
+func unelevateResolver(facts Facts, w io.Writer) error {
+	tld := strings.TrimPrefix(facts.DNSTLD, ".")
+	if tld == "" {
+		tld = "test"
+	}
+	fmt.Fprintf(w, "    removing DNS stub for *.%s\n", tld)
+	return RunHelperSelf(w, w, "uninstall-resolver", "--tld", tld)
 }
 
 func elevatePorts(facts Facts, w io.Writer) error {
@@ -269,6 +275,16 @@ func elevatePortsDarwin(facts Facts, w io.Writer) error {
 	); err != nil {
 		return err
 	}
+	listen := dist.ListenHTTPFor("darwin")
+	httpPort, httpsPort := "8080", "8443"
+	if len(listen) >= 2 {
+		httpPort = strings.TrimPrefix(listen[0], ":")
+		httpsPort = strings.TrimPrefix(listen[1], ":")
+	}
+	fmt.Fprintf(w, "    installing pf rdr 80→%s 443→%s\n", httpPort, httpsPort)
+	if err := RunHelperSelf(w, w, "install-pf", "--http", httpPort, "--https", httpsPort); err != nil {
+		return err
+	}
 	u, err := user.Lookup(facts.SiteUser)
 	if err != nil {
 		return fmt.Errorf("lookup user: %w", err)
@@ -302,6 +318,8 @@ func unelevatePortsDarwin(facts Facts, w io.Writer) error {
 	label := "gui/" + u.Uid + "/" + LaunchAgentLabel
 	fmt.Fprintf(w, "    unloading %s\n", label)
 	_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
+	fmt.Fprintf(w, "    removing pf rdr\n")
+	_ = RunHelperSelf(w, w, "uninstall-pf")
 	plist := LaunchAgentPath(facts.SiteHome)
 	if err := os.Remove(plist); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove plist: %w", err)
