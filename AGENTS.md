@@ -88,31 +88,31 @@ This includes:
 - Running a compiled `.test` binary directly: `/tmp/cli.test`, `./cli.test`, etc.
 - `go vet` with test files if it executes test code
 
-The **only** permitted local step is compiling: `go test -c` (produces a binary but does not run it). Everything else runs inside the Incus container.
+The **only** permitted local step on the Linux development host is compiling: `go test -c` (produces a binary but does not run it). Everything else runs inside the Incus container (Linux) or the OrbStack Ubuntu VM (macOS).
 
 ```sh
-# Unit tests (e.g. cli/ package) — compile on host, run in container
+# Unit tests (e.g. cli/ package) — compile on host, run in the test machine
 go test -c -o cli.test ./cli/
-incus file push cli.test $DEVCTL_CONTAINER/tmp/cli.test
-incus exec $DEVCTL_CONTAINER -- chmod 755 /tmp/cli.test
-incus exec $DEVCTL_CONTAINER -- /tmp/cli.test -test.v
+bash scripts/test-push.sh $DEVCTL_CONTAINER cli.test /tmp/cli.test
+bash scripts/test-exec.sh $DEVCTL_CONTAINER -- chmod 755 /tmp/cli.test
+bash scripts/test-exec.sh $DEVCTL_CONTAINER -- /tmp/cli.test -test.v
 
 # Integration tests (tests/api/)
 make build
-make test-env          # in one terminal — starts container, blocks until tests finish or Ctrl+C
-DEVCTL_CONTAINER=devctl-test-xxx make test-api        # in another terminal (destroys container when done)
+make test-env          # in one terminal — starts Incus (Linux) or OrbStack (macOS)
+DEVCTL_CONTAINER=devctl-test-xxx make test-api        # in another terminal (destroys machine when done)
 
-# One-shot: launch container, run all tests, destroy when done
+# One-shot: launch machine, run all tests, destroy when done
 make build && make test-run
 ```
 
 Load the `integration-testing` skill for the full workflow.
 
-## Integration tests — MUST run inside Incus
+## Integration tests — MUST run inside Incus or OrbStack
 
 The integration tests in `tests/api/` are tagged `//go:build integration` and run against a **live devctl instance**. They mutate real state (emails, sites, services, settings). Running them against the host system devctl at `http://127.0.0.1:4000` will corrupt live data.
 
-**NEVER run integration tests on the host machine.** Always run them inside the dedicated Incus test container.
+**NEVER run integration tests on the host machine.** Always run them inside the dedicated Incus test container (Linux) or OrbStack Ubuntu VM (macOS). `make test-env` selects the backend: Incus when `incus` is on PATH, otherwise OrbStack on Darwin.
 
 ```sh
 # WRONG — runs against host devctl, mutates live data
@@ -152,7 +152,7 @@ Load the `integration-testing` skill for the full workflow: container setup, TDD
 
 After implementing any feature, add or update the relevant tests before considering the task done:
 
-- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c` on the host, push the binary into the Incus container, and run it there. **Do not run the binary on the host.**
+- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c` on the host, push the binary into the Incus or OrbStack test machine, and run it there. **Do not run the binary on the Linux development host.**
 - **Backend API changes** → add or update Go API integration tests in `tests/api/`. Load the `integration-testing` skill for the full workflow.
 - **Frontend / UI changes** → add or update Playwright e2e tests in `tests/e2e/`. Load the `testing-dashboard` skill for conventions and tooling.
 
@@ -165,7 +165,7 @@ Do not rely on a clean compile as a substitute for automated tests. Never skip r
 
 ## Server root path
 
-The server root is `~/ddev/sites/server`. The sites path is `~/ddev/sites/`. Any path seen outside of these locations is a red flag indicating misconfiguration. The systemd unit sets `DEVCTL_SERVER_ROOT=/home/daniel/ddev/sites/server`; all runtime paths are derived from this env var via the `paths` package. Never hardcode machine-specific paths — always use `DEVCTL_SERVER_ROOT` or the `paths` package.
+The Linux server root is `~/ddev/sites/server`. The Linux sites path is `~/ddev/sites/`. On macOS the defaults are `~/Code/sites/server` and `~/Code/sites/`. Any path seen outside of the configured `DEVCTL_SERVER_ROOT` is a red flag indicating misconfiguration. The parent unit sets `DEVCTL_SERVER_ROOT`; all runtime paths are derived from this env var via the `paths` package. Never hardcode machine-specific paths — always use `DEVCTL_SERVER_ROOT` or the `paths` package.
 
 ## Finding runtime files outside the project
 

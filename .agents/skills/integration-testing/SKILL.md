@@ -1,6 +1,6 @@
 ---
 name: integration-testing
-description: How to write and run devctl integration tests — where tests live, how to write failing tests first (TDD), and how to run them safely inside an Incus container without touching live host data.
+description: How to write and run devctl integration tests — where tests live, how to write failing tests first (TDD), and how to run them safely inside an Incus container or OrbStack Ubuntu VM without touching live host data.
 ---
 
 # Skill: integration-testing
@@ -11,15 +11,15 @@ description: How to write and run devctl integration tests — where tests live,
 
 The tests in `tests/api/`, `tests/integration/`, and `tests/e2e/` run against a **live devctl instance**. They mutate real state: they send emails, create sites, install services, change settings. Running them against the host devctl corrupts live data.
 
-**All tests run INSIDE the Incus test container.** The host devctl is never stopped and port 4000 on the host is never touched. Multiple containers can run in parallel without conflicts.
+**All tests run INSIDE the Incus test container (Linux) or OrbStack Ubuntu VM (macOS).** The host devctl is never stopped and port 4000 on the host is never touched. Multiple machines can run in parallel without conflicts.
 
 ## Test layers
 
 | Layer | Location | Framework | Execution |
 |---|---|---|---|
-| Go API tests | `tests/api/` | `go test -tags integration` | Compiled to binary on host, pushed into container, run via `incus exec` |
-| BATS tests | `tests/integration/` | bats-core | Pushed into container, run via `incus exec` (bats pre-baked in image) |
-| Playwright e2e | `tests/e2e/` | Playwright + Chromium | Pushed into container, run via `incus exec` (Playwright + Chromium pre-baked in image) |
+| Go API tests | `tests/api/` | `go test -tags integration` | Compiled to a linux binary on the host (`GOOS=linux` on macOS), pushed into the machine, run via `scripts/test-exec.sh` |
+| BATS tests | `tests/integration/` | bats-core | Pushed into the machine, run via `scripts/test-exec.sh` |
+| Playwright e2e | `tests/e2e/` | Playwright + Chromium | Pushed into the machine, run via `scripts/test-exec.sh` |
 
 ## TDD workflow — write the failing test FIRST
 
@@ -87,12 +87,10 @@ make test-env
 ```
 
 `make test-env` will:
-- Launch a fresh `devctl-ubuntu-base` Incus container
-- Push the `./devctl` binary, write the systemd unit, start the service
-- Compile the Go API test binary and push it in
-- Push BATS tests and Playwright test files into the container
-- Wait for devctl to respond at `127.0.0.1:4000` **inside** the container
-- Export `DEVCTL_CONTAINER=devctl-test-<timestamp>` and block until Ctrl+C or the container is destroyed
+- Launch a fresh `devctl-ubuntu-base` Incus container, **or** on macOS without Incus an OrbStack `ubuntu:24.04` VM (`scripts/test-env-orb.sh`)
+- Push the `./devctl` binary (cross-compiled `linux/arm64` on Darwin), write the systemd unit, start the service
+- Wait for devctl to respond at `http://127.0.0.1:4000` **inside** the machine
+- Export `DEVCTL_CONTAINER=devctl-test-<timestamp>` and block until Ctrl+C or the machine is destroyed
 - **The host devctl is never touched** — its port 4000 remains yours
 
 **Container cleanup is automatic.** Every `make test`, `make test-api`, `make test-bats`, and `make test-e2e` stops devctl and destroys the container when finished (even on failure). `make test-run` does the same. Set `KEEP_TEST_CONTAINER=1` to skip cleanup — used internally by `make test-push` for iterative runs.
@@ -150,11 +148,11 @@ This runs `make build`, pushes the new binary, restarts devctl inside the contai
 ## Running a single Go API test
 
 ```sh
-# Compile with the test name filter and run inside the container
-go test -c -tags=integration -o devctl.test ./tests/api/
-incus file push devctl.test $DEVCTL_CONTAINER/tmp/devctl.test
-incus exec $DEVCTL_CONTAINER -- chmod 755 /tmp/devctl.test
-incus exec $DEVCTL_CONTAINER -- env DEVCTL_BASE_URL=http://127.0.0.1:4000 \
+# Compile with the test name filter and run inside the machine
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c -tags=integration -o devctl.test ./tests/api/   # Darwin host: set GOOS/GOARCH
+bash scripts/test-push.sh $DEVCTL_CONTAINER devctl.test /tmp/devctl.test
+bash scripts/test-exec.sh $DEVCTL_CONTAINER -- chmod 755 /tmp/devctl.test
+bash scripts/test-exec.sh $DEVCTL_CONTAINER -- env DEVCTL_BASE_URL=http://127.0.0.1:4000 \
   /tmp/devctl.test -test.v -test.run TestDeleteAllEmails
 ```
 
