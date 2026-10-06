@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -240,6 +241,9 @@ func curlDownload(ctx context.Context, url, dest string) error {
 // it does not hold /run/php/php{ver}-fpm.sock. Errors are ignored — the unit
 // may not be installed on the system.
 func disableSystemFPM(ctx context.Context, ver string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
 	unit := fmt.Sprintf("php%s-fpm.service", ver)
 	for _, action := range []string{"stop", "disable"} {
 		cmd := exec.CommandContext(ctx, "systemctl", action, unit)

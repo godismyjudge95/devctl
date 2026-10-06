@@ -230,3 +230,31 @@ func TestWriteConfigs_LogsDirOwnedBySiteUser(t *testing.T) {
 		t.Errorf("logs dir %s: want uid %d (siteUser), got uid %d", logsDir, expectedUID, gotUID)
 	}
 }
+
+func TestWriteConfigs_PoolGroupIsPrimaryGroup(t *testing.T) {
+	ver := "8.4"
+	serverRoot := setupFakeServerRoot(t, ver)
+	siteUser := currentUser(t)
+	if err := WriteConfigs(ver, serverRoot, siteUser); err != nil {
+		t.Fatalf("WriteConfigs: %v", err)
+	}
+	u, err := user.Lookup(siteUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := user.LookupGroupId(u.Gid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf, err := os.ReadFile(FPMConfigPath(ver, serverRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "group = " + g.Name
+	if !strings.Contains(string(conf), want) {
+		t.Fatalf("php-fpm.conf missing %q\n%s", want, conf)
+	}
+	if !strings.Contains(string(conf), "listen.group = "+g.Name) {
+		t.Fatalf("php-fpm.conf missing listen.group = %s", g.Name)
+	}
+}

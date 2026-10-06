@@ -183,7 +183,7 @@ func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 		Label:        "PHP " + ver + " FPM",
 		Managed:      true,
 		ManagedCmd:   php.FPMBinary(ver, s.serverRoot),
-		ManagedArgs:  fmt.Sprintf("--nodaemonize --fpm-config %s", php.FPMConfigPath(ver, s.serverRoot)),
+		ManagedArgs:  fmt.Sprintf("-c %s/php.ini --nodaemonize --fpm-config %s", php.PHPDir(ver, s.serverRoot), php.FPMConfigPath(ver, s.serverRoot)),
 		ManagedDir:   php.PHPDir(ver, s.serverRoot),
 		Log:          php.FPMLogPath(ver, s.serverRoot),
 		Version:      versionCmd,

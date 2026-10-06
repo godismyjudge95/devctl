@@ -67,9 +67,11 @@ var assetTable = []assetRow{
 	{GOOS: "darwin", GOARCH: "arm64", Name: "fnm", Asset: Asset{Token: "macos", File: "fnm-macos.zip"}},
 
 	{GOOS: "linux", GOARCH: "amd64", Name: "sqlite3", Asset: Asset{Token: "linux-x64", File: "sqlite-tools-linux-x64.zip"}},
+	{GOOS: "linux", GOARCH: "arm64", Name: "sqlite3", Asset: Asset{Token: "linux-x64", File: "sqlite-tools-linux-x64.zip"}},
 	{GOOS: "darwin", GOARCH: "arm64", Name: "sqlite3", Asset: Asset{Token: "osx-arm64", File: "sqlite-tools-osx-arm64.zip"}},
 
 	{GOOS: "linux", GOARCH: "amd64", Name: "phpantom_lsp", Asset: Asset{Token: "x86_64-unknown-linux-gnu", File: "phpantom_lsp-linux-gnu.tar.gz"}},
+	{GOOS: "linux", GOARCH: "arm64", Name: "phpantom_lsp", Asset: Asset{Token: "aarch64-unknown-linux-gnu", File: "phpantom_lsp-linux-gnu.tar.gz"}},
 	{GOOS: "darwin", GOARCH: "arm64", Name: "phpantom_lsp", Asset: Asset{Token: "aarch64-apple-darwin", File: "phpantom_lsp-apple-darwin.tar.gz"}},
 
 	{GOOS: "linux", GOARCH: "amd64", Name: "valkey", Asset: Asset{Token: "jammy-x86_64", File: "valkey-linux-x86_64.tar.gz"}},

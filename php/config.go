@@ -131,9 +131,14 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 	// FPM workers run as siteUser and must be able to write to their log file
 	// and read their config files — so we chown everything they touch.
 	var uid, gid int = -1, -1
+	userName, groupName := siteUser, siteUser
 	if u, err := user.Lookup(siteUser); err == nil {
 		fmt.Sscan(u.Uid, &uid)
 		fmt.Sscan(u.Gid, &gid)
+		userName = u.Username
+		if g, err := user.LookupGroupId(u.Gid); err == nil && g.Name != "" {
+			groupName = g.Name
+		}
 	}
 	chown := func(path string) {
 		if uid >= 0 {
@@ -254,7 +259,7 @@ pm.max_spare_servers = 4
 php_value[error_log] = %s
 php_value[html_errors] = Off
 php_admin_value[auto_prepend_file] = %s
-`, ver, fpmGlobalLog, siteUser, siteUser, socketPath, siteUser, siteUser, fpmPoolLog, prependPath)
+`, ver, fpmGlobalLog, userName, groupName, socketPath, userName, groupName, fpmPoolLog, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}
