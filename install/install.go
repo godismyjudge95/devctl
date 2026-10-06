@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -160,6 +161,9 @@ func aptGet(ctx context.Context, args ...string) error {
 
 // aptGetW is like aptGet but writes stdout+stderr to w in real-time.
 func aptGetW(ctx context.Context, w io.Writer, args ...string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, aptTimeout)
 	defer cancel()
 
@@ -184,6 +188,9 @@ func aptInstall(ctx context.Context, pkgs ...string) error {
 // Already-installed packages are skipped. When the process is non-root and
 // packages are still missing, returns an error pointing at elevate install.
 func aptInstallW(ctx context.Context, w io.Writer, pkgs ...string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
 	var need []string
 	for _, p := range pkgs {
 		if aptPackageInstalled(p) {
@@ -221,6 +228,9 @@ func aptPurge(ctx context.Context, pkgs ...string) error {
 
 // aptPurgeW is like aptPurge but streams output to w.
 func aptPurgeW(ctx context.Context, w io.Writer, pkgs ...string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
 	args := append([]string{"purge", "-y"}, pkgs...)
 	if err := aptGetW(ctx, w, args...); err != nil {
 		return err
