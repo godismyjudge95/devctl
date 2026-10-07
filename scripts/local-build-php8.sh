@@ -206,7 +206,7 @@ fi
 
 if [[ "$SKIP_DOWNLOAD" -eq 0 ]]; then
   echo "==> downloading sources (cached under $SPC_DIR/downloads)"
-  IGNORE_CACHE="php-src,libaom,libevent,pcov"
+  IGNORE_CACHE="php-src,libaom,libevent,pcov,swoole"
   if [[ "$MINOR" == "8.0" ]]; then
     IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
   fi

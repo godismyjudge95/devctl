@@ -253,7 +253,7 @@ jobs:
         working-directory: spc
         run: |
           set -euo pipefail
-          IGNORE_CACHE="php-src,libaom,libevent,pcov"
+          IGNORE_CACHE="php-src,libaom,libevent,pcov,swoole"
           if [ "${{ matrix.minor }}" = "8.0" ]; then
             IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
           fi
