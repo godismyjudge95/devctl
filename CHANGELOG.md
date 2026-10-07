@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+## v0.17.0 — 2026-10-07
+
+- Split privileged bind into `devctl elevate daemon`. The dashboard unit has no `CAP_NET_BIND_SERVICE`. Caddy (and later FTP-style services) run under the elevate supervisor and bind `:80`/`:443` on Linux and macOS, including HTTP/3. Guest NAT no longer matches a host-wide pf `rdr`.
+
 ## v0.16.1 — 2026-10-07
 
 - Fixed PHP-FPM reporting as stopped after a daemon restart when a leftover master still held the pool socket.

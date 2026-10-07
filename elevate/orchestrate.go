@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/paths"
 )
 
@@ -220,7 +219,7 @@ func elevatePortsLinux(facts Facts, w io.Writer) error {
 	if err := ensureFactsForUnit(&facts); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "    writing unit with User=%s and AmbientCapabilities=CAP_NET_BIND_SERVICE\n", facts.SiteUser)
+	fmt.Fprintf(w, "    writing unprivileged dashboard unit User=%s\n", facts.SiteUser)
 	if err := RunHelperSelf(w, w,
 		"write-unit",
 		"--binary", facts.BinaryPath,
@@ -230,51 +229,9 @@ func elevatePortsLinux(facts Facts, w io.Writer) error {
 	); err != nil {
 		return err
 	}
-	// Migration from root daemon: ensure server tree is owned by the site user.
-	fmt.Fprintf(w, "    chown %s → %s\n", facts.ServerRoot, facts.SiteUser)
+	fmt.Fprintf(w, "    writing elevate daemon unit (CAP_NET_BIND_SERVICE)\n")
 	if err := RunHelperSelf(w, w,
-		"chown-tree",
-		"--path", facts.ServerRoot,
-		"--user", facts.SiteUser,
-	); err != nil {
-		return err
-	}
-	fmt.Fprintf(w, "    reloading systemd and restarting devctl\n")
-	if err := RunHelperSelf(w, w, "systemctl", "daemon-reload"); err != nil {
-		return err
-	}
-	if err := RunHelperSelf(w, w, "systemctl", "enable", "devctl"); err != nil {
-		return err
-	}
-	if err := RunHelperSelf(w, w, "systemctl", "restart", "devctl"); err != nil {
-		return err
-	}
-	fmt.Fprintf(w, "    ok — daemon runs as %s with ambient bind capability\n", facts.SiteUser)
-	return nil
-}
-
-func elevatePortsDarwin(facts Facts, w io.Writer) error {
-	if err := ensureFactsForUnit(&facts); err != nil {
-		return err
-	}
-	plist := LaunchAgentPath(facts.SiteHome)
-	listen := dist.ListenHTTPFor("darwin")
-	httpPort, httpsPort := "8080", "8443"
-	if len(listen) >= 2 {
-		httpPort = strings.TrimPrefix(listen[0], ":")
-		httpsPort = strings.TrimPrefix(listen[1], ":")
-	}
-	if _, err := os.Stat(plist); err == nil {
-		fmt.Fprintf(w, "    LaunchAgent present — installing pf rdr 80→%s 443→%s only\n", httpPort, httpsPort)
-		if err := RunHelperSelf(w, w, "install-pf", "--http", httpPort, "--https", httpsPort); err != nil {
-			return err
-		}
-		fmt.Fprintf(w, "    ok\n")
-		return nil
-	}
-	fmt.Fprintf(w, "    writing LaunchAgent %s\n", plist)
-	if err := RunHelperSelf(w, w,
-		"write-plist",
+		"write-elevate-unit",
 		"--binary", facts.BinaryPath,
 		"--user", facts.SiteUser,
 		"--home", facts.SiteHome,
@@ -290,22 +247,81 @@ func elevatePortsDarwin(facts Facts, w io.Writer) error {
 	); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "    installing pf rdr 80→%s 443→%s\n", httpPort, httpsPort)
-	if err := RunHelperSelf(w, w, "install-pf", "--http", httpPort, "--https", httpsPort); err != nil {
+	fmt.Fprintf(w, "    reloading systemd and starting both units\n")
+	if err := RunHelperSelf(w, w, "systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	u, err := user.Lookup(facts.SiteUser)
-	if err != nil {
-		return fmt.Errorf("lookup user: %w", err)
-	}
-	domain := "gui/" + u.Uid
-	label := domain + "/" + LaunchAgentLabel
-	fmt.Fprintf(w, "    loading %s\n", label)
-	_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
-	if err := RunHelperSelf(w, w, "launchctl", "bootstrap", domain, plist); err != nil {
+	if err := RunHelperSelf(w, w, "systemctl", "enable", "devctl-elevate"); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "    ok — daemon runs as %s under launchd\n", facts.SiteUser)
+	if err := RunHelperSelf(w, w, "systemctl", "enable", "devctl"); err != nil {
+		return err
+	}
+	if err := RunHelperSelf(w, w, "systemctl", "restart", "devctl-elevate"); err != nil {
+		return err
+	}
+	if err := RunHelperSelf(w, w, "systemctl", "restart", "devctl"); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "    ok — dashboard as %s; elevate daemon binds 80/443\n", facts.SiteUser)
+	return nil
+}
+
+func elevatePortsDarwin(facts Facts, w io.Writer) error {
+	if err := ensureFactsForUnit(&facts); err != nil {
+		return err
+	}
+	plist := LaunchAgentPath(facts.SiteHome)
+	if _, err := os.Stat(plist); err != nil {
+		fmt.Fprintf(w, "    writing LaunchAgent %s\n", plist)
+		if err := RunHelperSelf(w, w,
+			"write-plist",
+			"--binary", facts.BinaryPath,
+			"--user", facts.SiteUser,
+			"--home", facts.SiteHome,
+			"--server-root", facts.ServerRoot,
+		); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "    chown %s → %s\n", facts.ServerRoot, facts.SiteUser)
+		if err := RunHelperSelf(w, w,
+			"chown-tree",
+			"--path", facts.ServerRoot,
+			"--user", facts.SiteUser,
+		); err != nil {
+			return err
+		}
+		u, err := user.Lookup(facts.SiteUser)
+		if err != nil {
+			return fmt.Errorf("lookup user: %w", err)
+		}
+		domain := "gui/" + u.Uid
+		label := domain + "/" + LaunchAgentLabel
+		fmt.Fprintf(w, "    loading %s\n", label)
+		_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
+		if err := RunHelperSelf(w, w, "launchctl", "bootstrap", domain, plist); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(w, "    writing elevate LaunchDaemon %s\n", ElevateLaunchDaemonPath)
+	if err := RunHelperSelf(w, w,
+		"write-elevate-plist",
+		"--binary", facts.BinaryPath,
+		"--user", facts.SiteUser,
+		"--home", facts.SiteHome,
+		"--server-root", facts.ServerRoot,
+	); err != nil {
+		return err
+	}
+	sysLabel := "system/" + ElevateLaunchDaemonLabel
+	fmt.Fprintf(w, "    loading %s\n", sysLabel)
+	_ = RunHelperSelf(w, w, "launchctl", "bootout", sysLabel)
+	if err := RunHelperSelf(w, w, "launchctl", "bootstrap", "system", ElevateLaunchDaemonPath); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "    removing pf rdr (Caddy binds 80/443 in elevate daemon)\n")
+	_ = RunHelperSelf(w, w, "uninstall-pf")
+	fmt.Fprintf(w, "    ok — elevate daemon binds 80/443\n")
 	return nil
 }
 
@@ -320,53 +336,29 @@ func unelevatePortsDarwin(facts Facts, w io.Writer) error {
 	if err := ensureFactsForUnit(&facts); err != nil {
 		return err
 	}
-	u, err := user.Lookup(facts.SiteUser)
-	if err != nil {
-		return fmt.Errorf("lookup user: %w", err)
+	sysLabel := "system/" + ElevateLaunchDaemonLabel
+	fmt.Fprintf(w, "    unloading %s\n", sysLabel)
+	_ = RunHelperSelf(w, w, "launchctl", "bootout", sysLabel)
+	if err := os.Remove(ElevateLaunchDaemonPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove elevate plist: %w", err)
 	}
-	label := "gui/" + u.Uid + "/" + LaunchAgentLabel
-	fmt.Fprintf(w, "    unloading %s\n", label)
-	_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
-	fmt.Fprintf(w, "    removing pf rdr\n")
+	fmt.Fprintf(w, "    removing leftover pf rdr\n")
 	_ = RunHelperSelf(w, w, "uninstall-pf")
-	plist := LaunchAgentPath(facts.SiteHome)
-	if err := os.Remove(plist); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove plist: %w", err)
-	}
-	fmt.Fprintf(w, "    ok\n")
+	fmt.Fprintf(w, "    ok — dashboard LaunchAgent left running\n")
 	return nil
 }
 
 func unelevatePortsLinux(facts Facts, w io.Writer) error {
-	// Re-write unit without AmbientCapabilities (still User= to stay non-root).
 	if err := ensureFactsForUnit(&facts); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "    rewriting unit without AmbientCapabilities (ports 80/443 will fail until re-elevated)\n")
-	content := fmt.Sprintf(`[Unit]
-Description=devctl — Local PHP Dev Dashboard
-After=network.target
-
-[Service]
-Type=simple
-User=%s
-Group=%s
-NoNewPrivileges=true
-ExecStart=%s daemon
-Restart=on-failure
-RestartSec=5s
-Environment=HOME=%s
-Environment=DEVCTL_SITE_USER=%s
-Environment=DEVCTL_SERVER_ROOT=%s
-
-[Install]
-WantedBy=multi-user.target
-`, facts.SiteUser, facts.SiteUser, facts.BinaryPath, facts.SiteHome, facts.SiteUser, facts.ServerRoot)
-	if err := writeFileAtomic(ServiceUnitPath, []byte(content), 0644); err != nil {
+	fmt.Fprintf(w, "    stopping elevate daemon (ports 80/443 will fail until re-elevated)\n")
+	_ = RunHelperSelf(w, w, "systemctl", "stop", "devctl-elevate")
+	_ = RunHelperSelf(w, w, "systemctl", "disable", "devctl-elevate")
+	if err := os.Remove(ElevateServiceUnitPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	_ = RunHelperSelf(w, w, "systemctl", "daemon-reload")
-	_ = RunHelperSelf(w, w, "systemctl", "restart", "devctl")
 	fmt.Fprintf(w, "    ok\n")
 	return nil
 }

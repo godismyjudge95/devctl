@@ -54,8 +54,8 @@ func TestListenHTTPFor(t *testing.T) {
 		t.Errorf("linux listen = %v, want [:80 :443]", linux)
 	}
 	darwin := ListenHTTPFor("darwin")
-	if len(darwin) != 2 || darwin[0] != ":8080" || darwin[1] != ":8443" {
-		t.Errorf("darwin listen = %v, want [:8080 :8443]", darwin)
+	if len(darwin) != 2 || darwin[0] != ":80" || darwin[1] != ":443" {
+		t.Errorf("darwin listen = %v, want [:80 :443]", darwin)
 	}
 }
 
@@ -63,7 +63,7 @@ func TestHTTPPortFor(t *testing.T) {
 	if HTTPPortFor("linux") != 80 || HTTPSPortFor("linux") != 443 {
 		t.Errorf("linux ports = %d/%d", HTTPPortFor("linux"), HTTPSPortFor("linux"))
 	}
-	if HTTPPortFor("darwin") != 8080 || HTTPSPortFor("darwin") != 8443 {
+	if HTTPPortFor("darwin") != 80 || HTTPSPortFor("darwin") != 443 {
 		t.Errorf("darwin ports = %d/%d", HTTPPortFor("darwin"), HTTPSPortFor("darwin"))
 	}
 }

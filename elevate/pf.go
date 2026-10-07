@@ -19,12 +19,14 @@ const (
 
 // PFAnchorContent is the rdr rules that send 80/443 to Caddy's Darwin ports.
 // Rules apply on every interface so a DHCP/LAN A record reaches Caddy.
+// Apple vmnet guests (192.168.64.0/24) are excluded so they can reach the
+// public internet on 80/443 without matching these redirects.
 func PFAnchorContent(httpPort, httpsPort string) string {
 	httpPort = strings.TrimPrefix(httpPort, ":")
 	httpsPort = strings.TrimPrefix(httpsPort, ":")
 	return fmt.Sprintf(
-		"rdr pass inet proto tcp from any to any port 80 -> 127.0.0.1 port %s\n"+
-			"rdr pass inet proto tcp from any to any port 443 -> 127.0.0.1 port %s\n",
+		"rdr pass inet proto tcp from ! 192.168.64.0/24 to any port 80 -> 127.0.0.1 port %s\n"+
+			"rdr pass inet proto tcp from ! 192.168.64.0/24 to any port 443 -> 127.0.0.1 port %s\n",
 		httpPort, httpsPort)
 }
 

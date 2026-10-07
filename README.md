@@ -4,7 +4,7 @@
 
 # devctl
 
-A local PHP development environment dashboard for Linux and macOS. On Linux it runs as a **non-root** systemd service (with ambient capabilities for ports 80/443). On macOS it runs as a **LaunchAgent** (`ai.devctl`) and Caddy listens on `:8080` / `:8443` (optional pf redirect from 80/443). The browser UI is at `http://127.0.0.1:4000`.
+A local PHP development environment dashboard for Linux and macOS. On Linux it runs as a **non-root** systemd service. On macOS it runs as a **LaunchAgent** (`ai.devctl`). Caddy binds `:80` / `:443` from `devctl elevate daemon`. The browser UI is at `http://127.0.0.1:4000`.
 
 devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and optional dev services (Valkey/Redis, PostgreSQL, MySQL, Mailpit, Meilisearch, Typesense, Laravel Reverb, MaxIO, ClickHouse) — all from a single dashboard without touching config files.
 
@@ -52,7 +52,7 @@ devctl is a self-contained development environment manager for PHP projects on L
 - **Zero config files to edit** — devctl writes sensible defaults on first install. Every config file is user-editable and never overwritten on restart.
 - **AI-friendly** — a CLI lets AI agents (OpenCode, Claude, Cursor) interact with your dev environment without root: `devctl services:list`, `devctl sites:list`, `devctl logs:tail caddy`, etc.
 
-All service binaries are downloaded directly from their upstream releases and stored under your sites directory (`~/ddev/sites/server/` on Linux, `~/Code/sites/server/` on macOS). Nothing is installed system-wide except the parent unit (systemd on Linux, LaunchAgent on macOS).
+All service binaries are downloaded directly from their upstream releases and stored under your sites directory (`~/ddev/sites/server/` on Linux, `~/Code/sites/server/` on macOS). Nothing is installed system-wide except the parent unit (systemd on Linux, LaunchAgent plus elevate LaunchDaemon on macOS).
 
 ---
 
@@ -183,7 +183,7 @@ make install
 
 Never run `sudo make install`. The Makefile builds as your user. Linux recipes call sudo only for the unit and binary copy. macOS recipes do not use sudo.
 
-On Linux, `make install` copies the binary to `{serverRoot}/devctl/devctl` and writes `devctl.service` to `/etc/systemd/system/`. On macOS it writes `~/Library/LaunchAgents/ai.devctl.plist`. Edit `HOME`, `DEVCTL_SITE_USER`, and `DEVCTL_SERVER_ROOT` in the generated unit if you need non-default paths.
+On Linux, `make install` copies the binary to `{serverRoot}/devctl/devctl` and writes `devctl.service` plus `devctl-elevate.service`. On macOS it writes `~/Library/LaunchAgents/ai.devctl.plist`; `sudo devctl elevate ports` writes `/Library/LaunchDaemons/ai.devctl.elevate.plist`. Edit `HOME`, `DEVCTL_SITE_USER`, and `DEVCTL_SERVER_ROOT` in the generated unit if you need non-default paths.
 
 ---
 
@@ -247,7 +247,7 @@ devctl checks for newer versions once per day at 3 am. When an update is availab
 
 | Service | Port(s) | `.test` vhost | Download source | Config file |
 |---|---|---|---|---|
-| Caddy | `:80`, `:443` (Linux) or `:8080`, `:8443` (macOS), `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
+| Caddy | `:80`, `:443`, `127.0.0.1:2019` (admin) | — | [github.com/caddyserver/caddy](https://github.com/caddyserver/caddy/releases) | `{serverRoot}/caddy/Caddyfile` (auto-managed) |
 | DNS Server | `127.0.0.1:5354` (UDP+TCP) | — | Embedded goroutine (no download) | — |
 | Valkey (Redis-compatible) | `127.0.0.1:6379` | — | Linux: [download.valkey.io](https://download.valkey.io/releases/). macOS: [Herd Valkey zip](https://download.herdphp.com/services/valkey/8.1.10-universal.zip) (valkey.io has no Darwin artifact). | `{serverRoot}/valkey/valkey.conf` |
 | PostgreSQL + extensions | `127.0.0.1:5432` | — | Linux: [Percona PG tarball](https://downloads.percona.com/downloads/postgresql-distribution-18/) + [TimescaleDB Community `.deb`](https://packagecloud.io/timescale/timescaledb) + [pgvector](https://github.com/pgvector/pgvector) + [pg_clickhouse `.deb`](https://github.com/ClickHouse/pg_clickhouse/releases). macOS: [EDB PostgreSQL zip](https://www.enterprisedb.com/download-postgresql-binaries); TimescaleDB, pgvector, and pg_clickhouse compile against the nested `pg_config` (no Homebrew formula). | `{serverRoot}/postgres/data/postgresql.conf` |
@@ -426,7 +426,7 @@ Reverse with `sudo devctl unelevate resolver`.
 
 ### macOS resolver
 
-On macOS, `sudo devctl elevate resolver` writes `/etc/resolver/<tld>` so `*.test` queries go to `127.0.0.1:5354`. Empty Target IP answers `127.0.0.1` to this Mac so Chrome uses loopback. Caddy listens on every interface at `:8080` and `:8443`. Browsers still use port 443 — `sudo devctl elevate ports` installs pf redirects for 80/443. Reverse the resolver with `sudo devctl unelevate resolver`.
+On macOS, `sudo devctl elevate resolver` writes `/etc/resolver/<tld>` so `*.test` queries go to `127.0.0.1:5354`. Empty Target IP answers `127.0.0.1` to this Mac so Chrome uses loopback. Caddy listens on `:80` and `:443` from `devctl elevate daemon`. Reverse the resolver with `sudo devctl unelevate resolver`.
 
 ---
 
@@ -642,12 +642,12 @@ The service worker registers automatically on first load. It has no caching stra
 
 Day-to-day devctl runs as your user.
 
-**Linux** uses a systemd **system** unit with:
+**Linux** uses two systemd **system** units:
 
-- `User=` / `Group=` set to your site user
-- `AmbientCapabilities=CAP_NET_BIND_SERVICE` so supervised Caddy can bind ports 80/443 without `setcap` on the Caddy binary (and without re-elevating after Caddy updates)
+- `devctl.service` — dashboard as your site user, no bind capability
+- `devctl-elevate.service` — `devctl elevate daemon` as your site user with `AmbientCapabilities=CAP_NET_BIND_SERVICE` so Caddy (and later other bind-privileged services) can listen on 80/443 including HTTP/3
 
-**macOS** uses a LaunchAgent (`~/Library/LaunchAgents/ai.devctl.plist`, label `ai.devctl`). Caddy listens on all interfaces at `:8080` and `:8443`. `sudo devctl elevate ports` installs a pf redirect from 80/443 (every interface, so a DHCP/LAN A record reaches Caddy) and from loopback port 53 to 5354. `sudo devctl elevate trust` adds the Caddy CA to the System keychain.
+**macOS** uses a user LaunchAgent (`ai.devctl`) for the dashboard and a system LaunchDaemon (`ai.devctl.elevate`) for `devctl elevate daemon` (root, so Caddy can bind 80/443). Guest NAT to the internet does not hit those listen sockets.
 
 One-shot privileged OS setup uses **typed elevate targets** (sudo only for these):
 
@@ -655,13 +655,14 @@ One-shot privileged OS setup uses **typed elevate targets** (sudo only for these
 sudo devctl elevate              # trust + resolver + ports (default)
 sudo devctl elevate trust        # install Caddy local CA into the system trust store
 sudo devctl elevate resolver     # systemd-resolved drop-in (Linux) or /etc/resolver/<tld> (macOS)
-sudo devctl elevate ports        # Linux: write/refresh unit with User= + AmbientCapabilities. macOS: pf rdr 80→8080, 443→8443
-sudo devctl elevate install      # Linux: unit + enable + apt allowlist deps + resolver
-sudo devctl unelevate            # reverse trust + resolver (+ strip ambient from unit / remove pf)
+sudo devctl elevate ports        # install/start the elevate daemon unit (binds 80/443)
+sudo devctl elevate daemon       # run the elevate supervisor in the foreground (also the unit ExecStart)
+sudo devctl elevate install      # Linux: units + enable + apt allowlist deps + resolver
+sudo devctl unelevate            # reverse trust + resolver + stop the elevate daemon
 devctl elevate:status            # no root — show which targets are configured
 ```
 
-Under the hood, `sudo devctl elevate` re-invokes `devctl helper <op>` for each audited operation (frozen argv, euid 0 only). The long-lived daemon **refuses to run as root**.
+Under the hood, `sudo devctl elevate` re-invokes `devctl helper <op>` for each audited one-shot operation. The dashboard daemon **refuses to run as root**. `devctl elevate daemon` is the long-lived privileged supervisor.
 
 Self-update and API restart re-exec the process in place — **no sudo** after an update.
 
@@ -771,8 +772,7 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 | Port | Service | Configurable |
 |---|---|---|
 | `127.0.0.1:4000` | devctl dashboard | Yes — Settings → Dashboard |
-| `:80` / `:443` | Caddy (Linux) | No |
-| `:8080` / `:8443` | Caddy (macOS; pf can redirect 80/443) | No |
+| `:80` / `:443` | Caddy (both OS; elevate daemon) | No |
 | `127.0.0.1:2019` | Caddy Admin API | Yes — Settings |
 | `127.0.0.1:5354` | DNS server (UDP+TCP) | Yes — Services → DNS → Settings |
 | `127.0.0.1:9912` | PHP dump receiver (TCP) | Yes — Settings → PHP Dump Server |
@@ -814,8 +814,10 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/maxio/` | MaxIO binary, `config.env`, object data |
 | `{serverRoot}/clickhouse/` | ClickHouse binary, `config.xml`, `users.xml`, data |
 | `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
-| `/etc/systemd/system/devctl.service` | Linux systemd unit file |
+| `/etc/systemd/system/devctl.service` | Linux dashboard unit |
+| `/etc/systemd/system/devctl-elevate.service` | Linux elevate daemon (Caddy bind) |
 | `~/Library/LaunchAgents/ai.devctl.plist` | macOS LaunchAgent |
+| `/Library/LaunchDaemons/ai.devctl.elevate.plist` | macOS elevate daemon (Caddy bind) |
 | `/etc/profile.d/devctl.sh` | Linux: adds `{serverRoot}/bin` to `PATH` for all users |
 
 ---
@@ -830,7 +832,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | Database | SQLite (`modernc.org/sqlite`), sqlc (codegen), goose (migrations) |
 | Frontend | Vue 3, TypeScript, Pinia, Vite 7, Tailwind CSS v4, shadcn-vue |
 | Proxy / TLS | Caddy with internal CA, wildcard `*.test` certs |
-| Service unit | systemd system service (Linux) or LaunchAgent `ai.devctl` (macOS) |
+| Service unit | systemd `devctl` + `devctl-elevate` (Linux); LaunchAgent `ai.devctl` + LaunchDaemon `ai.devctl.elevate` (macOS) |
 
 ### Build commands
 

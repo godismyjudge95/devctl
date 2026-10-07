@@ -81,3 +81,31 @@ func TestStart_PreStartErrorDoesNotLaunch(t *testing.T) {
 		t.Fatal("child started after PreStart error")
 	}
 }
+
+type fakeElevated struct {
+	started string
+}
+
+func (f *fakeElevated) Start(def Definition) error { f.started = def.ID; return nil }
+func (f *fakeElevated) Stop(id string) error       { return nil }
+func (f *fakeElevated) Restart(def Definition) error {
+	f.started = def.ID
+	return nil
+}
+func (f *fakeElevated) IsRunning(id string) bool { return f.started == id }
+
+func TestSupervisorRoutesElevatedBind(t *testing.T) {
+	sup := NewSupervisor(t.TempDir())
+	fake := &fakeElevated{}
+	sup.SetElevatedRunner(fake, []string{"caddy"})
+	def := Definition{ID: "caddy", Managed: true, NeedsElevatedBind: true, ManagedCmd: "/nope"}
+	if err := sup.Start(def); err != nil {
+		t.Fatal(err)
+	}
+	if fake.started != "caddy" {
+		t.Fatalf("elevate runner started %q", fake.started)
+	}
+	if !sup.IsRunning("caddy") {
+		t.Fatal("expected IsRunning via elevate runner")
+	}
+}

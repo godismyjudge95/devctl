@@ -32,10 +32,10 @@ func CollectStatus(caFingerprint string) Status {
 		st.UnitPath = LaunchAgentPath(home)
 		st.ResolverPath = DarwinResolverPath("test")
 		_, err := os.Stat(st.UnitPath)
-		st.PortsConfigured = err == nil && PFConfigured()
+		st.PortsConfigured = ElevateDaemonConfigured()
 		st.UnitRunsAsUser = err == nil
 	} else {
-		st.PortsConfigured = UnitHasAmbientBind(ServiceUnitPath)
+		st.PortsConfigured = ElevateDaemonConfigured()
 		st.UnitPath = ServiceUnitPath
 		st.UnitRunsAsUser = UnitRunsAsUser(ServiceUnitPath)
 		st.ResolverPath = ResolvedDropinFile

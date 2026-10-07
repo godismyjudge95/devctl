@@ -20,9 +20,8 @@ func TestElevateStatus(t *testing.T) {
 	if err := json.Unmarshal(out, &st); err != nil {
 		t.Fatalf("decode status: %v\n%s", err, out)
 	}
-	// Unit in test env should have ambient + User=testuser.
 	if ports, _ := st["ports_configured"].(bool); !ports {
-		t.Errorf("ports_configured: want true in test env (ambient unit), got %v\n%s", st["ports_configured"], out)
+		t.Errorf("ports_configured: want true in test env (elevate daemon unit), got %v\n%s", st["ports_configured"], out)
 	}
 	if asUser, _ := st["unit_runs_as_user"].(bool); !asUser {
 		t.Errorf("unit_runs_as_user: want true, got %v", st["unit_runs_as_user"])
@@ -43,27 +42,25 @@ func TestDaemonNotRoot(t *testing.T) {
 	}
 	t.Logf("devctl runs as User=%s", user)
 
-	// Confirm AmbientCapabilities is set.
-	out2, err := exec.Command("systemctl", "show", "devctl", "-p", "AmbientCapabilities", "--value").CombinedOutput()
-	if err != nil {
-		t.Fatalf("systemctl show AmbientCapabilities: %v\n%s", err, out2)
-	}
-	caps := strings.TrimSpace(string(out2))
-	if !strings.Contains(strings.ToUpper(caps), "CAP_NET_BIND_SERVICE") && caps != "0" {
-		// systemd may show numeric or name form; empty means not set.
-		// On some systems AmbientCapabilities shows as a bitmask.
-		t.Logf("AmbientCapabilities raw value: %q", caps)
-	}
-	// Also read unit file.
 	data, err := os.ReadFile("/etc/systemd/system/devctl.service")
 	if err != nil {
 		t.Fatalf("read unit: %v", err)
 	}
-	if !strings.Contains(string(data), "AmbientCapabilities=CAP_NET_BIND_SERVICE") {
-		t.Fatalf("unit missing AmbientCapabilities:\n%s", data)
+	if strings.Contains(string(data), "AmbientCapabilities=CAP_NET_BIND_SERVICE") {
+		t.Fatalf("dashboard unit must not set AmbientCapabilities:\n%s", data)
 	}
 	if !strings.Contains(string(data), "User=") {
 		t.Fatalf("unit missing User=:\n%s", data)
+	}
+	elev, err := os.ReadFile("/etc/systemd/system/devctl-elevate.service")
+	if err != nil {
+		t.Fatalf("read elevate unit: %v", err)
+	}
+	if !strings.Contains(string(elev), "AmbientCapabilities=CAP_NET_BIND_SERVICE") {
+		t.Fatalf("elevate unit missing AmbientCapabilities:\n%s", elev)
+	}
+	if !strings.Contains(string(elev), "elevate daemon") {
+		t.Fatalf("elevate unit missing elevate daemon:\n%s", elev)
 	}
 }
 

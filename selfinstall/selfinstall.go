@@ -164,11 +164,12 @@ func Run(args []string) error {
 			fmt.Println("  8. launchctl bootstrap gui/<uid>/ai.devctl")
 		} else {
 			fmt.Println("  8. systemctl daemon-reload")
-			fmt.Println("  9. systemctl enable devctl")
-			fmt.Println(" 10. systemctl start devctl")
+			fmt.Println("  9. systemctl enable --now devctl-elevate")
+			fmt.Println(" 10. systemctl enable --now devctl")
 		}
 		fmt.Println()
-		fmt.Println("  Then (optional): sudo devctl elevate trust / resolver")
+		fmt.Println("  Then (optional): sudo devctl elevate ports  (macOS 80/443)")
+		fmt.Println("                  sudo devctl elevate trust / resolver")
 		fmt.Println()
 		fmt.Print("Proceed? [y/N] ")
 		if !confirm(r) {
@@ -209,7 +210,11 @@ func Run(args []string) error {
 				return os.WriteFile(existingServiceFile, []byte(content), 0644)
 			}
 			content := buildServiceFile(binaryDest, siteUser, siteHome, serverRoot)
-			return os.WriteFile(existingServiceFile, []byte(content), 0644)
+			if err := os.WriteFile(existingServiceFile, []byte(content), 0644); err != nil {
+				return err
+			}
+			elev := elevate.BuildElevateServiceFile(binaryDest, siteUser, siteHome, serverRoot)
+			return os.WriteFile(elevate.ElevateServiceUnitPath, []byte(elev), 0644)
 		}},
 		{"Saving sites directory", func() error {
 			return saveSitesDir(serverRoot, sitesDir)
@@ -270,7 +275,13 @@ func Run(args []string) error {
 			if err := systemctl("daemon-reload"); err != nil {
 				return err
 			}
+			if err := systemctl("enable", "devctl-elevate"); err != nil {
+				return err
+			}
 			if err := systemctl("enable", "devctl"); err != nil {
+				return err
+			}
+			if err := systemctl("restart", "devctl-elevate"); err != nil {
 				return err
 			}
 			if serviceIsActive() {
@@ -549,8 +560,6 @@ func saveSitesDir(serverRoot, sitesDir string) error {
 }
 
 // buildServiceFile generates the systemd unit file content.
-// The daemon runs as siteUser (not root) with ambient CAP_NET_BIND_SERVICE so
-// supervised Caddy can bind :80/:443 without setcap on the Caddy binary.
 func buildServiceFile(binaryPath, siteUser, siteHome, serverRoot string) string {
 	return elevate.BuildServiceFile(binaryPath, siteUser, siteHome, serverRoot)
 }

@@ -51,6 +51,19 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "elevate":
+			if len(os.Args) > 2 && os.Args[2] == "daemon" {
+				if err := elevate.RunDaemon(); err != nil {
+					fmt.Fprintf(os.Stderr, "devctl elevate daemon: %v\n", err)
+					os.Exit(1)
+				}
+				return
+			}
+			if cli.Dispatch(os.Args[1:]) {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "devctl: unknown command %q\n\nRun `devctl help` for a list of commands.\n", os.Args[1])
+			os.Exit(1)
 		case "install":
 			if err := selfinstall.Run(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "devctl install: %v\n", err)
@@ -106,13 +119,13 @@ func run() error {
 	}
 
 	// --- Privilege check ---
-	// The daemon runs as the site user under a systemd unit with
-	// AmbientCapabilities=CAP_NET_BIND_SERVICE. Running as root creates
+	// The dashboard daemon runs as the site user. Privileged ports are
+	// `devctl elevate daemon`. Running the dashboard as root creates
 	// root-owned files and breaks the privilege model.
 	if os.Geteuid() == 0 {
 		fmt.Fprintln(os.Stderr, "devctl daemon: refusing to run as root")
 		fmt.Fprintln(os.Stderr, "  Install/migrate with: sudo devctl elevate install")
-		fmt.Fprintln(os.Stderr, "  Or: sudo devctl elevate ports  (writes User= unit + ambient bind cap)")
+		fmt.Fprintln(os.Stderr, "  Privileged bind: sudo devctl elevate daemon  (or elevate ports)")
 		os.Exit(1)
 	}
 
@@ -221,6 +234,13 @@ func run() error {
 	done()
 
 	supervisor := services.NewSupervisor(cfg.ServerRoot)
+	var elevatedIDs []string
+	for _, def := range registry.All() {
+		if def.NeedsElevatedBind {
+			elevatedIDs = append(elevatedIDs, def.ID)
+		}
+	}
+	supervisor.SetElevatedRunner(elevate.NewDaemonClient(cfg.ServerRoot), elevatedIDs)
 	manager := services.NewManager(registry, supervisor)
 	poller := services.NewPoller(registry, manager, pollInterval)
 

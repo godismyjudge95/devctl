@@ -9,12 +9,41 @@ import (
 	"strings"
 )
 
-// BuildServiceFile generates the systemd system unit content for a non-root
-// daemon with ambient CAP_NET_BIND_SERVICE so Caddy can bind :80/:443.
+const ElevateServiceUnitPath = "/etc/systemd/system/devctl-elevate.service"
+
+// BuildServiceFile generates the systemd system unit for the unprivileged
+// dashboard daemon. Privileged bind is `devctl elevate daemon`.
 func BuildServiceFile(binaryPath, siteUser, siteHome, serverRoot string) string {
 	return fmt.Sprintf(`[Unit]
 Description=devctl — Local PHP Dev Dashboard
 After=network.target
+Wants=devctl-elevate.service
+After=devctl-elevate.service
+
+[Service]
+Type=simple
+User=%s
+Group=%s
+NoNewPrivileges=true
+ExecStart=%s daemon
+Restart=on-failure
+RestartSec=5s
+Environment=HOME=%s
+Environment=DEVCTL_SITE_USER=%s
+Environment=DEVCTL_SERVER_ROOT=%s
+
+[Install]
+WantedBy=multi-user.target
+`, siteUser, siteUser, binaryPath, siteHome, siteUser, serverRoot)
+}
+
+// BuildElevateServiceFile generates the systemd unit for the privileged
+// bind supervisor. It runs as the site user with CAP_NET_BIND_SERVICE.
+func BuildElevateServiceFile(binaryPath, siteUser, siteHome, serverRoot string) string {
+	return fmt.Sprintf(`[Unit]
+Description=devctl elevated bind supervisor
+After=network.target
+Before=devctl.service
 
 [Service]
 Type=simple
@@ -23,12 +52,13 @@ Group=%s
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-ExecStart=%s daemon
+ExecStart=%s elevate daemon
 Restart=on-failure
 RestartSec=5s
 Environment=HOME=%s
 Environment=DEVCTL_SITE_USER=%s
 Environment=DEVCTL_SERVER_ROOT=%s
+Environment=DEVCTL_ELEVATED=1
 
 [Install]
 WantedBy=multi-user.target
@@ -44,6 +74,17 @@ func UnitHasAmbientBind(unitPath string) bool {
 	s := string(data)
 	return strings.Contains(s, "AmbientCapabilities=CAP_NET_BIND_SERVICE") &&
 		strings.Contains(s, "User=")
+}
+
+// ElevateDaemonConfigured reports whether the Linux elevate unit or Darwin
+// LaunchDaemon plist is present.
+func ElevateDaemonConfigured() bool {
+	if runtime.GOOS == "darwin" {
+		_, err := os.Stat(ElevateLaunchDaemonPath)
+		return err == nil
+	}
+	_, err := os.Stat(ElevateServiceUnitPath)
+	return err == nil
 }
 
 // UnitRunsAsUser reports whether the unit has a User= directive (non-root model).
@@ -96,6 +137,42 @@ func helperWriteUnit(args []string) error {
 	content := BuildServiceFile(binaryPath, siteUser, siteHome, serverRoot)
 	if err := writeFileAtomic(ServiceUnitPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("write unit: %w", err)
+	}
+	fmt.Println("ok")
+	return nil
+}
+
+func helperWriteElevateUnit(args []string) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("write-elevate-unit is linux-only")
+	}
+	flags, _, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+	binaryPath := flags["binary"]
+	siteUser := flags["user"]
+	siteHome := flags["home"]
+	serverRoot := flags["server-root"]
+	if binaryPath == "" || siteUser == "" || siteHome == "" || serverRoot == "" {
+		return fmt.Errorf("--binary, --user, --home, and --server-root are required")
+	}
+	if !filepath.IsAbs(binaryPath) || !filepath.IsAbs(siteHome) || !filepath.IsAbs(serverRoot) {
+		return fmt.Errorf("binary, home, and server-root must be absolute paths")
+	}
+	if strings.ContainsAny(siteUser, "/\n\t ") || siteUser == "root" {
+		return fmt.Errorf("invalid user %q", siteUser)
+	}
+	st, err := os.Stat(binaryPath)
+	if err != nil {
+		return fmt.Errorf("stat binary: %w", err)
+	}
+	if st.IsDir() || st.Mode()&0111 == 0 {
+		return fmt.Errorf("binary is not an executable file: %s", binaryPath)
+	}
+	content := BuildElevateServiceFile(binaryPath, siteUser, siteHome, serverRoot)
+	if err := writeFileAtomic(ElevateServiceUnitPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write elevate unit: %w", err)
 	}
 	fmt.Println("ok")
 	return nil
@@ -167,7 +244,9 @@ func helperSystemctl(args []string) error {
 			continue
 		}
 		base := filepath.Base(a)
-		if base != "devctl" && base != "devctl.service" && base != "systemd-resolved" && base != "systemd-resolved.service" {
+		if base != "devctl" && base != "devctl.service" &&
+			base != "devctl-elevate" && base != "devctl-elevate.service" &&
+			base != "systemd-resolved" && base != "systemd-resolved.service" {
 			return fmt.Errorf("systemctl: unit %q not allowed", a)
 		}
 	}

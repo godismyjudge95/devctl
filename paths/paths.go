@@ -56,6 +56,13 @@ func BinaryPath(serverRoot string) string {
 	return filepath.Join(DevctlDir(serverRoot), "devctl")
 }
 
+// ElevateSocket returns the unix socket for the elevated bind supervisor.
+//
+//	{serverRoot}/devctl/elevate.sock
+func ElevateSocket(serverRoot string) string {
+	return filepath.Join(DevctlDir(serverRoot), "elevate.sock")
+}
+
 // ServiceDir returns the data directory for a managed service.
 //
 //	{serverRoot}/<id>

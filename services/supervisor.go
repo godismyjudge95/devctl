@@ -119,12 +119,23 @@ type managedProc struct {
 	done chan struct{}
 }
 
+// ElevatedRunner starts, stops, and inspects services that bind privileged
+// ports. The unprivileged dashboard daemon uses this to reach `devctl elevate daemon`.
+type ElevatedRunner interface {
+	Start(def Definition) error
+	Stop(id string) error
+	Restart(def Definition) error
+	IsRunning(id string) bool
+}
+
 // Supervisor manages devctl-supervised services (child processes or embedded goroutines).
 // It auto-restarts on crash and stops all children cleanly on shutdown.
 type Supervisor struct {
 	mu         sync.Mutex
 	procs      map[string]*managedProc
 	serverRoot string // server root directory (e.g. "/home/alice/ddev/sites/server")
+	elevated   ElevatedRunner
+	elevatedID map[string]struct{}
 }
 
 // NewSupervisor creates an idle Supervisor.
@@ -135,13 +146,34 @@ func NewSupervisor(serverRoot string) *Supervisor {
 	return &Supervisor{
 		procs:      make(map[string]*managedProc),
 		serverRoot: serverRoot,
+		elevatedID: make(map[string]struct{}),
 	}
+}
+
+// SetElevatedRunner routes NeedsElevatedBind services to the elevate daemon.
+// The elevate daemon itself must not call this.
+func (s *Supervisor) SetElevatedRunner(r ElevatedRunner, ids []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.elevated = r
+	s.elevatedID = make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		s.elevatedID[id] = struct{}{}
+	}
+}
+
+func (s *Supervisor) isElevated(id string) bool {
+	_, ok := s.elevatedID[id]
+	return ok && s.elevated != nil
 }
 
 // Start forks a managed service as a child process (or launches it as an
 // embedded goroutine if def.RunFunc is non-nil).
 // It is a no-op if the service is already running.
 func (s *Supervisor) Start(def Definition) error {
+	if s.elevated != nil && def.NeedsElevatedBind {
+		return s.elevated.Start(def)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -368,6 +400,9 @@ func (w *serviceLogWriter) Write(p []byte) (int, error) {
 // Stop sends SIGTERM (or cancels the context for goroutine procs) and waits
 // up to 10 s before force-killing.
 func (s *Supervisor) Stop(id string) error {
+	if s.isElevated(id) {
+		return s.elevated.Stop(id)
+	}
 	s.mu.Lock()
 	p, ok := s.procs[id]
 	if !ok {
@@ -420,6 +455,9 @@ func (s *Supervisor) Stop(id string) error {
 
 // Restart stops then starts a managed service.
 func (s *Supervisor) Restart(def Definition) error {
+	if s.elevated != nil && def.NeedsElevatedBind {
+		return s.elevated.Restart(def)
+	}
 	if err := s.Stop(def.ID); err != nil {
 		return err
 	}
@@ -428,6 +466,9 @@ func (s *Supervisor) Restart(def Definition) error {
 
 // IsRunning returns true when the service exists and has not yet exited.
 func (s *Supervisor) IsRunning(id string) bool {
+	if s.isElevated(id) {
+		return s.elevated.IsRunning(id)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.procs[id]

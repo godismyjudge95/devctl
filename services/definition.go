@@ -98,6 +98,10 @@ type Definition struct {
 	// PreStart, when non-nil, runs immediately before the child process is
 	// launched. Use it to stop leftover processes that still hold a socket.
 	PreStart func() error
+	// NeedsElevatedBind marks a managed service that must bind privileged
+	// ports (80/443 today, 21 later). The unprivileged dashboard daemon does
+	// not exec it. `devctl elevate daemon` does.
+	NeedsElevatedBind bool
 }
 
 // ServiceState is the live status of a service returned by the API.

@@ -255,7 +255,7 @@ func (c *CaddyClient) RootCert() ([]byte, error) {
 }
 
 // EnsureHTTPServer ensures the Caddy config has an HTTP server named "devctl"
-// listening on dist.ListenHTTP() (:80/:443 on Linux, :8080/:8443 on Darwin),
+// listening on dist.ListenHTTP() (:80/:443),
 // the TLS automation policy uses Caddy's internal CA for *.test domains, and
 // a reverse-proxy vhost for devctl.test points at devctlAddr (e.g. "127.0.0.1:4000").
 // This is idempotent — safe to call on startup or after Caddy restarts.
@@ -300,8 +300,7 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 	defer respListen.Body.Close()
 	io.Copy(io.Discard, respListen.Body)
 
-	// Caddy only treats the configured http_port as plain HTTP. Darwin listens
-	// on 8080/8443, so those must be set or every listen address becomes TLS.
+	// Caddy only treats the configured http_port as plain HTTP.
 	httpPortBody, _ := json.Marshal(dist.HTTPPort())
 	respHTTPPort, err := c.http.Do(mustRequest("PUT", c.adminURL+"/config/apps/http/http_port", httpPortBody))
 	if err != nil {

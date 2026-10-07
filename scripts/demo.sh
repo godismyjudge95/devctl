@@ -219,8 +219,6 @@ After=network.target
 Type=simple
 User=testuser
 Group=testuser
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ExecStart=/usr/local/bin/devctl daemon
 Restart=on-failure
@@ -233,8 +231,35 @@ Environment=DEVCTL_TESTING=true
 [Install]
 WantedBy=multi-user.target
 EOF
+incus exec "$CONTAINER" -- tee /etc/systemd/system/devctl-elevate.service >/dev/null <<EOF
+[Unit]
+Description=devctl elevated bind supervisor
+After=network.target
+Before=devctl.service
+
+[Service]
+Type=simple
+User=testuser
+Group=testuser
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/devctl elevate daemon
+Restart=on-failure
+RestartSec=5s
+Environment=HOME=/home/testuser
+Environment=DEVCTL_SITE_USER=testuser
+Environment=DEVCTL_SERVER_ROOT=${SERVER_ROOT}
+Environment=DEVCTL_ELEVATED=1
+Environment=DEVCTL_TESTING=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
 incus exec "$CONTAINER" -- systemctl daemon-reload
+incus exec "$CONTAINER" -- systemctl enable devctl-elevate
 incus exec "$CONTAINER" -- systemctl enable devctl
+incus exec "$CONTAINER" -- systemctl start devctl-elevate
 incus exec "$CONTAINER" -- systemctl start devctl
 success "devctl service started."
 

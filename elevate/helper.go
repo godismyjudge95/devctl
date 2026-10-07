@@ -61,6 +61,10 @@ func RunHelper(args []string) error {
 		return helperWriteUnit(rest)
 	case "write-plist":
 		return helperWritePlist(rest)
+	case "write-elevate-unit":
+		return helperWriteElevateUnit(rest)
+	case "write-elevate-plist":
+		return helperWriteElevatePlist(rest)
 	case "chown-tree":
 		return helperChownTree(rest)
 	case "apt-install":

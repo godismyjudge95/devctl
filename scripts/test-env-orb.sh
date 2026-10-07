@@ -111,8 +111,6 @@ After=network.target
 Type=simple
 User=testuser
 Group=testuser
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ExecStart=/usr/local/bin/devctl daemon
 Restart=on-failure
@@ -126,9 +124,38 @@ Environment=DEVCTL_TESTING=true
 WantedBy=multi-user.target
 EOF
 
+info "Writing elevate systemd unit..."
+orb_exec tee /etc/systemd/system/devctl-elevate.service >/dev/null <<'EOF'
+[Unit]
+Description=devctl elevated bind supervisor
+After=network.target
+Before=devctl.service
+
+[Service]
+Type=simple
+User=testuser
+Group=testuser
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ExecStart=/usr/local/bin/devctl elevate daemon
+Restart=on-failure
+RestartSec=5s
+Environment=HOME=/home/testuser
+Environment=DEVCTL_SITE_USER=testuser
+Environment=DEVCTL_SERVER_ROOT=/home/testuser/ddev/sites/server
+Environment=DEVCTL_ELEVATED=1
+Environment=DEVCTL_TESTING=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 info "Starting devctl..."
 orb_exec systemctl daemon-reload
+orb_exec systemctl enable devctl-elevate
 orb_exec systemctl enable devctl
+orb_exec systemctl start devctl-elevate
 orb_exec systemctl start devctl
 
 info "Waiting for dashboard..."

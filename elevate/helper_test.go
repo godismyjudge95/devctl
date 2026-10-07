@@ -58,7 +58,7 @@ func TestDarwinResolverFileConfigured(t *testing.T) {
 
 func TestPFAnchorContent(t *testing.T) {
 	got := PFAnchorContent("8080", "8443")
-	want := "rdr pass inet proto tcp from any to any port 80 -> 127.0.0.1 port 8080\nrdr pass inet proto tcp from any to any port 443 -> 127.0.0.1 port 8443\n"
+	want := "rdr pass inet proto tcp from ! 192.168.64.0/24 to any port 80 -> 127.0.0.1 port 8080\nrdr pass inet proto tcp from ! 192.168.64.0/24 to any port 443 -> 127.0.0.1 port 8443\n"
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -100,26 +100,42 @@ func TestBuildServiceFileAmbient(t *testing.T) {
 	for _, want := range []string{
 		"User=alice",
 		"Group=alice",
-		"AmbientCapabilities=CAP_NET_BIND_SERVICE",
-		"CapabilityBoundingSet=CAP_NET_BIND_SERVICE",
 		"NoNewPrivileges=true",
 		"ExecStart=/opt/devctl/devctl daemon",
 		"Environment=DEVCTL_SITE_USER=alice",
 		"Environment=DEVCTL_SERVER_ROOT=/home/alice/sites/server",
+		"Wants=devctl-elevate.service",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("unit missing %q\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "AmbientCapabilities=") {
+		t.Error("dashboard unit must not set ambient bind cap")
 	}
 	if strings.Contains(s, "User=root") {
 		t.Error("unit must not run as root")
 	}
 }
 
+func TestBuildElevateServiceFile(t *testing.T) {
+	s := BuildElevateServiceFile("/opt/devctl/devctl", "alice", "/home/alice", "/home/alice/sites/server")
+	for _, want := range []string{
+		"User=alice",
+		"AmbientCapabilities=CAP_NET_BIND_SERVICE",
+		"ExecStart=/opt/devctl/devctl elevate daemon",
+		"Environment=DEVCTL_ELEVATED=1",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("elevate unit missing %q\n%s", want, s)
+		}
+	}
+}
+
 func TestUnitHasAmbientBind(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "devctl.service")
-	content := BuildServiceFile("/bin/devctl", "bob", "/home/bob", "/home/bob/s")
+	content := BuildElevateServiceFile("/bin/devctl", "bob", "/home/bob", "/home/bob/s")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -213,6 +229,22 @@ func TestBuildLaunchAgentPlist(t *testing.T) {
 	}
 	if strings.Contains(s, "CAP_NET_BIND_SERVICE") {
 		t.Error("LaunchAgent must not set ambient capabilities")
+	}
+}
+
+func TestBuildElevateLaunchDaemonPlist(t *testing.T) {
+	s := BuildElevateLaunchDaemonPlist("/opt/devctl/devctl", "alice", "/Users/alice", "/Users/alice/sites/server")
+	for _, want := range []string{
+		"<string>ai.devctl.elevate</string>",
+		"<string>/opt/devctl/devctl</string>",
+		"<string>elevate</string>",
+		"<string>daemon</string>",
+		"<key>DEVCTL_SITE_USER</key>",
+		"<string>alice</string>",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("elevate plist missing %q\n%s", want, s)
+		}
 	}
 }
 

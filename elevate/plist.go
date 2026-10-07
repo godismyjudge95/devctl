@@ -12,6 +12,11 @@ import (
 
 const LaunchAgentLabel = "ai.devctl"
 
+const (
+	ElevateLaunchDaemonLabel = "ai.devctl.elevate"
+	ElevateLaunchDaemonPath  = "/Library/LaunchDaemons/ai.devctl.elevate.plist"
+)
+
 // LaunchAgentPath is {siteHome}/Library/LaunchAgents/ai.devctl.plist.
 func LaunchAgentPath(siteHome string) string {
 	return filepath.Join(siteHome, "Library", "LaunchAgents", LaunchAgentLabel+".plist")
@@ -51,7 +56,7 @@ func xmlText(s string) string {
 }
 
 // BuildLaunchAgentPlist generates a user LaunchAgent that starts the nested
-// daemon. Children stay under the supervisor. pf handles ports 80 and 443.
+// daemon. Privileged bind is the elevate LaunchDaemon.
 func BuildLaunchAgentPlist(binaryPath, siteUser, siteHome, serverRoot string) string {
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -82,6 +87,41 @@ func BuildLaunchAgentPlist(binaryPath, siteUser, siteHome, serverRoot string) st
 </dict>
 </plist>
 `, LaunchAgentLabel, xmlText(binaryPath), xmlText(siteHome), xmlText(siteUser), xmlText(serverRoot), xmlText(siteHome))
+}
+
+// BuildElevateLaunchDaemonPlist generates a system LaunchDaemon that runs
+// `devctl elevate daemon` as root so Caddy can bind :80/:443.
+func BuildElevateLaunchDaemonPlist(binaryPath, siteUser, siteHome, serverRoot string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>%s</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%s</string>
+		<string>elevate</string>
+		<string>daemon</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>%s</string>
+		<key>DEVCTL_SITE_USER</key>
+		<string>%s</string>
+		<key>DEVCTL_SERVER_ROOT</key>
+		<string>%s</string>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>%s</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+</dict>
+</plist>
+`, ElevateLaunchDaemonLabel, xmlText(binaryPath), xmlText(siteHome), xmlText(siteUser), xmlText(serverRoot), xmlText(siteHome))
 }
 
 func helperWritePlist(args []string) error {
@@ -134,6 +174,42 @@ func helperWritePlist(args []string) error {
 	}
 	if err := os.Lchown(path, uid, gid); err != nil {
 		return fmt.Errorf("chown plist: %w", err)
+	}
+	fmt.Println("ok")
+	return nil
+}
+
+func helperWriteElevatePlist(args []string) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("write-elevate-plist is darwin-only")
+	}
+	flags, _, err := parseFlags(args)
+	if err != nil {
+		return err
+	}
+	binaryPath := flags["binary"]
+	siteUser := flags["user"]
+	siteHome := flags["home"]
+	serverRoot := flags["server-root"]
+	if binaryPath == "" || siteUser == "" || siteHome == "" || serverRoot == "" {
+		return fmt.Errorf("--binary, --user, --home, and --server-root are required")
+	}
+	if !filepath.IsAbs(binaryPath) || !filepath.IsAbs(siteHome) || !filepath.IsAbs(serverRoot) {
+		return fmt.Errorf("binary, home, and server-root must be absolute paths")
+	}
+	if strings.ContainsAny(siteUser, "/\n\t ") || siteUser == "root" {
+		return fmt.Errorf("invalid user %q", siteUser)
+	}
+	st, err := os.Stat(binaryPath)
+	if err != nil {
+		return fmt.Errorf("stat binary: %w", err)
+	}
+	if st.IsDir() || st.Mode()&0111 == 0 {
+		return fmt.Errorf("binary is not an executable file: %s", binaryPath)
+	}
+	content := BuildElevateLaunchDaemonPlist(binaryPath, siteUser, siteHome, serverRoot)
+	if err := writeFileAtomic(ElevateLaunchDaemonPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write elevate plist: %w", err)
 	}
 	fmt.Println("ok")
 	return nil

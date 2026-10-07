@@ -106,11 +106,8 @@ func ListenHTTP() []string {
 }
 
 // ListenHTTPFor is the Caddy HTTP server listen list for goos.
-// Linux binds :80 and :443 (ambient cap). Darwin binds :8080 and :8443 (pf rdr).
+// Both OS bind :80 and :443. Darwin does that from `devctl elevate daemon`.
 func ListenHTTPFor(goos string) []string {
-	if goos == "darwin" {
-		return []string{":8080", ":8443"}
-	}
 	return []string{":80", ":443"}
 }
 
@@ -121,9 +118,6 @@ func HTTPPort() int {
 
 // HTTPPortFor is HTTPPort for goos.
 func HTTPPortFor(goos string) int {
-	if goos == "darwin" {
-		return 8080
-	}
 	return 80
 }
 
@@ -134,9 +128,6 @@ func HTTPSPort() int {
 
 // HTTPSPortFor is HTTPSPort for goos.
 func HTTPSPortFor(goos string) int {
-	if goos == "darwin" {
-		return 8443
-	}
 	return 443
 }
 

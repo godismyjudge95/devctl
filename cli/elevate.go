@@ -13,10 +13,10 @@ func init() {
 	Register(&Cmd{
 		Name:        "elevate",
 		Description: "Grant OS privileges (trust CA, DNS resolver, ports) — requires sudo",
-		Usage:       "[trust|resolver|ports|install]",
+		Usage:       "[trust|resolver|ports|install|daemon]",
 		Args: []ArgDef{{
 			Name:        "target",
-			Description: "Optional target: trust, resolver, ports, or install (default: all of trust+resolver+ports)",
+			Description: "Optional target: trust, resolver, ports, install, or daemon (default: all of trust+resolver+ports)",
 			Optional:    true,
 		}},
 		Examples: []string{
@@ -24,6 +24,7 @@ func init() {
 			"sudo devctl elevate trust",
 			"sudo devctl elevate resolver",
 			"sudo devctl elevate ports",
+			"sudo devctl elevate daemon",
 			"sudo devctl elevate install",
 		},
 		Handler: handleElevate,
@@ -106,7 +107,7 @@ func handleElevateStatus(c *Client, args []string, jsonMode bool) error {
 	Header("Elevation status")
 	KV("trust", boolStatus(st.TrustConfigured))
 	KV("resolver", boolStatus(st.ResolverConfigured))
-	KV("ports (ambient unit)", boolStatus(st.PortsConfigured))
+	KV("elevate daemon", boolStatus(st.PortsConfigured))
 	KV("unit runs as user", boolStatus(st.UnitRunsAsUser))
 	KV("unit path", st.UnitPath)
 	if len(st.Notes) > 0 {
