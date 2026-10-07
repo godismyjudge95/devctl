@@ -198,6 +198,11 @@ func (s *Supervisor) startEmbedded(def Definition) error {
 
 // startProcess launches a child process. Must be called with s.mu held.
 func (s *Supervisor) startProcess(def Definition) error {
+	if def.PreStart != nil {
+		if err := def.PreStart(); err != nil {
+			return fmt.Errorf("supervisor: pre-start %s: %w", def.ID, err)
+		}
+	}
 	managedDir := def.ManagedDir
 	if managedDir == "" {
 		managedDir = paths.ServiceDir(s.serverRoot, def.ID)

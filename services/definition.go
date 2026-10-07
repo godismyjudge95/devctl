@@ -95,6 +95,9 @@ type Definition struct {
 	// in-process goroutine instead of a child process. The function receives a
 	// cancellable context and a log writer and must block until ctx is done.
 	RunFunc func(ctx context.Context, logW io.Writer) error
+	// PreStart, when non-nil, runs immediately before the child process is
+	// launched. Use it to stop leftover processes that still hold a socket.
+	PreStart func() error
 }
 
 // ServiceState is the live status of a service returned by the API.
