@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.16.1 — 2026-10-07
 
 - Fixed PHP-FPM reporting as stopped after a daemon restart when a leftover master still held the pool socket.
 
