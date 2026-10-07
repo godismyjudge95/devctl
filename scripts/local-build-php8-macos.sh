@@ -36,14 +36,19 @@ source "${ROOT}/scripts/php8-exts.sh"
 SPC_REF="${SPC_REF:-2.8.5}"
 PHP8_EXTS="${PHP8_EXTS:-}"
 
-declare -A PHP8_PATCH=(
-  [8.0]=8.0.30
-  [8.1]=8.1.34
-  [8.2]=8.2.32
-  [8.3]=8.3.32
-  [8.4]=8.4.23
-  [8.5]=8.5.8
-)
+# Bash 3.2 (macOS /bin/bash) has no associative arrays. Keep the pins in a
+# function so the local compile works on stock macOS bash.
+php8_patch_version() {
+  case "$1" in
+    8.0) printf '%s\n' 8.0.30 ;;
+    8.1) printf '%s\n' 8.1.34 ;;
+    8.2) printf '%s\n' 8.2.32 ;;
+    8.3) printf '%s\n' 8.3.32 ;;
+    8.4) printf '%s\n' 8.4.23 ;;
+    8.5) printf '%s\n' 8.5.8 ;;
+    *) return 1 ;;
+  esac
+}
 
 PHP="${PHP:-}"
 WORKDIR="${WORKDIR:-$HOME/Code/spc-php8-macos}"
@@ -92,19 +97,18 @@ PATCH=""
 case "$PHP" in
   8.[0-5])
     MINOR="$PHP"
-    PATCH="${PHP8_PATCH[$PHP]:-}"
-    if [[ -z "$PATCH" ]]; then
+    PATCH="$(php8_patch_version "$PHP")" || {
       echo "unsupported PHP version: $PHP" >&2
       exit 2
-    fi
+    }
     ;;
   8.[0-5].*)
     MINOR="${PHP%.*}"
     PATCH="$PHP"
-    if [[ -z "${PHP8_PATCH[$MINOR]:-}" ]]; then
+    php8_patch_version "$MINOR" >/dev/null || {
       echo "unsupported PHP version: $PHP" >&2
       exit 2
-    fi
+    }
     ;;
   *)
     echo "unsupported PHP version: $PHP (want 8.0–8.5)" >&2
@@ -130,6 +134,13 @@ need_cmd() {
 }
 
 need_cmd git
+
+if [[ -z "${GITHUB_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+  GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
+  if [[ -n "$GITHUB_TOKEN" ]]; then
+    export GITHUB_TOKEN
+  fi
+fi
 
 if [[ "$(uname -m)" != "arm64" ]]; then
   echo "local-build-php8-macos.sh: need Apple silicon (uname -m = arm64)" >&2
@@ -198,7 +209,7 @@ fi
 
 if [[ "$SKIP_DOWNLOAD" -eq 0 ]]; then
   echo "==> downloading sources (cached under $SPC_DIR/downloads)"
-  IGNORE_CACHE="php-src,libaom,libevent,pcov"
+  IGNORE_CACHE="php-src,libaom,libevent,pcov,swoole"
   if [[ "$MINOR" == "8.0" ]]; then
     IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
   fi
