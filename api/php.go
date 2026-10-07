@@ -188,6 +188,7 @@ func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 		Log:          php.FPMLogPath(ver, s.serverRoot),
 		Version:      versionCmd,
 		VersionRegex: `PHP (?P<version>[\d.]+)`,
+		PreStart:     func() error { return php.StopLeftover(ver, s.serverRoot) },
 	}
 }
 

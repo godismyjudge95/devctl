@@ -440,6 +440,7 @@ func phpFPMDefinition(ver, serverRoot string) services.Definition {
 		Log:          php.FPMLogPath(ver, serverRoot),
 		Version:      php.FPMBinary(ver, serverRoot) + " -v",
 		VersionRegex: `PHP (?P<version>[\d.]+)`,
+		PreStart:     func() error { return php.StopLeftover(ver, serverRoot) },
 	}
 }
 
