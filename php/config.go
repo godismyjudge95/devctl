@@ -240,9 +240,12 @@ spx.data_dir = %s
 	// which wraps log entries in HTML tags making them unreadable.
 	fpmGlobalLog := paths.LogPath(serverRoot, "php-fpm-"+ver+"-global")
 	fpmPoolLog := paths.LogPath(serverRoot, "php-fpm-"+ver)
+	pidPath := FPMPidPath(ver, serverRoot)
 	conf := fmt.Sprintf(`; devctl-managed php-fpm.conf for PHP %s
 [global]
+pid = %s
 error_log = %s
+daemonize = no
 
 [www]
 user = %s
@@ -259,7 +262,7 @@ pm.max_spare_servers = 4
 php_value[error_log] = %s
 php_value[html_errors] = Off
 php_admin_value[auto_prepend_file] = %s
-`, ver, fpmGlobalLog, userName, groupName, socketPath, userName, groupName, fpmPoolLog, prependPath)
+`, ver, pidPath, fpmGlobalLog, userName, groupName, socketPath, userName, groupName, fpmPoolLog, prependPath)
 	if err := os.WriteFile(fpmConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write php-fpm.conf: %w", err)
 	}

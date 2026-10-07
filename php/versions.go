@@ -49,6 +49,11 @@ func FPMConfigPath(ver, serverRoot string) string {
 	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm.conf")
 }
 
+// FPMPidPath returns the path to the php-fpm pid file for the given version.
+func FPMPidPath(ver, serverRoot string) string {
+	return filepath.Join(PHPDir(ver, serverRoot), "php-fpm.pid")
+}
+
 // PHPIniPath returns the path to the php.ini for the given version.
 func PHPIniPath(ver, serverRoot string) string {
 	return filepath.Join(PHPDir(ver, serverRoot), "php.ini")

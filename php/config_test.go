@@ -119,6 +119,31 @@ func TestWriteConfigs_FPMConf_GlobalErrorLog(t *testing.T) {
 	}
 }
 
+// TestWriteConfigs_FPMConf_DaemonizeNo keeps the master in the foreground so
+// the supervisor Wait() observes the real FPM process, not a daemonized child.
+func TestWriteConfigs_FPMConf_DaemonizeNo(t *testing.T) {
+	ver := "8.4"
+	serverRoot := setupFakeServerRoot(t, ver)
+	conf := readFPMConf(t, ver, serverRoot)
+
+	if !strings.Contains(conf, "daemonize = no") {
+		t.Errorf("php-fpm.conf missing daemonize = no\ngot conf:\n%s", conf)
+	}
+}
+
+// TestWriteConfigs_FPMConf_PidFile writes a pid file so a later daemon start
+// can find and stop a leftover master that survived a crash.
+func TestWriteConfigs_FPMConf_PidFile(t *testing.T) {
+	ver := "8.4"
+	serverRoot := setupFakeServerRoot(t, ver)
+	conf := readFPMConf(t, ver, serverRoot)
+
+	want := "pid = " + FPMPidPath(ver, serverRoot)
+	if !strings.Contains(conf, want) {
+		t.Errorf("php-fpm.conf missing %s\ngot conf:\n%s", want, conf)
+	}
+}
+
 // TestWriteConfigs_FPMConf_PrependUsesAdminValue verifies that auto_prepend_file
 // uses php_admin_value so user code cannot disable the dump interceptor.
 func TestWriteConfigs_FPMConf_PrependUsesAdminValue(t *testing.T) {
