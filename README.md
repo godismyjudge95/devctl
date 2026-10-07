@@ -340,6 +340,8 @@ Install any available version from the Services tab. Each version runs as:
   --nodaemonize --fpm-config {serverRoot}/php/{version}/php-fpm.conf
 ```
 
+`php-fpm.conf` sets `daemonize = no` and a pid file. On start, leftover FPM masters for that version are stopped so a stale socket cannot block a new pool.
+
 ### php.ini defaults
 
 On first install, devctl creates a `php.ini` based on the full upstream `php.ini-development` template with the following overrides appended:

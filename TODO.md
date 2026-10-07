@@ -160,7 +160,5 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 
 # Completed
 
-
-
-
+- PHP-FPM leftover master left the dashboard showing stopped after a daemon restart *(completed 2026-10-07)*
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed PHP-FPM reporting as stopped after a daemon restart when a leftover master still held the pool socket.
+
 ## v0.16.0 — 2026-10-06
 
 - GitHub releases now attach platform-named binaries: `devctl-linux-x86_64` and `devctl-macos-aarch64`. Self-update downloads the asset for the current OS.
