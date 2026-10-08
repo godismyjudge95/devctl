@@ -123,7 +123,7 @@ func TestAssetURLsForMinor_MissingMinor(t *testing.T) {
 					"browser_download_url": serverURL + "/download/php-binaries.json",
 				}},
 			})
-		case "/download/php-binaries.json":
+		case "/download/php-binaries-20260422.1/php-binaries.json":
 			_ = json.NewEncoder(w).Encode(ReleaseManifest{
 				ReleaseTag:  "php-binaries-20260422.1",
 				PHPVersions: map[string]string{"8.3": "8.3.22"},
@@ -280,6 +280,8 @@ func TestAssetURLsForMinor_WorksWithSynthesizedManifest(t *testing.T) {
 		switch r.URL.Path {
 		case "/releases":
 			_ = json.NewEncoder(w).Encode([]map[string]any{{"tag_name": "php-binaries-latest"}})
+		case "/download/php-binaries-latest/php-binaries.json":
+			http.NotFound(w, r)
 		case "/releases/tags/php-binaries-latest":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"tag_name": "php-binaries-latest",
@@ -381,7 +383,7 @@ func TestAssetURLsForMinorOn_SelectsMacOS(t *testing.T) {
 					"browser_download_url": serverURL + "/download/php-binaries.json",
 				}},
 			})
-		case "/download/php-binaries.json":
+		case "/download/php-binaries-20261006.1/php-binaries.json":
 			_ = json.NewEncoder(w).Encode(ReleaseManifest{
 				ReleaseTag:  "php-binaries-20261006.1",
 				PHPVersions: map[string]string{"8.4": "8.4.23"},
@@ -491,6 +493,120 @@ func TestLive_RealGitHubRelease_SynthesizesOrLoadsManifest(t *testing.T) {
 		t.Fatalf("7.4 error should say not available, got: %v", err)
 	}
 	t.Logf("release=%s assets=%v 7.4 err=%v", manifest.ReleaseTag, sortedAssetMinors(manifest), err)
+}
+
+func TestLatestReleaseTag_FallsBackToAtomOn403(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 1.2.3.4"}`))
+		case "/releases.atom":
+			w.Header().Set("Content-Type", "application/atom+xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>tag:github.com,2008:Repository/1/v0.17.1</id>
+    <link rel="alternate" href="https://github.com/godismyjudge95/devctl/releases/tag/v0.17.1"/>
+    <title>v0.17.1</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/php-binaries-20261007.1</id>
+    <link rel="alternate" href="https://github.com/godismyjudge95/devctl/releases/tag/php-binaries-20261007.1"/>
+    <title>PHP Binaries — php-binaries-20261007.1</title>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1/php-binaries-20261006.1</id>
+    <link rel="alternate" href="https://github.com/godismyjudge95/devctl/releases/tag/php-binaries-20261006.1"/>
+    <title>php-binaries-20261006.1</title>
+  </entry>
+</feed>`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEVCTL_PHP_RELEASES_API_BASE", ts.URL)
+	t.Setenv("DEVCTL_PHP_RELEASES_ATOM_URL", ts.URL+"/releases.atom")
+	tag, err := LatestReleaseTag(context.Background())
+	if err != nil {
+		t.Fatalf("LatestReleaseTag: %v", err)
+	}
+	if tag != "php-binaries-20261007.1" {
+		t.Fatalf("tag = %q, want php-binaries-20261007.1 from atom feed", tag)
+	}
+}
+
+func TestLatestReleaseTag_403WithoutAtomIncludesGitHubMessage(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 1.2.3.4"}`))
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEVCTL_PHP_RELEASES_API_BASE", ts.URL)
+	t.Setenv("DEVCTL_PHP_RELEASES_ATOM_URL", "")
+	_, err := LatestReleaseTag(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "HTTP 403") {
+		t.Fatalf("error = %v, want HTTP 403", err)
+	}
+	if !strings.Contains(err.Error(), "API rate limit exceeded") {
+		t.Fatalf("error = %v, want GitHub rate-limit message", err)
+	}
+}
+
+func TestFetchReleaseManifest_DownloadsJSONWithoutReleaseAPI(t *testing.T) {
+	var hitTagsAPI bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/download/php-binaries-20261007.1/php-binaries.json":
+			_ = json.NewEncoder(w).Encode(ReleaseManifest{
+				ReleaseTag:  "php-binaries-20261007.1",
+				PHPVersions: map[string]string{"8.4": "8.4.23"},
+				Assets: map[string]ReleaseAssets{
+					"8.4": {CLI: "php-8.4-cli-linux-x86_64", FPM: "php-8.4-fpm-linux-x86_64"},
+				},
+			})
+		case "/releases/tags/php-binaries-20261007.1":
+			hitTagsAPI = true
+			http.Error(w, "should not query releases API", http.StatusForbidden)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer ts.Close()
+
+	t.Setenv("DEVCTL_PHP_RELEASES_API_BASE", ts.URL)
+	t.Setenv("DEVCTL_PHP_RELEASES_DOWNLOAD_BASE", ts.URL+"/download")
+	manifest, err := FetchReleaseManifest(context.Background(), "php-binaries-20261007.1")
+	if err != nil {
+		t.Fatalf("FetchReleaseManifest: %v", err)
+	}
+	if hitTagsAPI {
+		t.Fatal("FetchReleaseManifest must not call /releases/tags when php-binaries.json is on the download URL")
+	}
+	if manifest.PHPVersions["8.4"] != "8.4.23" {
+		t.Fatalf("php_versions[8.4] = %q", manifest.PHPVersions["8.4"])
+	}
+}
+
+func TestNewGitHubRequest_SetsBearerToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("DEVCTL_GITHUB_TOKEN", "ghs_test_token")
+	req, err := newGitHubRequest(context.Background(), "https://api.github.com/repos/godismyjudge95/devctl/releases")
+	if err != nil {
+		t.Fatalf("newGitHubRequest: %v", err)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer ghs_test_token" {
+		t.Fatalf("Authorization = %q, want Bearer ghs_test_token", got)
+	}
 }
 
 func TestMain(m *testing.M) {

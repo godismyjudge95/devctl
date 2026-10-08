@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/danielgormly/devctl/dist"
+	"github.com/danielgormly/devctl/internal/githubapi"
 	"github.com/danielgormly/devctl/internal/httplog"
 )
 
@@ -131,6 +133,17 @@ func comparePHPReleaseTags(a, b string) int {
 }
 
 func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, error) {
+	if useDirectManifestDownload() {
+		jsonURL := githubDownloadBase() + "/" + tag + "/" + manifestAssetName
+		manifest, err := fetchManifestJSON(ctx, jsonURL, tag)
+		if err == nil {
+			return manifest, nil
+		}
+		if !isHTTPStatus(err, http.StatusNotFound) {
+			return nil, err
+		}
+	}
+
 	release, err := getReleaseByTag(ctx, tag)
 	if err != nil {
 		return nil, err
@@ -153,6 +166,10 @@ func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, er
 		return manifest, nil
 	}
 
+	return fetchManifestJSON(ctx, manifestURL, tag)
+}
+
+func fetchManifestJSON(ctx context.Context, manifestURL, tag string) (*ReleaseManifest, error) {
 	req, err := newGitHubRequest(ctx, manifestURL)
 	if err != nil {
 		return nil, err
@@ -165,7 +182,7 @@ func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, er
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch php manifest %s: HTTP %d", tag, resp.StatusCode)
+		return nil, githubapi.HTTPStatusError(fmt.Sprintf("fetch php manifest %s", tag), resp)
 	}
 
 	var manifest ReleaseManifest
@@ -188,6 +205,20 @@ func FetchReleaseManifest(ctx context.Context, tag string) (*ReleaseManifest, er
 		manifest.PlatformAssets = map[string]map[string]ReleaseAssets{}
 	}
 	return &manifest, nil
+}
+
+// useDirectManifestDownload reports whether php-binaries.json should be fetched
+// from the GitHub download URL (github.com, not api.github.com). Unit tests that
+// mock only the API leave DOWNLOAD_BASE unset, so they keep the API path.
+func useDirectManifestDownload() bool {
+	if os.Getenv("DEVCTL_PHP_RELEASES_DOWNLOAD_BASE") != "" {
+		return true
+	}
+	return os.Getenv("DEVCTL_PHP_RELEASES_API_BASE") == ""
+}
+
+func isHTTPStatus(err error, code int) bool {
+	return err != nil && strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", code))
 }
 
 // synthesizeManifestFromAssets builds a ReleaseManifest by scanning release
@@ -349,10 +380,35 @@ func githubDownloadBase() string {
 	return "https://github.com/" + githubRepo + "/releases/download"
 }
 
+func githubAtomURL() string {
+	if v := os.Getenv("DEVCTL_PHP_RELEASES_ATOM_URL"); v != "" {
+		return v
+	}
+	if os.Getenv("DEVCTL_PHP_RELEASES_API_BASE") != "" {
+		return ""
+	}
+	return "https://github.com/" + githubRepo + "/releases.atom"
+}
+
 func listReleases(ctx context.Context) ([]githubRelease, error) {
+	releases, err := listReleasesFromAPI(ctx)
+	if err == nil {
+		return releases, nil
+	}
+	if !isHTTPStatus(err, http.StatusForbidden) && !isHTTPStatus(err, http.StatusTooManyRequests) {
+		return nil, err
+	}
+	fallback, atomErr := listReleasesFromAtom(ctx)
+	if atomErr == nil && len(fallback) > 0 {
+		return fallback, nil
+	}
+	return nil, err
+}
+
+func listReleasesFromAPI(ctx context.Context) ([]githubRelease, error) {
 	ctx, cancel := context.WithTimeout(ctx, releaseFetchTimeout)
 	defer cancel()
-	req, err := newGitHubRequest(ctx, githubAPIBase()+"/releases")
+	req, err := newGitHubRequest(ctx, githubAPIBase()+"/releases?per_page=100")
 	if err != nil {
 		return nil, err
 	}
@@ -364,11 +420,52 @@ func listReleases(ctx context.Context) ([]githubRelease, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("list php releases: HTTP %d", resp.StatusCode)
+		return nil, githubapi.HTTPStatusError("list php releases", resp)
 	}
 	var releases []githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("decode php releases: %w", err)
+	}
+	return releases, nil
+}
+
+var githubReleaseTagPathRe = regexp.MustCompile(`/releases/tag/([A-Za-z0-9._-]+)`)
+
+func listReleasesFromAtom(ctx context.Context) ([]githubRelease, error) {
+	atomURL := githubAtomURL()
+	if atomURL == "" {
+		return nil, fmt.Errorf("list php releases: no atom feed URL")
+	}
+	ctx, cancel := context.WithTimeout(ctx, releaseFetchTimeout)
+	defer cancel()
+	req, err := newGitHubRequest(ctx, atomURL)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/atom+xml")
+	done := httplog.LogGitHubRequestStart(req.Method, req.URL.String())
+	resp, err := http.DefaultClient.Do(req)
+	done(resp, err)
+	if err != nil {
+		return nil, fmt.Errorf("list php releases atom: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, githubapi.HTTPStatusError("list php releases atom", resp)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read php releases atom: %w", err)
+	}
+	seen := map[string]bool{}
+	var releases []githubRelease
+	for _, m := range githubReleaseTagPathRe.FindAllSubmatch(body, -1) {
+		tag := string(m[1])
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		releases = append(releases, githubRelease{TagName: tag})
 	}
 	return releases, nil
 }
@@ -388,7 +485,7 @@ func getReleaseByTag(ctx context.Context, tag string) (*githubRelease, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get php release %s: HTTP %d", tag, resp.StatusCode)
+		return nil, githubapi.HTTPStatusError(fmt.Sprintf("get php release %s", tag), resp)
 	}
 	var rel githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
@@ -402,7 +499,6 @@ func newGitHubRequest(ctx context.Context, url string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "devctl/1")
+	githubapi.SetRequestHeaders(req)
 	return req, nil
 }
