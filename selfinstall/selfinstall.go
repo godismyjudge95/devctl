@@ -52,21 +52,9 @@ func launchctlLoad(plist, uid string) error {
 	if uid == "" {
 		return errors.New("launchctl: empty uid")
 	}
-	domain := "gui/" + uid
-	label := domain + "/" + elevate.LaunchAgentLabel
-	_ = exec.Command("launchctl", "enable", label).Run()
-	_ = exec.Command("launchctl", "bootout", label).Run()
-	out, err := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
+	err := elevate.LoadLaunchdJob("gui/"+uid, elevate.LaunchAgentLabel, plist)
 	if err != nil {
-		// Already loaded, or still draining after bootout: restart in place.
-		if err2 := exec.Command("launchctl", "kickstart", "-k", label).Run(); err2 == nil {
-			return nil
-		}
-		_ = exec.Command("launchctl", "enable", label).Run()
-		out2, err2 := exec.Command("launchctl", "bootstrap", domain, plist).CombinedOutput()
-		if err2 != nil {
-			return fmt.Errorf("launchctl bootstrap: %w\n%s%s", err, out, out2)
-		}
+		return fmt.Errorf("%w\nDo not re-run with sudo; Darwin install must run as the site user", err)
 	}
 	return nil
 }

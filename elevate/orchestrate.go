@@ -298,8 +298,7 @@ func elevatePortsDarwin(facts Facts, w io.Writer) error {
 		domain := "gui/" + u.Uid
 		label := domain + "/" + LaunchAgentLabel
 		fmt.Fprintf(w, "    loading %s\n", label)
-		_ = RunHelperSelf(w, w, "launchctl", "bootout", label)
-		if err := RunHelperSelf(w, w, "launchctl", "bootstrap", domain, plist); err != nil {
+		if err := LoadLaunchdJob(domain, LaunchAgentLabel, plist); err != nil {
 			return err
 		}
 	}
@@ -315,8 +314,7 @@ func elevatePortsDarwin(facts Facts, w io.Writer) error {
 	}
 	sysLabel := "system/" + ElevateLaunchDaemonLabel
 	fmt.Fprintf(w, "    loading %s\n", sysLabel)
-	_ = RunHelperSelf(w, w, "launchctl", "bootout", sysLabel)
-	if err := RunHelperSelf(w, w, "launchctl", "bootstrap", "system", ElevateLaunchDaemonPath); err != nil {
+	if err := LoadLaunchdJob("system", ElevateLaunchDaemonLabel, ElevateLaunchDaemonPath); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "    removing pf rdr (Caddy binds 80/443 in elevate daemon)\n")
