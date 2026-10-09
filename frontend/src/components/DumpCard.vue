@@ -30,18 +30,22 @@ function formatFilePath(file: string | undefined): string {
 </script>
 
 <template>
-  <Card :id="`dump-${dump.id}`" class="overflow-hidden scroll-mt-4">
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-b border-border text-xs">
-      <span class="font-mono font-semibold text-foreground tabular-nums">#{{ dump.id }}</span>
-      <span v-if="dump.file" class="font-mono text-muted-foreground truncate max-w-xs">
+  <Card :id="`dump-${dump.id}`" class="min-w-0 scroll-mt-4 overflow-hidden">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2.5 text-xs">
+      <span class="shrink-0 font-mono font-semibold tabular-nums text-foreground">#{{ dump.id }}</span>
+      <span
+        v-if="dump.file"
+        class="min-w-0 flex-1 truncate font-mono text-muted-foreground"
+        :title="`${dump.file}:${dump.line}`"
+      >
         {{ formatFilePath(dump.file) }}:{{ dump.line }}
       </span>
-      <div class="ml-auto flex items-center gap-2">
+      <div class="ml-auto flex shrink-0 items-center gap-2">
         <MetaChip v-if="dump.site_domain">{{ dump.site_domain }}</MetaChip>
-        <span class="text-muted-foreground tabular-nums">{{ formatTime(dump.timestamp) }}</span>
+        <span class="tabular-nums text-muted-foreground">{{ formatTime(dump.timestamp) }}</span>
       </div>
     </div>
-    <div class="p-4 font-mono text-xs overflow-auto max-h-96">
+    <div class="max-h-96 overflow-auto p-4 font-mono text-xs leading-5">
       <DumpNode v-for="(node, i) in nodes()" :key="i" :node="node" :depth="0" />
     </div>
   </Card>

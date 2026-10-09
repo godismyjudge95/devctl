@@ -32,10 +32,14 @@ function onPointerDown(e: PointerEvent) {
 </script>
 
 <template>
+  <!-- 1px divider with a wider invisible hit area. -->
   <div
-    class="hidden md:block w-1.5 shrink-0 cursor-col-resize bg-border hover:bg-primary/40 active:bg-primary/60 transition-colors"
+    class="group relative hidden w-px shrink-0 cursor-col-resize bg-border md:block"
     role="separator"
     aria-orientation="vertical"
     @pointerdown.prevent="onPointerDown"
-  />
+  >
+    <span class="absolute inset-y-0 -left-1.5 -right-1.5 z-10" />
+    <span class="absolute inset-y-0 -left-px -right-px bg-ring/0 transition-colors group-hover:bg-ring/60 group-active:bg-ring" />
+  </div>
 </template>

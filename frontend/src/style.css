@@ -41,6 +41,14 @@
   --sidebar-accent-foreground: oklch(0.32 0.12 275);
   --sidebar-border: oklch(0.88 0.01 264);
   --sidebar-ring: oklch(0.55 0.10 275);
+  --success-soft: oklch(0.94 0.04 150);
+  --success-soft-foreground: oklch(0.38 0.11 150);
+  --warning-soft: oklch(0.95 0.045 75);
+  --warning-soft-foreground: oklch(0.45 0.11 70);
+  --destructive-soft: oklch(0.95 0.03 25);
+  --destructive-soft-foreground: oklch(0.48 0.17 25);
+  --log-background: oklch(0.18 0.014 264);
+  --log-foreground: oklch(0.86 0.02 264);
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
@@ -81,6 +89,14 @@
   --sidebar-accent-foreground: oklch(0.90 0.05 275);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.58 0.10 275);
+  --success-soft: oklch(0.28 0.05 150);
+  --success-soft-foreground: oklch(0.82 0.08 150);
+  --warning-soft: oklch(0.30 0.05 75);
+  --warning-soft-foreground: oklch(0.86 0.08 75);
+  --destructive-soft: oklch(0.30 0.06 25);
+  --destructive-soft-foreground: oklch(0.82 0.09 25);
+  --log-background: oklch(0.145 0.012 264);
+  --log-foreground: oklch(0.86 0.02 264);
 }
 
 * {
@@ -124,10 +140,19 @@ code, kbd, samp, pre, .font-mono {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-foreground: var(--warning-soft-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-soft-foreground: var(--destructive-soft-foreground);
+  --color-log-background: var(--log-background);
+  --color-log-foreground: var(--log-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -156,28 +181,7 @@ code, kbd, samp, pre, .font-mono {
 }
 
 @layer components {
-  .kicker {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    line-height: 1.2;
-  }
-
-  .section-kicker {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    line-height: 1.2;
-  }
-
-  .status-copy {
-    font-size: 0.8125rem;
-    font-style: italic;
-    color: var(--muted-foreground);
-  }
-
+  /* Monospace numbers in tables and stats line up column by column. */
   .data-table {
     font-variant-numeric: tabular-nums;
   }

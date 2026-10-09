@@ -3,7 +3,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { useDumpsStore } from '@/stores/dumps'
 import { useSitesStore } from '@/stores/sites'
 import DumpCard from '@/components/DumpCard.vue'
-import { Trash2 } from 'lucide-vue-next'
+import { Bug, Trash2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import StatusDot from '@/components/layout/StatusDot.vue'
@@ -29,20 +29,21 @@ onUnmounted(() => {
   <div class="space-y-6">
     <PageHeader title="Dumps" description="Intercept dump() and dd() calls from your PHP apps.">
       <template #actions>
-        <StatusDot :status="store.connected ? 'connected' : 'stopped'" :label="store.wsStatus" />
-        <Button variant="outline" size="sm" @click="store.clear()">
-          <Trash2 class="w-3.5 h-3.5" />
-          Clear All
+        <StatusDot :status="store.connected ? 'connected' : 'stopped'" :label="store.wsStatus" class="mr-2" />
+        <Button variant="outline" size="sm" :disabled="store.dumps.length === 0" @click="store.clear()">
+          <Trash2 class="size-3.5" />
+          Clear all
         </Button>
       </template>
     </PageHeader>
 
-    <div class="space-y-3">
+    <EmptyState v-if="store.dumps.length === 0" :icon="Bug" title="No dumps yet">
+      Use <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">dump()</code>
+      or <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">dd()</code> in your PHP code.
+    </EmptyState>
+
+    <div v-else class="space-y-3">
       <DumpCard v-for="dump in store.dumps" :key="dump.id" :dump="dump" />
-      <EmptyState v-if="store.dumps.length === 0">
-        No dumps yet. Use <code class="font-mono bg-muted px-1.5 py-0.5 rounded text-xs">dump()</code>
-        or <code class="font-mono bg-muted px-1.5 py-0.5 rounded text-xs">dd()</code> in your PHP code.
-      </EmptyState>
     </div>
   </div>
 </template>

@@ -47,8 +47,8 @@ const fallback = computed(() => {
 
 <template>
   <span
-    class="inline-flex items-center justify-center rounded-lg bg-muted/80 shrink-0 overflow-hidden"
-    :class="size === 'sm' ? 'size-7' : 'size-8'"
+    class="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/60"
+    :class="[size === 'sm' ? 'size-7' : 'size-8', svg && 'dark:border-transparent dark:bg-white/90']"
     aria-hidden="true"
   >
     <span

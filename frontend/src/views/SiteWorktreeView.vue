@@ -13,8 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import Surface from '@/components/layout/Surface.vue'
-import SectionHeader from '@/components/layout/SectionHeader.vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import SettingRow from '@/components/layout/SettingRow.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
 
@@ -115,74 +114,86 @@ async function createWorktree() {
       :description="site ? `New git worktree for ${site.domain}` : 'Loading…'"
       :back-to="site ? `/sites/${site.id}` : '/sites'"
       back-label="Site settings"
-    >
-      <template #actions>
-        <Button variant="outline" @click="router.push(site ? `/sites/${site.id}` : '/sites')" :disabled="creating">Cancel</Button>
-        <Button
-          @click="createWorktree"
-          :disabled="branchesLoading || creating || (form.createBranch ? !form.newBranchName : !form.branch)"
-        >
-          <Loader2 v-if="creating" class="w-4 h-4 animate-spin" />
-          {{ creating ? 'Creating…' : 'Create worktree' }}
-        </Button>
-      </template>
-    </PageHeader>
+    />
 
-    <div v-if="store.loading && !site" class="text-sm text-muted-foreground py-8 text-center">Loading…</div>
+    <div v-if="store.loading && !site" class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+      <Loader2 class="size-4 animate-spin" />
+      Loading…
+    </div>
     <EmptyState v-else-if="!site" title="Site not found">This site is gone or the id is wrong.</EmptyState>
 
-    <Surface v-else>
-      <SectionHeader title="Branch" description="Check out an existing branch or create a new one." />
-      <div v-if="branchesLoading" class="px-5 py-10 text-center text-sm text-muted-foreground">
-        <Loader2 class="w-4 h-4 animate-spin inline mr-2" />Loading branches…
-      </div>
-      <div v-else class="px-5 pb-2">
-        <SettingRow label="Create new branch" hint="Start from HEAD and name the branch yourself." for="create_branch">
-          <div class="flex items-center h-9">
-            <Checkbox id="create_branch" v-model:checked="form.createBranch" />
-          </div>
-        </SettingRow>
-        <SettingRow v-if="form.createBranch" label="New branch name" for="new_branch">
-          <Input id="new_branch" v-model="form.newBranchName" placeholder="feature/my-thing" class="font-mono" />
-        </SettingRow>
-        <SettingRow v-else label="Branch" for="branch_select">
-          <Select v-model="form.branch">
-            <SelectTrigger id="branch_select">
-              <SelectValue placeholder="Select branch" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="b in branches" :key="b.name" :value="b.name" class="font-mono text-xs">
-                <span class="flex items-center gap-2">
-                  <GitBranch class="w-3 h-3 shrink-0 text-muted-foreground" />
-                  {{ b.name }}
-                  <span v-if="b.is_current" class="text-muted-foreground text-xs">(current)</span>
-                  <span v-if="b.is_remote" class="text-muted-foreground text-xs">(remote)</span>
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingRow>
-        <SettingRow v-if="previewDomain" label="Will create">
-          <p class="font-mono text-sm h-9 flex items-center">{{ previewDomain }}</p>
-        </SettingRow>
-      </div>
-    </Surface>
+    <template v-else>
+      <Card>
+        <CardHeader class="border-b">
+          <CardTitle>Branch</CardTitle>
+          <CardDescription>Check out an existing branch or create a new one.</CardDescription>
+        </CardHeader>
+        <div v-if="branchesLoading" class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+          <Loader2 class="size-4 animate-spin" />
+          Loading branches…
+        </div>
+        <CardContent v-else class="pb-0 sm:pb-0">
+          <SettingRow label="Create new branch" hint="Start from HEAD and name the branch yourself." for="create_branch">
+            <div class="flex h-9 items-center">
+              <Checkbox id="create_branch" v-model:checked="form.createBranch" />
+            </div>
+          </SettingRow>
+          <SettingRow v-if="form.createBranch" label="New branch name" for="new_branch">
+            <Input id="new_branch" v-model="form.newBranchName" placeholder="feature/my-thing" class="font-mono" />
+          </SettingRow>
+          <SettingRow v-else label="Branch" for="branch_select">
+            <Select v-model="form.branch">
+              <SelectTrigger id="branch_select" class="w-full">
+                <SelectValue placeholder="Select branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="b in branches" :key="b.name" :value="b.name" class="font-mono text-xs">
+                  <span class="flex items-center gap-2">
+                    <GitBranch class="size-3.5 shrink-0 text-muted-foreground" />
+                    {{ b.name }}
+                    <span v-if="b.is_current" class="text-xs text-muted-foreground">(current)</span>
+                    <span v-if="b.is_remote" class="text-xs text-muted-foreground">(remote)</span>
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow v-if="previewDomain" label="Will create">
+            <p class="flex min-h-9 items-center break-all font-mono text-sm">{{ previewDomain }}</p>
+          </SettingRow>
+        </CardContent>
+      </Card>
 
-    <Surface v-if="site && !branchesLoading">
-      <SectionHeader title="Shared resources" description="Paths relative to the project root, comma-separated." />
-      <div class="px-5 pb-2">
-        <SettingRow label="Symlinks from parent" hint="Shared runtime dirs (uploads, files). Do not symlink vendor." for="wt_symlinks">
-          <Input id="wt_symlinks" v-model="form.symlinksInput" placeholder="wp-content/uploads" class="font-mono" />
-        </SettingRow>
-        <SettingRow label="Copies from parent" hint="vendor, node_modules, and .env are copied. APP_URL is rewritten to this worktree." for="wt_copies">
-          <Input id="wt_copies" v-model="form.copiesInput" placeholder=".env, vendor, node_modules" class="font-mono" />
-        </SettingRow>
-        <SettingRow label="Save as defaults" hint="Reuse these paths for future worktrees." for="save_config">
-          <div class="flex items-center h-9">
-            <Checkbox id="save_config" v-model:checked="form.saveConfig" />
-          </div>
-        </SettingRow>
+      <Card v-if="!branchesLoading">
+        <CardHeader class="border-b">
+          <CardTitle>Shared resources</CardTitle>
+          <CardDescription>Paths relative to the project root, comma-separated.</CardDescription>
+        </CardHeader>
+        <CardContent class="pb-0 sm:pb-0">
+          <SettingRow label="Symlinks from parent" hint="Shared runtime dirs (uploads, files). Do not symlink vendor." for="wt_symlinks">
+            <Input id="wt_symlinks" v-model="form.symlinksInput" placeholder="wp-content/uploads" class="font-mono" />
+          </SettingRow>
+          <SettingRow label="Copies from parent" hint="vendor, node_modules, and .env are copied. APP_URL is rewritten to this worktree." for="wt_copies">
+            <Input id="wt_copies" v-model="form.copiesInput" placeholder=".env, vendor, node_modules" class="font-mono" />
+          </SettingRow>
+          <SettingRow label="Save as defaults" hint="Reuse these paths for future worktrees." for="save_config">
+            <div class="flex h-9 items-center">
+              <Checkbox id="save_config" v-model:checked="form.saveConfig" />
+            </div>
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="outline" :disabled="creating" @click="router.push(`/sites/${site.id}`)">Cancel</Button>
+        <Button
+          :disabled="branchesLoading || creating || (form.createBranch ? !form.newBranchName : !form.branch)"
+          @click="createWorktree"
+        >
+          <Loader2 v-if="creating" class="size-4 animate-spin" />
+          {{ creating ? 'Creating…' : 'Create worktree' }}
+        </Button>
       </div>
-    </Surface>
+    </template>
   </div>
 </template>

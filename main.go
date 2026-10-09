@@ -305,6 +305,19 @@ func run() error {
 	if err := caddyClient.EnsureHTTPServer(addr); err != nil {
 		log.Printf("caddy: ensure http server: %v (Caddy may not be running yet)", err)
 	}
+
+	// Refresh the PHP CA bundle now that Caddy can issue its local root.
+	// Static PHP OpenSSL does not use the OS trust store; the bundle is what
+	// lets file_get_contents / curl / Guzzle call https://*.test.
+	var caddyRootPEM []byte
+	if cert, err := caddyClient.RootCert(); err != nil {
+		log.Printf("php: caddy root cert: %v", err)
+	} else {
+		caddyRootPEM = cert
+	}
+	if err := php.ApplyCABundle(cfg.ServerRoot, caddyRootPEM); err != nil {
+		log.Printf("php: apply ca bundle: %v", err)
+	}
 	done()
 
 	done = step("sites sync")
@@ -450,17 +463,18 @@ func parseDuration(s string) time.Duration {
 func phpFPMDefinition(ver, serverRoot string) services.Definition {
 	phpDir := php.PHPDir(ver, serverRoot)
 	return services.Definition{
-		ID:           php.FPMServiceID(ver),
-		Label:        "PHP " + ver + " FPM",
-		Description:  "PHP " + ver + " FastCGI Process Manager",
-		Managed:      true,
-		ManagedCmd:   php.FPMBinary(ver, serverRoot),
-		ManagedArgs:  fmt.Sprintf("-c %s/php.ini --nodaemonize --fpm-config %s", phpDir, php.FPMConfigPath(ver, serverRoot)),
-		ManagedDir:   phpDir,
-		Log:          php.FPMLogPath(ver, serverRoot),
-		Version:      php.FPMBinary(ver, serverRoot) + " -v",
-		VersionRegex: `PHP (?P<version>[\d.]+)`,
-		PreStart:     func() error { return php.StopLeftover(ver, serverRoot) },
+		ID:              php.FPMServiceID(ver),
+		Label:           "PHP " + ver + " FPM",
+		Description:     "PHP " + ver + " FastCGI Process Manager",
+		Managed:         true,
+		ManagedCmd:      php.FPMBinary(ver, serverRoot),
+		ManagedArgs:     fmt.Sprintf("-c %s/php.ini --nodaemonize --fpm-config %s", phpDir, php.FPMConfigPath(ver, serverRoot)),
+		ManagedDir:      phpDir,
+		ManagedExtraEnv: php.CertEnv(serverRoot),
+		Log:             php.FPMLogPath(ver, serverRoot),
+		Version:         php.FPMBinary(ver, serverRoot) + " -v",
+		VersionRegex:    `PHP (?P<version>[\d.]+)`,
+		PreStart:        func() error { return php.StopLeftover(ver, serverRoot) },
 	}
 }
 

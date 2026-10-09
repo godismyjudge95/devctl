@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import { Download, ShieldCheck, RotateCw } from 'lucide-vue-next'
+import { Download, ShieldCheck, RotateCw, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import { restartDevctl, trustTLS } from '@/lib/api'
 import { toast } from 'vue-sonner'
@@ -93,33 +93,36 @@ async function trustCert() {
   <div class="space-y-6">
     <PageHeader title="Settings" description="Dashboard bind address, watch directory, TLS, and integrations." />
 
-    <div v-if="store.loading" class="text-muted-foreground text-sm py-8 text-center">Loading…</div>
+    <div v-if="store.loading" class="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+      <Loader2 class="size-4 animate-spin" />
+      Loading…
+    </div>
 
     <div v-else class="space-y-6">
-
       <!-- Dashboard -->
       <Card>
         <CardHeader>
           <CardTitle>Dashboard</CardTitle>
           <CardDescription>Address and port the devctl UI listens on.</CardDescription>
         </CardHeader>
-        <CardContent class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="grid gap-1.5">
-            <Label for="devctl_host">Bind Host</Label>
+        <CardContent class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="grid gap-2">
+            <Label for="devctl_host">Bind host</Label>
             <Input
               id="devctl_host"
               v-model="store.settings['devctl_host']"
-              @change="save('devctl_host', store.settings['devctl_host'] ?? '')"
               class="font-mono"
+              @change="save('devctl_host', store.settings['devctl_host'] ?? '')"
             />
           </div>
-          <div class="grid gap-1.5">
+          <div class="grid gap-2">
             <Label for="devctl_port">Port</Label>
             <Input
               id="devctl_port"
               v-model="store.settings['devctl_port']"
-              @change="save('devctl_port', store.settings['devctl_port'] ?? '')"
+              inputmode="numeric"
               class="font-mono"
+              @change="save('devctl_port', store.settings['devctl_port'] ?? '')"
             />
           </div>
         </CardContent>
@@ -129,18 +132,22 @@ async function trustCert() {
       <Card>
         <CardHeader>
           <CardTitle>Sites</CardTitle>
-          <CardDescription>Root directory watched for auto-discovered sites. ~ and $HOME are expanded. Install default: ~/ddev/sites on Linux, ~/Code/sites on macOS.</CardDescription>
+          <CardDescription>Root directory watched for auto-discovered sites.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="grid gap-1.5">
-            <Label for="sites_watch_dir">Watch Directory</Label>
+          <div class="grid gap-2">
+            <Label for="sites_watch_dir">Watch directory</Label>
             <Input
               id="sites_watch_dir"
               v-model="store.settings['sites_watch_dir']"
-              @change="save('sites_watch_dir', store.settings['sites_watch_dir'] ?? '')"
               placeholder="~/Code/sites"
               class="font-mono"
+              @change="save('sites_watch_dir', store.settings['sites_watch_dir'] ?? '')"
             />
+            <p class="text-xs text-muted-foreground">
+              <code class="font-mono">~</code> and <code class="font-mono">$HOME</code> are expanded.
+              Install default: <code class="font-mono">~/ddev/sites</code> on Linux, <code class="font-mono">~/Code/sites</code> on macOS.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -153,17 +160,18 @@ async function trustCert() {
         </CardHeader>
         <CardContent class="space-y-3">
           <div class="flex flex-wrap gap-2">
-            <Button variant="outline" @click="downloadCert">
-              <Download class="w-4 h-4" />
-              Download Root Certificate
+            <Button variant="outline" size="sm" @click="downloadCert">
+              <Download class="size-3.5" />
+              Download root certificate
             </Button>
-            <Button variant="outline" :disabled="trusting" @click="trustCert">
-              <ShieldCheck class="w-4 h-4" :class="trusting ? 'animate-pulse' : ''" />
-              {{ trusting ? 'Trusting…' : 'Trust Certificate' }}
+            <Button variant="outline" size="sm" :disabled="trusting" @click="trustCert">
+              <Loader2 v-if="trusting" class="size-3.5 animate-spin" />
+              <ShieldCheck v-else class="size-3.5" />
+              {{ trusting ? 'Trusting…' : 'Trust certificate' }}
             </Button>
           </div>
-          <p v-if="trustStatus === 'done'" class="text-sm text-success whitespace-pre-wrap">{{ trustMessage }}</p>
-          <p v-else-if="trustStatus === 'error'" class="text-sm text-destructive whitespace-pre-wrap">{{ trustMessage }}</p>
+          <p v-if="trustStatus === 'done'" class="whitespace-pre-wrap text-sm text-success">{{ trustMessage }}</p>
+          <p v-else-if="trustStatus === 'error'" class="whitespace-pre-wrap text-sm text-destructive">{{ trustMessage }}</p>
           <p v-else-if="trustStatus === 'working'" class="text-sm text-muted-foreground">Installing certificate into system and browser trust stores…</p>
         </CardContent>
       </Card>
@@ -175,32 +183,39 @@ async function trustCert() {
           <CardDescription>TCP listener for dump() / dd() calls.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="grid gap-1.5 max-w-xs">
-            <Label for="dump_tcp_port">TCP Port</Label>
+          <div class="grid gap-2 sm:max-w-xs">
+            <Label for="dump_tcp_port">TCP port</Label>
             <Input
               id="dump_tcp_port"
               v-model="store.settings['dump_tcp_port']"
-              @change="save('dump_tcp_port', store.settings['dump_tcp_port'] ?? '')"
+              inputmode="numeric"
               class="font-mono"
+              @change="save('dump_tcp_port', store.settings['dump_tcp_port'] ?? '')"
             />
           </div>
         </CardContent>
       </Card>
 
       <!-- Save & Restart -->
-      <div class="flex items-center gap-4 pt-2">
-        <Button :disabled="restarting" @click="saveAndRestart">
-          <RotateCw class="w-4 h-4" :class="restarting ? 'animate-spin' : ''" />
-          Save &amp; Restart
-        </Button>
-        <span v-if="restartStatus === 'idle'" class="text-xs text-muted-foreground">All settings take effect after restarting.</span>
-        <span v-else-if="restartStatus === 'restarting'" class="text-sm text-muted-foreground">Restarting…</span>
-        <span v-else-if="restartStatus === 'reconnecting'" class="text-sm text-muted-foreground">Waiting for server…</span>
-        <span v-else-if="restartStatus === 'done'" class="text-sm text-success">Restarted successfully.</span>
-        <span v-else-if="restartStatus === 'error'" class="text-sm text-destructive">Server did not come back in time. Check journalctl.</span>
-      </div>
-
+      <Card>
+        <CardFooter class="flex flex-col items-start gap-3 px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
+          <p class="text-sm" :class="{
+            'text-muted-foreground': restartStatus === 'idle' || restartStatus === 'restarting' || restartStatus === 'reconnecting',
+            'text-success': restartStatus === 'done',
+            'text-destructive': restartStatus === 'error',
+          }">
+            <template v-if="restartStatus === 'idle'">Changes take effect after devctl restarts.</template>
+            <template v-else-if="restartStatus === 'restarting'">Restarting…</template>
+            <template v-else-if="restartStatus === 'reconnecting'">Waiting for server…</template>
+            <template v-else-if="restartStatus === 'done'">Restarted successfully.</template>
+            <template v-else-if="restartStatus === 'error'">Server did not come back in time. Check journalctl.</template>
+          </p>
+          <Button size="sm" :disabled="restarting" @click="saveAndRestart">
+            <RotateCw class="size-3.5" :class="restarting ? 'animate-spin' : ''" />
+            Save &amp; Restart
+          </Button>
+        </CardFooter>
+      </Card>
     </div>
   </div>
-
 </template>

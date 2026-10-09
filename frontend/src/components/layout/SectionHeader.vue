@@ -6,12 +6,12 @@ defineProps<{
 </script>
 
 <template>
-  <div class="flex flex-wrap items-start justify-between gap-3 px-5 pt-5 pb-4">
-    <div class="min-w-0">
-      <h2 class="section-kicker text-foreground">{{ title }}</h2>
-      <p v-if="description" class="mt-1 text-sm text-muted-foreground max-w-2xl">{{ description }}</p>
+  <div class="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+    <div class="min-w-0 space-y-1">
+      <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
+      <p v-if="description" class="max-w-2xl text-sm text-muted-foreground">{{ description }}</p>
     </div>
-    <div v-if="$slots.actions" class="flex items-center gap-2 shrink-0">
+    <div v-if="$slots.actions" class="flex flex-wrap items-center gap-2 sm:shrink-0">
       <slot name="actions" />
     </div>
   </div>

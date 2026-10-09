@@ -6,15 +6,15 @@ import type { SpxFunction } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table'
+import SplitView from '@/components/layout/SplitView.vue'
+import PaneHeader from '@/components/layout/PaneHeader.vue'
+import EmptyState from '@/components/layout/EmptyState.vue'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Trash2, ArrowLeft, Activity } from 'lucide-vue-next'
+import { Trash2, ChevronLeft, Activity, Loader2 } from 'lucide-vue-next'
 
 // Row height for the virtual flat-profile table (py-1.5 + text-xs ≈ 32px)
 const FLAT_ROW_HEIGHT = 32
@@ -64,6 +64,22 @@ async function handleDeleteProfile(key: string, e: MouseEvent) {
 
 const clearAllOpen = ref(false)
 
+const metadata = computed(() => {
+  const p = store.selectedProfile
+  if (!p) return []
+  return [
+    { label: 'Key', value: p.key },
+    { label: 'PHP version', value: p.php_version },
+    { label: 'Domain', value: p.domain },
+    { label: 'Method', value: p.method },
+    { label: 'URI', value: p.uri },
+    { label: 'Wall time', value: formatMs(p.wall_time_ms) },
+    { label: 'Peak memory', value: formatBytes(p.peak_memory_bytes) },
+    { label: 'Functions called', value: String(p.called_func_count) },
+    { label: 'Timestamp', value: new Date(p.timestamp * 1000).toLocaleString() },
+  ]
+})
+
 function handleClearAll() {
   clearAllOpen.value = true
 }
@@ -103,243 +119,247 @@ function formatDate(ts: number): string {
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden w-full">
-
-    <!-- Left panel: profile list -->
-    <div
-      class="flex flex-col border-r border-border overflow-hidden"
-      :class="showDetail
-        ? 'hidden md:flex md:w-80 md:shrink-0'
-        : 'flex-1 min-w-0 md:flex-initial md:w-80 md:shrink-0'"
-    >
-      <!-- Toolbar -->
-      <div class="flex items-center justify-between px-3 py-2 border-b border-border">
-        <div>
-          <div class="kicker text-[12px]">Profiler</div>
-          <div class="text-[11px] text-muted-foreground mt-0.5">SPX profiles</div>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title="Delete all profiles"
-          :disabled="store.profiles.length === 0"
-          @click="handleClearAll"
-        >
-          <Trash2 class="w-3.5 h-3.5 text-destructive" />
-        </Button>
-      </div>
-
-      <!-- Profile list -->
-      <ScrollArea class="flex-1">
-        <!-- Empty state -->
-        <div
-          v-if="!store.loading && store.profiles.length === 0"
-          class="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2"
-        >
-          <Activity class="w-8 h-8 opacity-40" />
-          <span class="text-sm">No profiles yet</span>
-          <span class="text-xs text-center px-4">Enable SPX on a site, then make HTTP requests with<br><code class="font-mono bg-muted px-1 rounded">?SPX_KEY=dev&amp;SPX_ENABLED=1</code> as query params or cookies.</span>
-        </div>
-
-        <div
-          v-for="p in store.profiles"
-          :key="p.key"
-          class="flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent/50 transition-colors group"
-          :class="{ 'bg-accent border-l-2 border-l-primary': store.selectedProfile?.key === p.key }"
-          @click="handleSelectProfile(p.key)"
-        >
-          <div class="flex-1 min-w-0 overflow-hidden">
-            <div class="flex items-baseline justify-between gap-1 min-w-0">
-              <span class="text-xs font-mono font-semibold text-muted-foreground shrink-0">{{ p.method }}</span>
-              <span class="text-xs text-muted-foreground shrink-0">{{ formatDate(p.timestamp) }}</span>
-            </div>
-            <div class="text-sm truncate font-medium">{{ p.uri }}</div>
-            <div class="text-xs text-muted-foreground truncate">{{ p.domain }}</div>
-            <div class="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-              <span>{{ formatMs(p.wall_time_ms) }}</span>
-              <span>·</span>
-              <span>{{ formatBytes(p.peak_memory_bytes) }}</span>
-              <span>·</span>
-              <span>{{ p.called_func_count }} calls</span>
-            </div>
-          </div>
+  <SplitView :show-detail="showDetail">
+    <template #list>
+      <PaneHeader title="Profiler" description="SPX profiles">
+        <template #actions>
           <Button
             variant="ghost"
             size="icon-sm"
-            class="opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
-            title="Delete profile"
-            @click="handleDeleteProfile(p.key, $event)"
+            class="text-destructive hover:text-destructive"
+            title="Delete all profiles"
+            aria-label="Delete all profiles"
+            :disabled="store.profiles.length === 0"
+            @click="handleClearAll"
           >
-            <Trash2 class="w-3 h-3" />
+            <Trash2 class="size-4" />
           </Button>
+        </template>
+      </PaneHeader>
+
+      <ScrollArea class="min-h-0 flex-1">
+        <EmptyState
+          v-if="!store.loading && store.profiles.length === 0"
+          variant="fill"
+          :icon="Activity"
+          title="No profiles yet"
+        >
+          Enable SPX on a site, then send requests with
+          <code class="break-all rounded bg-muted px-1 font-mono text-xs">?SPX_KEY=dev&amp;SPX_ENABLED=1</code>
+          as query params or cookies.
+        </EmptyState>
+
+        <div class="space-y-0.5 p-2">
+          <div
+            v-for="p in store.profiles"
+            :key="p.key"
+            role="button"
+            tabindex="0"
+            class="group flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            :class="store.selectedProfile?.key === p.key
+              ? 'bg-accent text-accent-foreground'
+              : 'hover:bg-muted'"
+            @click="handleSelectProfile(p.key)"
+            @keydown.enter="handleSelectProfile(p.key)"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="flex min-w-0 items-baseline gap-1.5">
+                  <span class="shrink-0 font-mono text-xs font-semibold text-muted-foreground">{{ p.method }}</span>
+                  <span class="truncate text-sm font-medium">{{ p.uri }}</span>
+                </span>
+                <span class="shrink-0 text-xs text-muted-foreground">{{ formatDate(p.timestamp) }}</span>
+              </div>
+              <div class="truncate text-sm text-muted-foreground">{{ p.domain }}</div>
+              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-muted-foreground">
+                <span>{{ formatMs(p.wall_time_ms) }}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{ formatBytes(p.peak_memory_bytes) }}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{ p.called_func_count }} calls</span>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="-mr-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+              title="Delete profile"
+              aria-label="Delete profile"
+              @click="handleDeleteProfile(p.key, $event)"
+            >
+              <Trash2 class="size-3.5" />
+            </Button>
+          </div>
         </div>
       </ScrollArea>
 
-      <!-- Footer count -->
-      <div class="px-3 py-2 border-t border-border text-xs text-muted-foreground">
+      <div class="shrink-0 border-t border-border px-3 py-2 text-xs text-muted-foreground">
         {{ store.profiles.length }} profile{{ store.profiles.length !== 1 ? 's' : '' }}
       </div>
-    </div>
+    </template>
 
-    <!-- Right panel: profile detail -->
-    <div
-      class="flex flex-col overflow-hidden"
-      :class="showDetail ? 'flex-1' : 'hidden md:flex md:flex-1'"
-    >
+    <template #detail>
+      <PaneHeader
+        v-if="!store.selectedProfile || store.detailLoading"
+        back
+        class="md:hidden"
+        title="Profile"
+        @back="showDetail = false"
+      />
 
-      <!-- Mobile back -->
-      <div class="flex md:hidden items-center px-3 py-2 border-b border-border shrink-0">
-        <Button variant="ghost" size="sm" class="gap-1.5 -ml-1" @click="showDetail = false">
-          <ArrowLeft class="w-4 h-4" />
-          Back
-        </Button>
-      </div>
-
-      <!-- Empty state -->
-      <div
+      <EmptyState
         v-if="!store.selectedProfile && !store.detailLoading"
-        class="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3"
+        variant="fill"
+        :icon="Activity"
+        title="No profile selected"
       >
-        <Activity class="w-12 h-12 opacity-20" />
-        <span class="text-sm">Select a profile to inspect it</span>
-      </div>
+        Select a profile to inspect it.
+      </EmptyState>
 
-      <!-- Loading -->
-      <div
-        v-else-if="store.detailLoading"
-        class="flex-1 flex items-center justify-center text-muted-foreground text-sm"
-      >
+      <div v-else-if="store.detailLoading" class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 class="size-4 animate-spin" />
         Loading…
       </div>
 
-      <!-- Detail -->
       <template v-else-if="store.selectedProfile">
         <!-- Header -->
-        <div class="px-4 md:px-6 pt-4 md:pt-5 pb-3 border-b border-border shrink-0">
-          <div class="flex items-start justify-between gap-3 mb-2">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2 mb-0.5">
-                <span class="text-xs font-mono font-semibold text-muted-foreground shrink-0">{{ store.selectedProfile.method }}</span>
-                <span class="text-base md:text-lg font-semibold truncate min-w-0">{{ store.selectedProfile.uri }}</span>
-              </div>
-              <div class="text-sm text-muted-foreground">{{ store.selectedProfile.domain }} · PHP {{ store.selectedProfile.php_version }}</div>
+        <div class="shrink-0 border-b border-border px-4 py-4 md:px-6">
+          <div class="mb-3 flex items-start gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="-ml-2 shrink-0 md:hidden"
+              aria-label="Back"
+              @click="showDetail = false"
+            >
+              <ChevronLeft class="size-4" />
+            </Button>
+            <div class="min-w-0 flex-1">
+              <h2 class="flex min-w-0 items-baseline gap-2 text-base font-semibold leading-snug md:text-lg">
+                <span class="shrink-0 font-mono text-xs font-semibold text-muted-foreground">{{ store.selectedProfile.method }}</span>
+                <span class="truncate">{{ store.selectedProfile.uri }}</span>
+              </h2>
+              <p class="truncate text-sm text-muted-foreground">{{ store.selectedProfile.domain }} · PHP {{ store.selectedProfile.php_version }}</p>
             </div>
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
-              class="h-7 text-xs shrink-0"
+              class="shrink-0 text-destructive hover:text-destructive"
+              title="Delete"
               @click="handleDeleteProfile(store.selectedProfile!.key, $event)"
             >
-              <Trash2 class="w-3.5 h-3.5 mr-1" />
-              Delete
+              <Trash2 class="size-3.5" />
+              <span class="hidden sm:inline">Delete</span>
             </Button>
           </div>
-          <div class="flex flex-wrap gap-4 text-sm">
-            <div><span class="text-muted-foreground">Wall time: </span><span class="font-medium">{{ formatMs(store.selectedProfile.wall_time_ms) }}</span></div>
-            <div><span class="text-muted-foreground">Peak memory: </span><span class="font-medium">{{ formatBytes(store.selectedProfile.peak_memory_bytes) }}</span></div>
-            <div><span class="text-muted-foreground">Functions called: </span><span class="font-medium">{{ store.selectedProfile.called_func_count }}</span></div>
-          </div>
+          <dl class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <div class="flex gap-1.5"><dt class="text-muted-foreground">Wall time</dt><dd class="font-medium tabular-nums">{{ formatMs(store.selectedProfile.wall_time_ms) }}</dd></div>
+            <div class="flex gap-1.5"><dt class="text-muted-foreground">Peak memory</dt><dd class="font-medium tabular-nums">{{ formatBytes(store.selectedProfile.peak_memory_bytes) }}</dd></div>
+            <div class="flex gap-1.5"><dt class="text-muted-foreground">Functions</dt><dd class="font-medium tabular-nums">{{ store.selectedProfile.called_func_count }}</dd></div>
+          </dl>
         </div>
 
         <!-- Tabs -->
-        <Tabs v-model="activeTab" class="flex-1 flex flex-col overflow-hidden">
-          <TabsList class="mx-4 md:mx-6 mt-3 mb-0 shrink-0 self-start">
-            <TabsTrigger value="flat">Flat Profile</TabsTrigger>
-            <TabsTrigger value="flamegraph">Flamegraph</TabsTrigger>
-            <TabsTrigger value="metadata">Metadata</TabsTrigger>
-          </TabsList>
+        <Tabs v-model="activeTab" class="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
+          <div class="shrink-0 overflow-x-auto border-b border-border px-4 py-3 md:px-6">
+            <TabsList>
+              <TabsTrigger value="flat">Flat profile</TabsTrigger>
+              <TabsTrigger value="flamegraph">Flamegraph</TabsTrigger>
+              <TabsTrigger value="metadata">Metadata</TabsTrigger>
+            </TabsList>
+          </div>
 
-          <!-- Flat Profile tab -->
-          <TabsContent value="flat" class="flex-1 overflow-hidden m-0 mt-2 flex flex-col">
-            <div v-if="!flatFunctions.length" class="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No call trace data available
-            </div>
+          <!-- Flat profile tab -->
+          <TabsContent value="flat" class="m-0 flex min-h-0 flex-1 flex-col overflow-hidden">
+            <EmptyState v-if="!flatFunctions.length" variant="fill" title="No call trace data available" />
             <template v-else>
-              <!-- Sticky column headers -->
-              <div class="shrink-0 border-b border-border bg-background">
-                <table class="w-full text-left">
-                  <colgroup>
-                    <col class="w-8" />
-                    <col />
-                    <col class="w-16" />
-                    <col class="w-24" />
-                    <col class="w-28" />
-                    <col class="w-24" />
-                    <col class="w-16" />
-                  </colgroup>
-                  <thead>
-                    <tr class="border-b border-border">
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground">#</th>
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground">Function</th>
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Calls</th>
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Excl. time</th>
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Excl. %</th>
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Incl. time</th>
-                      <th class="px-4 py-2 text-xs font-medium text-muted-foreground text-right">Incl. %</th>
-                    </tr>
-                  </thead>
-                </table>
-              </div>
-              <!-- Virtual-scrolled rows: only renders visible rows -->
-              <div v-bind="flatContainerProps" class="flex-1 overflow-y-auto">
-                <div v-bind="flatWrapperProps">
-                  <table class="w-full text-left">
-                    <colgroup>
-                      <col class="w-8" />
+              <!-- Horizontal scroll wrapper keeps header and rows aligned on narrow screens -->
+              <div class="min-h-0 flex-1 overflow-x-auto">
+                <div class="flex h-full min-w-[640px] flex-col">
+                  <div class="shrink-0 border-b border-border">
+                    <table class="data-table w-full table-fixed text-left">
+                      <colgroup>
+                      <col class="w-12" />
                       <col />
-                      <col class="w-16" />
+                      <col class="w-20" />
                       <col class="w-24" />
-                      <col class="w-28" />
+                      <col class="w-32" />
                       <col class="w-24" />
-                      <col class="w-16" />
+                      <col class="w-20" />
                     </colgroup>
-                    <tbody>
-                      <tr
-                        v-for="{ data: fn, index } in virtualRows"
-                        :key="fn.name + index"
-                        class="hover:bg-accent/50 border-b border-border/40"
-                        :style="{ height: `${FLAT_ROW_HEIGHT}px` }"
-                      >
-                        <td class="px-4 text-xs text-muted-foreground">{{ index + 1 }}</td>
-                        <td class="px-4 font-mono text-xs max-w-xs truncate">{{ fn.name }}</td>
-                        <td class="px-4 text-xs text-right">{{ fn.calls }}</td>
-                        <td class="px-4 text-xs text-right font-medium">{{ formatMs(fn.exclusive_ms) }}</td>
-                        <td class="px-4 text-xs text-right">
-                          <div class="flex items-center justify-end gap-1">
-                            <div class="w-12 bg-muted rounded-full h-1.5 overflow-hidden">
-                              <div class="h-full bg-primary rounded-full" :style="{ width: `${Math.min(fn.exclusive_pct, 100)}%` }" />
-                            </div>
-                            {{ fn.exclusive_pct.toFixed(1) }}%
-                          </div>
-                        </td>
-                        <td class="px-4 text-xs text-right">{{ formatMs(fn.inclusive_ms) }}</td>
-                        <td class="px-4 text-xs text-right">{{ fn.inclusive_pct.toFixed(1) }}%</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      <thead>
+                        <tr>
+                          <th class="h-9 px-4 text-xs font-medium text-muted-foreground">#</th>
+                          <th class="h-9 px-4 text-xs font-medium text-muted-foreground">Function</th>
+                          <th class="h-9 px-4 text-right text-xs font-medium text-muted-foreground">Calls</th>
+                          <th class="h-9 px-4 text-right text-xs font-medium text-muted-foreground">Excl. time</th>
+                          <th class="h-9 px-4 text-right text-xs font-medium text-muted-foreground">Excl. %</th>
+                          <th class="h-9 px-4 text-right text-xs font-medium text-muted-foreground">Incl. time</th>
+                          <th class="h-9 px-4 text-right text-xs font-medium text-muted-foreground">Incl. %</th>
+                        </tr>
+                      </thead>
+                    </table>
+                  </div>
+                  <!-- Virtual-scrolled rows: only renders visible rows -->
+                  <div v-bind="flatContainerProps" class="min-h-0 flex-1 overflow-y-auto">
+                    <div v-bind="flatWrapperProps">
+                      <table class="data-table w-full table-fixed text-left">
+                        <colgroup>
+                      <col class="w-12" />
+                      <col />
+                      <col class="w-20" />
+                      <col class="w-24" />
+                      <col class="w-32" />
+                      <col class="w-24" />
+                      <col class="w-20" />
+                    </colgroup>
+                        <tbody>
+                          <tr
+                            v-for="{ data: fn, index } in virtualRows"
+                            :key="fn.name + index"
+                            class="border-b border-border/60 transition-colors hover:bg-muted/40"
+                            :style="{ height: `${FLAT_ROW_HEIGHT}px` }"
+                          >
+                            <td class="px-4 text-xs text-muted-foreground">{{ index + 1 }}</td>
+                            <td class="truncate px-4 font-mono text-xs" :title="fn.name">{{ fn.name }}</td>
+                            <td class="px-4 text-right text-xs">{{ fn.calls }}</td>
+                            <td class="px-4 text-right text-xs font-medium">{{ formatMs(fn.exclusive_ms) }}</td>
+                            <td class="px-4 text-right text-xs">
+                              <div class="flex items-center justify-end gap-2">
+                                <div class="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+                                  <div class="h-full rounded-full bg-primary" :style="{ width: `${Math.min(fn.exclusive_pct, 100)}%` }" />
+                                </div>
+                                {{ fn.exclusive_pct.toFixed(1) }}%
+                              </div>
+                            </td>
+                            <td class="px-4 text-right text-xs">{{ formatMs(fn.inclusive_ms) }}</td>
+                            <td class="px-4 text-right text-xs">{{ fn.inclusive_pct.toFixed(1) }}%</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <!-- Row count footer -->
-              <div class="shrink-0 px-4 py-1.5 border-t border-border text-xs text-muted-foreground">
+              <div class="shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground">
                 {{ flatFunctions.length.toLocaleString() }} functions
               </div>
             </template>
           </TabsContent>
 
           <!-- Flamegraph tab — speedscope iframe -->
-          <TabsContent value="flamegraph" class="flex-1 overflow-hidden m-0 relative">
-            <!-- Loading overlay — shown until the iframe fires its load event -->
+          <TabsContent value="flamegraph" class="relative m-0 min-h-0 flex-1 overflow-hidden">
             <div
               v-if="!iframeLoaded"
-              class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background z-10"
+              class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-background text-sm text-muted-foreground"
             >
-              <div class="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              <span class="text-sm text-muted-foreground">Loading flamegraph…</span>
+              <Loader2 class="size-4 animate-spin" />
+              Loading flamegraph…
             </div>
             <iframe
               v-if="speedscopeUrl"
               :src="speedscopeUrl"
-              class="w-full h-full border-0"
+              class="h-full w-full border-0"
               :class="{ 'opacity-0': !iframeLoaded }"
               sandbox="allow-scripts allow-same-origin"
               @load="iframeLoaded = true"
@@ -347,54 +367,24 @@ function formatDate(ts: number): string {
           </TabsContent>
 
           <!-- Metadata tab -->
-          <TabsContent value="metadata" class="flex-1 overflow-hidden m-0 mt-2">
+          <TabsContent value="metadata" class="m-0 min-h-0 flex-1 overflow-hidden">
             <ScrollArea class="h-full">
-              <Table>
-                <TableBody>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold w-40">Key</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono break-all">{{ store.selectedProfile.key }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">PHP Version</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.php_version }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Domain</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.domain }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Method</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.method }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">URI</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono break-all">{{ store.selectedProfile.uri }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Wall Time</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ formatMs(store.selectedProfile.wall_time_ms) }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Peak Memory</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ formatBytes(store.selectedProfile.peak_memory_bytes) }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Functions Called</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ store.selectedProfile.called_func_count }}</TableCell>
-                  </TableRow>
-                  <TableRow class="hover:bg-accent/50">
-                    <TableCell class="py-1.5 text-xs text-muted-foreground font-semibold">Timestamp</TableCell>
-                    <TableCell class="py-1.5 text-xs font-mono">{{ new Date(store.selectedProfile.timestamp * 1000).toLocaleString() }}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+              <dl class="divide-y divide-border px-4 md:px-6">
+                <div
+                  v-for="row in metadata"
+                  :key="row.label"
+                  class="grid grid-cols-1 gap-1 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
+                >
+                  <dt class="text-xs font-medium text-muted-foreground">{{ row.label }}</dt>
+                  <dd class="break-all font-mono text-xs">{{ row.value }}</dd>
+                </div>
+              </dl>
             </ScrollArea>
           </TabsContent>
         </Tabs>
       </template>
-    </div>
-  </div>
+    </template>
+  </SplitView>
 
   <!-- Clear all profiles confirmation -->
   <AlertDialog v-model:open="clearAllOpen">
@@ -407,10 +397,7 @@ function formatDate(ts: number): string {
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction
-          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          @click="store.clearAll(); showDetail = false"
-        >
+        <AlertDialogAction variant="destructive" @click="store.clearAll(); showDetail = false">
           Delete all
         </AlertDialogAction>
       </AlertDialogFooter>

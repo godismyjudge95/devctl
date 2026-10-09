@@ -19,23 +19,25 @@ const tone = computed(() => {
   return 'idle'
 })
 
-const copy = computed(() => props.label ?? props.status)
+const copy = computed(() => {
+  const text = props.label ?? props.status
+  return text.charAt(0).toUpperCase() + text.slice(1)
+})
 </script>
 
 <template>
-  <span class="inline-flex items-center gap-1.5">
+  <span class="inline-flex items-center gap-2">
     <Loader2 v-if="pending" class="size-3 shrink-0 animate-spin text-muted-foreground" />
     <span
       v-else
       :class="cn(
-        'inline-block size-1.5 rounded-full shrink-0',
-        tone === 'running' && 'bg-[oklch(0.62_0.17_150)]',
-        tone === 'stopped' && 'bg-[oklch(0.62_0.18_25)]',
-        tone === 'warning' && 'bg-[oklch(0.74_0.14_75)]',
-        tone === 'idle' && 'bg-[oklch(0.72_0.02_264)]',
-        tone === 'running' && !pending && 'animate-[status-pulse_2.4s_ease-in-out_infinite]',
+        'inline-block size-2 shrink-0 rounded-full',
+        tone === 'running' && 'bg-success',
+        tone === 'stopped' && 'bg-destructive',
+        tone === 'warning' && 'bg-warning',
+        tone === 'idle' && 'bg-muted-foreground/50',
       )"
     />
-    <span v-if="showLabel" class="status-copy shrink-0">{{ copy }}</span>
+    <span v-if="showLabel" class="shrink-0 text-sm text-muted-foreground">{{ copy }}</span>
   </span>
 </template>

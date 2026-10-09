@@ -10,8 +10,11 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableRow,
 } from '@/components/ui/table'
+import SplitView from '@/components/layout/SplitView.vue'
+import PaneHeader from '@/components/layout/PaneHeader.vue'
+import EmptyState from '@/components/layout/EmptyState.vue'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -19,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Search, Trash2, Mail, MailOpen, Paperclip, ChevronLeft, ChevronRight,
-  Inbox, Download, ArrowLeft
+  Inbox, Download,
 } from 'lucide-vue-next'
 
 const store = useMailStore()
@@ -183,289 +186,268 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden">
-
-    <!-- Left panel: message list -->
-    <!-- On mobile: full-width when not showing detail; hidden when showing detail -->
-    <!-- On md+: always shown at fixed w-96 -->
-    <div
-      class="flex flex-col border-r border-border"
-      :class="showDetail
-        ? 'hidden md:flex md:w-96 md:shrink-0'
-        : 'flex-1 md:flex-initial md:w-96 md:shrink-0'"
-    >
-
-      <!-- Panel header -->
-      <div class="flex items-center justify-between px-3 py-3 border-b border-border shrink-0">
-        <div>
-          <div class="kicker text-[12px]">Mail</div>
-          <div class="text-[11px] text-muted-foreground mt-0.5">Captured SMTP</div>
-        </div>
-        <span v-if="store.unread > 0" class="text-xs text-muted-foreground tabular-nums">{{ store.unread }} unread</span>
-      </div>
+  <SplitView :show-detail="showDetail" list-class="md:w-96">
+    <template #list>
+      <PaneHeader title="Mail" description="Captured SMTP">
+        <template #actions>
+          <span v-if="store.unread > 0" class="text-xs tabular-nums text-muted-foreground">{{ store.unread }} unread</span>
+        </template>
+      </PaneHeader>
 
       <!-- Search -->
-      <div class="p-3 border-b border-border">
+      <div class="shrink-0 border-b border-border px-4 py-3">
         <div class="relative">
-          <Search class="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             v-model="searchInput"
-            placeholder="Search mail..."
-            class="pl-8 h-8 text-sm"
+            placeholder="Search mail…"
+            aria-label="Search mail"
+            class="pl-8"
           />
         </div>
       </div>
 
       <!-- Toolbar -->
-      <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border">
+      <div class="flex shrink-0 items-center gap-1 border-b border-border px-4 py-1.5">
         <Checkbox
           :checked="selectAllState"
+          aria-label="Select all"
+          class="mr-2"
           @update:checked="handleSelectAll"
-          class="mr-1"
         />
         <ButtonGroup>
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             :disabled="!store.hasSelection"
             title="Delete selected"
+            aria-label="Delete selected"
             @click="handleDeleteSelected"
           >
-            <Trash2 class="w-3.5 h-3.5" />
+            <Trash2 class="size-4" />
           </Button>
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             :disabled="!store.hasSelection"
             title="Mark selected as read"
+            aria-label="Mark selected as read"
             @click="store.markMessages([...store.selectedIds], true)"
           >
-            <MailOpen class="w-3.5 h-3.5" />
+            <MailOpen class="size-4" />
           </Button>
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             :disabled="!store.hasSelection"
             title="Mark selected as unread"
+            aria-label="Mark selected as unread"
             @click="store.markMessages([...store.selectedIds], false)"
           >
-            <Mail class="w-3.5 h-3.5" />
+            <Mail class="size-4" />
           </Button>
         </ButtonGroup>
         <div class="flex-1" />
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
+          class="text-destructive hover:text-destructive"
           title="Delete all messages"
+          aria-label="Delete all messages"
           :disabled="store.total === 0"
           @click="handleDeleteAll"
         >
-          <Trash2 class="w-3.5 h-3.5 text-destructive" />
+          <Trash2 class="size-4" />
         </Button>
       </div>
 
       <!-- Message list -->
-      <ScrollArea class="flex-1">
-        <!-- Empty state -->
-        <div
+      <ScrollArea class="min-h-0 flex-1">
+        <EmptyState
           v-if="!store.loading && store.messages.length === 0"
-          class="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2"
+          variant="fill"
+          :icon="Inbox"
+          title="No messages"
         >
-          <Inbox class="w-8 h-8 opacity-40" />
-          <span class="text-sm">No messages</span>
-        </div>
+          Mail sent to Mailpit appears here.
+        </EmptyState>
 
-        <div
-          v-for="(msg, index) in store.messages"
-          :key="msg.ID"
-          class="flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent/50 transition-colors"
-          :class="{
-            'bg-accent': store.selectedMessage?.ID === msg.ID,
-            'border-l-2 border-l-primary': store.selectedMessage?.ID === msg.ID,
-          }"
-          @click="handleMessageClick($event, msg.ID, index)"
-        >
-          <!-- Unread dot / checkbox -->
-          <div class="flex items-center gap-1.5 pt-0.5 shrink-0">
+        <div class="space-y-0.5 p-2">
+          <div
+            v-for="(msg, index) in store.messages"
+            :key="msg.ID"
+            data-mail-row
+            role="button"
+            tabindex="0"
+            class="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            :class="store.selectedMessage?.ID === msg.ID
+              ? 'bg-accent text-accent-foreground'
+              : 'hover:bg-muted'"
+            @click="handleMessageClick($event, msg.ID, index)"
+            @keydown.enter="handleMessageClick($event as unknown as MouseEvent, msg.ID, index)"
+          >
             <Checkbox
+              class="mt-0.5 shrink-0"
               :checked="store.selectedIds.has(msg.ID)"
+              :aria-label="`Select message from ${senderName(msg)}`"
               @update:checked="() => store.toggleSelect(msg.ID)"
               @click.stop
             />
-            <div
-              class="w-1.5 h-1.5 rounded-full shrink-0 mt-1"
-              :class="msg.Read ? 'bg-transparent' : 'bg-primary'"
-            />
-          </div>
 
-          <!-- Content -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-baseline justify-between gap-1">
-              <span
-                class="text-sm truncate"
-                :class="msg.Read ? 'text-foreground' : 'font-semibold'"
-              >{{ senderName(msg) }}</span>
-              <span class="text-xs text-muted-foreground shrink-0">{{ formatDate(msg.Created) }}</span>
-            </div>
-            <div class="text-xs truncate" :class="msg.Read ? 'text-muted-foreground' : 'text-foreground font-medium'">
-              {{ msg.Subject || '(no subject)' }}
-            </div>
-            <div class="flex items-center gap-1 mt-0.5">
-              <span class="text-xs text-muted-foreground truncate flex-1">{{ msg.Snippet }}</span>
-              <Paperclip v-if="msg.Attachments > 0" class="w-3 h-3 text-muted-foreground shrink-0" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="flex min-w-0 items-center gap-1.5">
+                  <span
+                    v-if="!msg.Read"
+                    class="size-2 shrink-0 rounded-full bg-primary"
+                    aria-label="Unread"
+                  />
+                  <span class="truncate text-sm" :class="msg.Read ? '' : 'font-semibold'">{{ senderName(msg) }}</span>
+                </span>
+                <span class="shrink-0 text-xs text-muted-foreground">{{ formatDate(msg.Created) }}</span>
+              </div>
+              <div class="truncate text-sm" :class="msg.Read ? 'text-muted-foreground' : 'font-medium'">
+                {{ msg.Subject || '(no subject)' }}
+              </div>
+              <div class="mt-0.5 flex items-center gap-1.5">
+                <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">{{ msg.Snippet }}</span>
+                <Paperclip v-if="msg.Attachments > 0" class="size-3 shrink-0 text-muted-foreground" />
+              </div>
             </div>
           </div>
         </div>
       </ScrollArea>
 
       <!-- Pagination -->
-      <div class="flex items-center justify-between px-3 py-2 border-t border-border text-xs text-muted-foreground">
+      <div class="flex shrink-0 items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
         <span>{{ store.total }} message{{ store.total !== 1 ? 's' : '' }}</span>
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-2">
+          <span class="tabular-nums">{{ store.page }} / {{ store.totalPages }}</span>
           <ButtonGroup>
-            <Button variant="ghost" size="icon-sm" :disabled="store.page <= 1" @click="prevPage">
-              <ChevronLeft class="w-3.5 h-3.5" />
+            <Button variant="ghost" size="icon-sm" aria-label="Previous page" :disabled="store.page <= 1" @click="prevPage">
+              <ChevronLeft class="size-4" />
             </Button>
-            <Button variant="ghost" size="icon-sm" :disabled="store.page >= store.totalPages" @click="nextPage">
-              <ChevronRight class="w-3.5 h-3.5" />
+            <Button variant="ghost" size="icon-sm" aria-label="Next page" :disabled="store.page >= store.totalPages" @click="nextPage">
+              <ChevronRight class="size-4" />
             </Button>
           </ButtonGroup>
-          <span>{{ store.page }} / {{ store.totalPages }}</span>
         </div>
       </div>
-    </div>
+    </template>
 
-    <!-- Right panel: message detail -->
-    <!-- On mobile: full-width when showDetail; hidden otherwise -->
-    <!-- On md+: always shown as flex-1 -->
-    <div
-      class="flex flex-col overflow-hidden"
-      :class="showDetail ? 'flex-1' : 'hidden md:flex md:flex-1'"
-    >
+    <template #detail>
+      <!-- Mobile back bar -->
+      <PaneHeader v-if="!store.selectedMessage" back class="md:hidden" title="Message" @back="showDetail = false" />
 
-      <!-- Mobile back button -->
-      <div class="flex md:hidden items-center px-3 py-2 border-b border-border shrink-0">
-        <Button variant="ghost" size="sm" class="gap-1.5 -ml-1" @click="showDetail = false">
-          <ArrowLeft class="w-4 h-4" />
-          Back
-        </Button>
-      </div>
+      <EmptyState v-if="!store.selectedMessage" variant="fill" :icon="Mail" title="No message selected">
+        Select a message to read it.
+      </EmptyState>
 
-      <!-- Empty state -->
-      <div
-        v-if="!store.selectedMessage"
-        class="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3"
-      >
-        <Mail class="w-12 h-12 opacity-20" />
-        <span class="text-sm">Select a message to read it</span>
-      </div>
-
-      <!-- Detail view -->
       <template v-else>
         <!-- Header -->
-        <div class="px-4 md:px-6 pt-4 md:pt-5 pb-3 border-b border-border shrink-0">
-          <div class="flex items-start justify-between gap-3 mb-3">
-            <h2 class="text-base md:text-lg font-semibold leading-tight">
+        <div class="shrink-0 border-b border-border px-4 py-4 md:px-6">
+          <div class="mb-3 flex items-start gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="-ml-2 shrink-0 md:hidden"
+              aria-label="Back"
+              @click="showDetail = false"
+            >
+              <ChevronLeft class="size-4" />
+            </Button>
+            <h2 class="min-w-0 flex-1 text-base font-semibold leading-snug md:text-lg">
               {{ store.selectedMessage.Subject || '(no subject)' }}
             </h2>
-            <div class="flex items-center gap-1.5 shrink-0">
-              <Button variant="outline" size="sm" class="h-7 text-xs" @click="handleMarkUnread">
-                Mark unread
+            <div class="flex shrink-0 items-center gap-2">
+              <Button variant="outline" size="sm" title="Mark unread" @click="handleMarkUnread">
+                <Mail class="size-3.5" />
+                <span class="hidden sm:inline">Mark unread</span>
               </Button>
-              <Button variant="destructive" size="sm" class="h-7 text-xs" @click="handleDeleteCurrent">
-                <Trash2 class="w-3.5 h-3.5 mr-1" />
-                Delete
+              <Button variant="outline" size="sm" class="text-destructive hover:text-destructive" title="Delete" @click="handleDeleteCurrent">
+                <Trash2 class="size-3.5" />
+                <span class="hidden sm:inline">Delete</span>
               </Button>
             </div>
           </div>
 
-          <div class="space-y-0.5 text-sm">
-            <div class="flex gap-2">
-              <span class="text-muted-foreground w-14 shrink-0">From</span>
-              <span class="break-all">{{ formatAddress(store.selectedMessage.From) }}</span>
-            </div>
-            <div class="flex gap-2">
-              <span class="text-muted-foreground w-14 shrink-0">To</span>
-              <span class="break-all">{{ addressList(store.selectedMessage.To) }}</span>
-            </div>
-            <div v-if="store.selectedMessage.Cc?.length" class="flex gap-2">
-              <span class="text-muted-foreground w-14 shrink-0">Cc</span>
-              <span class="break-all">{{ addressList(store.selectedMessage.Cc) }}</span>
-            </div>
-            <div v-if="store.selectedMessage.Bcc?.length" class="flex gap-2">
-              <span class="text-muted-foreground w-14 shrink-0">Bcc</span>
-              <span class="break-all">{{ addressList(store.selectedMessage.Bcc) }}</span>
-            </div>
-            <div v-if="store.selectedMessage.ReplyTo?.length" class="flex gap-2">
-              <span class="text-muted-foreground w-14 shrink-0">Reply-To</span>
-              <span class="break-all">{{ addressList(store.selectedMessage.ReplyTo) }}</span>
-            </div>
-            <div class="flex gap-2">
-              <span class="text-muted-foreground w-14 shrink-0">Date</span>
-              <span>{{ formatFullDate(store.selectedMessage.Date || store.selectedMessage.Created) }}</span>
-            </div>
-            <div v-if="store.selectedMessage.Tags?.length" class="flex gap-2 pt-0.5">
-              <span class="text-muted-foreground w-14 shrink-0"></span>
-              <div class="flex flex-wrap gap-1">
-                <Badge v-for="tag in store.selectedMessage.Tags" :key="tag" variant="secondary" class="text-xs">
+          <dl class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+            <dt class="text-muted-foreground">From</dt>
+            <dd class="break-words">{{ formatAddress(store.selectedMessage.From) }}</dd>
+            <dt class="text-muted-foreground">To</dt>
+            <dd class="break-words">{{ addressList(store.selectedMessage.To) }}</dd>
+            <template v-if="store.selectedMessage.Cc?.length">
+              <dt class="text-muted-foreground">Cc</dt>
+              <dd class="break-words">{{ addressList(store.selectedMessage.Cc) }}</dd>
+            </template>
+            <template v-if="store.selectedMessage.Bcc?.length">
+              <dt class="text-muted-foreground">Bcc</dt>
+              <dd class="break-words">{{ addressList(store.selectedMessage.Bcc) }}</dd>
+            </template>
+            <template v-if="store.selectedMessage.ReplyTo?.length">
+              <dt class="text-muted-foreground">Reply-To</dt>
+              <dd class="break-words">{{ addressList(store.selectedMessage.ReplyTo) }}</dd>
+            </template>
+            <dt class="text-muted-foreground">Date</dt>
+            <dd>{{ formatFullDate(store.selectedMessage.Date || store.selectedMessage.Created) }}</dd>
+            <template v-if="store.selectedMessage.Tags?.length">
+              <dt class="text-muted-foreground">Tags</dt>
+              <dd class="flex flex-wrap gap-1">
+                <Badge v-for="tag in store.selectedMessage.Tags" :key="tag" variant="secondary">
                   {{ tag }}
                 </Badge>
-              </div>
-            </div>
-          </div>
+              </dd>
+            </template>
+          </dl>
         </div>
 
         <!-- Tabs -->
-        <Tabs v-model="activeTab" class="flex-1 flex flex-col overflow-hidden" @update:model-value="(v) => onTabChange(String(v))">
-          <TabsList class="mx-4 md:mx-6 mt-3 mb-0 shrink-0 self-start">
-            <TabsTrigger value="html">HTML</TabsTrigger>
-            <TabsTrigger value="text">Text</TabsTrigger>
-            <TabsTrigger value="headers">Headers</TabsTrigger>
-            <TabsTrigger value="source">Source</TabsTrigger>
-          </TabsList>
+        <Tabs v-model="activeTab" class="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden" @update:model-value="(v) => onTabChange(String(v))">
+          <div class="shrink-0 overflow-x-auto border-b border-border px-4 py-3 md:px-6">
+            <TabsList>
+              <TabsTrigger value="html">HTML</TabsTrigger>
+              <TabsTrigger value="text">Text</TabsTrigger>
+              <TabsTrigger value="headers">Headers</TabsTrigger>
+              <TabsTrigger value="source">Source</TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value="html" class="flex-1 overflow-hidden m-0 mt-2">
+          <TabsContent value="html" class="m-0 min-h-0 flex-1 overflow-hidden">
             <iframe
               v-if="store.selectedMessage.HTML"
               :src="mailHtmlUrl(store.selectedMessage.ID)"
               sandbox="allow-same-origin allow-popups"
-              class="w-full h-full border-0"
+              class="h-full w-full border-0 bg-white"
               title="Message HTML"
             />
             <ScrollArea v-else-if="store.selectedMessage.Text" class="h-full">
-              <div class="p-4 md:p-6 text-sm leading-relaxed whitespace-pre-wrap">{{ store.selectedMessage.Text }}</div>
+              <div class="whitespace-pre-wrap p-4 text-sm leading-relaxed md:p-6">{{ store.selectedMessage.Text }}</div>
             </ScrollArea>
-            <div v-else class="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No content
-            </div>
+            <EmptyState v-else variant="fill" title="No content" />
           </TabsContent>
 
-          <TabsContent value="text" class="flex-1 overflow-hidden m-0 mt-2">
+          <TabsContent value="text" class="m-0 min-h-0 flex-1 overflow-hidden">
             <ScrollArea class="h-full">
-              <pre class="text-sm p-4 md:p-6 whitespace-pre-wrap font-mono">{{ store.selectedMessage.Text || '(no plain text content)' }}</pre>
+              <pre class="whitespace-pre-wrap break-words p-4 font-mono text-sm md:p-6">{{ store.selectedMessage.Text || '(no plain text content)' }}</pre>
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="headers" class="flex-1 overflow-hidden m-0 mt-2">
+          <TabsContent value="headers" class="m-0 min-h-0 flex-1 overflow-hidden">
             <ScrollArea class="h-full">
-              <Table>
+              <Table class="table-fixed">
                 <TableBody>
-                  <TableRow
-                    v-for="(h, i) in headersArray"
-                    :key="i"
-                    class="hover:bg-accent/50"
-                  >
-                    <TableCell class="py-1.5 text-muted-foreground font-semibold font-mono text-xs align-top w-32 md:w-44 shrink-0">{{ h.key }}</TableCell>
-                    <TableCell class="py-1.5 font-mono text-xs break-all">{{ h.value }}</TableCell>
+                  <TableRow v-for="(h, i) in headersArray" :key="i">
+                    <TableCell class="w-32 whitespace-normal py-2 align-top font-mono text-xs font-medium text-muted-foreground md:w-48">{{ h.key }}</TableCell>
+                    <TableCell class="whitespace-normal break-all py-2 font-mono text-xs">{{ h.value }}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="source" class="flex-1 overflow-hidden m-0 mt-2">
+          <TabsContent value="source" class="m-0 min-h-0 flex-1 overflow-hidden">
             <ScrollArea class="h-full">
-              <pre class="text-xs p-4 md:p-6 whitespace-pre-wrap font-mono">{{ store.selectedRaw ?? 'Loading...' }}</pre>
+              <pre class="whitespace-pre-wrap break-all p-4 font-mono text-xs md:p-6">{{ store.selectedRaw ?? 'Loading…' }}</pre>
             </ScrollArea>
           </TabsContent>
         </Tabs>
@@ -473,26 +455,29 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
         <!-- Attachments -->
         <div
           v-if="Array.isArray(store.selectedMessage.Attachments) && store.selectedMessage.Attachments.length > 0"
-          class="shrink-0 border-t border-border px-4 md:px-6 py-3"
+          class="shrink-0 space-y-2 border-t border-border px-4 py-3 md:px-6"
         >
-          <p class="text-xs text-muted-foreground mb-2">Attachments</p>
+          <p class="text-xs font-medium text-muted-foreground">Attachments</p>
           <div class="flex flex-wrap gap-2">
-            <a
+            <Button
               v-for="att in store.selectedMessage.Attachments"
               :key="att.PartID"
+              as="a"
+              variant="outline"
+              size="sm"
+              class="max-w-full"
               :href="mailPartUrl(store.selectedMessage.ID, att.PartID)"
               download
-              class="inline-flex items-center gap-1.5 text-xs border border-border rounded px-2.5 py-1.5 hover:bg-accent transition-colors"
             >
-              <Download class="w-3 h-3" />
-              {{ att.FileName }}
-              <span class="text-muted-foreground">({{ formatSize(att.Size) }})</span>
-            </a>
+              <Download class="size-3.5" />
+              <span class="truncate">{{ att.FileName }}</span>
+              <span class="text-muted-foreground">{{ formatSize(att.Size) }}</span>
+            </Button>
           </div>
         </div>
       </template>
-    </div>
-  </div>
+    </template>
+  </SplitView>
 
   <!-- Delete selected confirmation -->
   <AlertDialog v-model:open="deleteSelectedOpen">
@@ -505,10 +490,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction
-          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          @click="store.deleteSelected()"
-        >
+        <AlertDialogAction variant="destructive" @click="store.deleteSelected()">
           Delete
         </AlertDialogAction>
       </AlertDialogFooter>
@@ -526,10 +508,7 @@ function handleMessageClick(event: MouseEvent, id: string, index: number) {
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction
-          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          @click="store.deleteAll()"
-        >
+        <AlertDialogAction variant="destructive" @click="store.deleteAll()">
           Delete all
         </AlertDialogAction>
       </AlertDialogFooter>

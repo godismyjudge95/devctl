@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import { Eraser, RefreshCw, ArrowLeft } from 'lucide-vue-next'
+import { Eraser, RefreshCw, ScrollText } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import StatusDot from '@/components/layout/StatusDot.vue'
+import SplitView from '@/components/layout/SplitView.vue'
+import PaneHeader from '@/components/layout/PaneHeader.vue'
+import PaneListItem from '@/components/layout/PaneListItem.vue'
+import EmptyState from '@/components/layout/EmptyState.vue'
 import { getLogs, clearLog, type LogFileInfo } from '@/lib/api'
 import { normalizeLogChunk } from '@/lib/utils'
 
@@ -167,105 +170,80 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative flex h-full overflow-hidden">
-
-    <!--
-      File list pane:
-      - Mobile: full width, hidden when viewer is active
-      - Desktop (md+): fixed 224px sidebar, always visible
-    -->
-    <aside
-      class="flex flex-col overflow-hidden border-r border-border
-             w-full md:w-56 md:shrink-0
-             absolute inset-0 md:relative md:inset-auto"
-      :class="mobilePane === 'viewer' ? 'hidden md:flex' : 'flex'"
-    >
-      <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <div>
-          <div class="kicker text-[12px]">Logs</div>
-          <div class="text-[11px] text-muted-foreground mt-0.5">Service output</div>
-        </div>
-        <Button variant="ghost" size="icon-sm" @click="loadLogList" title="Refresh list">
-          <RefreshCw class="w-3.5 h-3.5" :class="loading ? 'animate-spin' : ''" />
-        </Button>
-      </div>
-      <div class="flex-1 overflow-y-auto py-1">
-        <div
+  <SplitView :show-detail="mobilePane === 'viewer'" list-class="md:w-72">
+    <template #list>
+      <PaneHeader title="Logs" description="Service output">
+        <template #actions>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title="Refresh list"
+            aria-label="Refresh list"
+            @click="loadLogList"
+          >
+            <RefreshCw class="size-4" :class="loading ? 'animate-spin' : ''" />
+          </Button>
+        </template>
+      </PaneHeader>
+      <div class="flex-1 overflow-y-auto p-2">
+        <EmptyState
           v-if="logFiles.length === 0 && !loading"
-          class="px-4 py-3 text-xs text-muted-foreground"
+          variant="fill"
+          :icon="ScrollText"
+          title="No log files yet"
         >
-          No log files yet. Start a service to generate logs.
+          Start a service to generate logs.
+        </EmptyState>
+        <div class="space-y-0.5">
+          <PaneListItem
+            v-for="f in logFiles"
+            :key="f.id"
+            :active="selectedId === f.id"
+            class="justify-between"
+            @click="selectFile(f.id)"
+          >
+            <span class="min-w-0 truncate">{{ formatLogName(f.id) }}</span>
+            <span class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{{ formatSize(f.size) }}</span>
+          </PaneListItem>
         </div>
-        <button
-          v-for="f in logFiles"
-          :key="f.id"
-          class="w-full text-left flex items-center justify-between gap-2 px-4 py-3 text-sm transition-colors"
-          :class="selectedId === f.id
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-            : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
-          @click="selectFile(f.id)"
-        >
-          <span class="truncate min-w-0">{{ formatLogName(f.id) }}</span>
-          <Badge variant="secondary" class="text-xs px-1.5 py-0 shrink-0">{{ formatSize(f.size) }}</Badge>
-        </button>
       </div>
-    </aside>
+    </template>
 
-    <!--
-      Log viewer pane:
-      - Mobile: full width, hidden when list is active
-      - Desktop (md+): takes remaining space, always visible
-    -->
-    <div
-      class="flex-1 flex flex-col overflow-hidden min-w-0
-             absolute inset-0 md:relative md:inset-auto"
-      :class="mobilePane === 'list' ? 'hidden md:flex' : 'flex'"
-    >
-      <!-- Viewer header -->
-      <div class="flex items-center gap-2 px-3 py-3 border-b border-border shrink-0 min-w-0">
-        <!-- Back button — mobile only -->
-        <Button variant="ghost" size="sm" class="gap-1.5 -ml-1 md:hidden" @click="goBack">
-          <ArrowLeft class="w-4 h-4" />
-          Back
-        </Button>
-        <StatusDot v-if="selectedId" status="live" label="live" />
-        <span class="font-mono text-sm text-muted-foreground truncate flex-1 min-w-0">
-          {{ selectedId ? selectedId + '.log' : 'Select a log file' }}
-        </span>
-        <Button
-          v-if="selectedId"
-          variant="ghost"
-          size="sm"
-          class="shrink-0"
-          title="Clear log file"
-          @click="doClearLog"
-        >
-          <Eraser class="w-3.5 h-3.5" />
-          <span class="hidden sm:inline">Clear log</span>
-        </Button>
-      </div>
+    <template #detail>
+      <PaneHeader back @back="goBack">
+        <template #title>
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="truncate font-mono text-sm font-medium">
+              {{ selectedId ? selectedId + '.log' : 'No log selected' }}
+            </span>
+            <StatusDot v-if="selectedId" status="live" label="Live" />
+          </div>
+        </template>
+        <template v-if="selectedId" #actions>
+          <Button variant="ghost" size="sm" title="Clear log file" @click="doClearLog">
+            <Eraser class="size-3.5" />
+            <span class="hidden sm:inline">Clear log</span>
+          </Button>
+        </template>
+      </PaneHeader>
 
-      <div
-        v-if="!selectedId"
-        class="flex-1 flex items-center justify-center text-muted-foreground text-sm"
-      >
-        Select a log file from the sidebar
-      </div>
+      <EmptyState v-if="!selectedId" variant="fill" :icon="ScrollText" title="No log selected">
+        Select a log file from the list.
+      </EmptyState>
 
       <div
         v-else
         ref="logScroll"
-        class="flex-1 overflow-auto bg-[oklch(0.18_0.014_264)] text-[oklch(0.82_0.04_155)] font-mono text-xs p-4 leading-5"
+        class="flex-1 overflow-auto bg-log-background p-4 font-mono text-xs leading-5 text-log-foreground"
       >
-        <div v-if="displayedLogLines.length === 0" class="text-neutral-500">Waiting for log output…</div>
+        <div v-if="displayedLogLines.length === 0" class="text-log-foreground/60">Waiting for log output…</div>
         <div
           v-for="(line, i) in displayedLogLines"
           :key="i"
           class="whitespace-pre-wrap break-all"
-          :class="line.startsWith('[error]') ? 'text-red-400' : ''"
+          :class="line.startsWith('[error]') ? 'text-destructive' : ''"
         >{{ formatLogLine(line) }}</div>
       </div>
-    </div>
-
-  </div>
+    </template>
+  </SplitView>
 </template>

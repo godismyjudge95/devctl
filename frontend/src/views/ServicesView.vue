@@ -3,11 +3,7 @@ import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useServicesStore } from '@/stores/services'
 import { useSettingsStore } from '@/stores/settings'
-import {
-  Play, CircleStop, RotateCcw, Loader2,
-  Trash2, Settings2, Plus, ChevronDown, ChevronRight, Copy, FileText,
-  ArrowUpCircle, MoreHorizontal, ExternalLink,
-} from 'lucide-vue-next'
+import { Plus, ChevronDown, ChevronRight } from 'lucide-vue-next'
 import {
   buildDbClientUrl,
   openInDbClient,
@@ -17,13 +13,15 @@ import {
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import Surface from '@/components/layout/Surface.vue'
 import SectionHeader from '@/components/layout/SectionHeader.vue'
+import StatCard from '@/components/layout/StatCard.vue'
 import StatusDot from '@/components/layout/StatusDot.vue'
 import ServiceMark from '@/components/layout/ServiceMark.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
+import ServiceActions from '@/components/ServiceActions.vue'
+import ServiceConnectionInfo from '@/components/ServiceConnectionInfo.vue'
 import { useSitesStore } from '@/stores/sites'
 import {
   Table, TableBody, TableCell, TableHead,
@@ -34,15 +32,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { uninstallPHP } from '@/lib/api'
+import { uninstallPHP, type ServiceState } from '@/lib/api'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import ServiceLogSheet from './ServiceLogSheet.vue'
@@ -210,6 +200,22 @@ function hasExpandable(id: string): boolean {
   return hasCredentials(id) || hasDetails(id)
 }
 
+function connectionEntries(id: string): Record<string, string> {
+  return {
+    ...(hasCredentials(id) ? store.credentials[id] : {}),
+    ...(hasDetails(id) ? store.details[id] ?? {} : {}),
+  }
+}
+
+function canUninstall(svc: ServiceState): boolean {
+  return svc.id.startsWith('php-fpm-') || (svc.installable && !svc.required)
+}
+
+function uninstall(svc: ServiceState) {
+  if (svc.id.startsWith('php-fpm-')) confirmPHPUninstall(svc.id)
+  else confirmPurge(svc.id, svc.label)
+}
+
 function showDbClientAction(id: string, hasCredentialsFlag: boolean): boolean {
   return supportsDbClientOpen(id) && hasCredentialsFlag
 }
@@ -332,221 +338,92 @@ async function doPHPUninstall() {
     <PageHeader title="Services" description="Databases, caches, and runtimes this machine supervises.">
       <template #actions>
         <Button size="sm" @click="router.push('/services/install')">
-          <Plus class="w-3.5 h-3.5" />
+          <Plus class="size-3.5" />
           Add Service
         </Button>
       </template>
     </PageHeader>
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="rounded-2xl border border-border bg-card px-4 py-3">
-        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">Running</p>
-        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ runningCount }}<span class="text-sm font-normal text-muted-foreground"> / {{ installedServices.length }}</span></p>
-      </div>
-      <div class="rounded-2xl border border-border bg-card px-4 py-3">
-        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">Sites</p>
-        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ sitesStore.count }}</p>
-      </div>
-      <div class="rounded-2xl border border-border bg-card px-4 py-3">
-        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">PHP</p>
-        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ phpServices.length }}<span class="text-sm font-normal text-muted-foreground"> versions</span></p>
-      </div>
-      <div class="rounded-2xl border border-border bg-card px-4 py-3">
-        <p class="text-[11px] font-medium tracking-[0.12em] uppercase text-muted-foreground">Stopped</p>
-        <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{{ store.stoppedCount }}</p>
-      </div>
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <StatCard label="Running" :value="runningCount" :suffix="`/ ${installedServices.length}`" />
+      <StatCard label="Sites" :value="sitesStore.count" />
+      <StatCard label="PHP" :value="phpServices.length" :suffix="phpServices.length === 1 ? 'version' : 'versions'" />
+      <StatCard label="Stopped" :value="store.stoppedCount" />
     </div>
 
-    <!-- ── Mobile card list (< md) ─────────────────────────────────── -->
-    <div class="md:hidden space-y-3">
-      <template v-for="svc in installedServices" :key="svc.id">
-        <Card>
-          <CardContent class="p-4">
-              <div class="flex items-center justify-between gap-2 mb-3">
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <ServiceMark :id="svc.id" size="sm" />
-                  <div class="min-w-0">
-                    <div class="font-medium text-sm truncate">{{ svc.label }}</div>
-                    <StatusDot :status="svc.status" :pending="isPending(svc)" :label="statusLabel(svc)" />
-                  </div>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span class="font-mono text-xs text-muted-foreground tabular-nums">{{ svc.version || '—' }}</span>
-                  <Badge v-if="svc.update_available" variant="warning">
-                    update
-                  </Badge>
-                </div>
-              </div>
-
-            <!-- Action buttons (icon-only, single joined group) -->
-            <div class="flex items-center gap-2 flex-wrap">
-              <ButtonGroup>
-                <!-- Start / Stop -->
-                <Button
-                  v-if="svc.status !== 'running'"
-                  variant="outline" size="icon-sm"
-                  :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                  :title="`Start ${svc.label}`"
-                  @click="start(svc.id, svc.label)"
-                >
-                  <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
-                  <Play v-else class="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  v-if="svc.status === 'running' && !svc.required"
-                  variant="outline" size="icon-sm"
-                  :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                  :title="`Stop ${svc.label}`"
-                  @click="stop(svc.id, svc.label)"
-                >
-                  <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
-                  <CircleStop v-else class="w-3.5 h-3.5" />
-                </Button>
-                <!-- Sep + Restart only when running -->
-                <ButtonGroupSeparator v-if="svc.status === 'running'" />
-                <Button
-                  v-if="svc.status === 'running'"
-                  variant="outline" size="icon-sm"
-                  :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                  :title="`Restart ${svc.label}`"
-                  @click="restart(svc.id, svc.label)"
-                >
-                  <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
-                  <RotateCcw v-else class="w-3.5 h-3.5" />
-                </Button>
-                <!-- Update (top-level, amber) -->
-                <template v-if="svc.update_available">
-                  <ButtonGroupSeparator />
-                  <Button
-                    variant="outline" size="icon-sm" class="text-amber-600 hover:text-amber-600"
-                    :disabled="!!pending[svc.id] || !!store.updating[svc.id]"
-                    :title="`Update ${svc.label} to ${svc.latest_version}`"
-                    @click="update(svc.id, svc.label)"
-                  >
-                    <Loader2 v-if="pending[svc.id] === 'update' || store.updating[svc.id]" class="w-3.5 h-3.5 animate-spin" />
-                    <ArrowUpCircle v-else class="w-3.5 h-3.5" />
-                  </Button>
-                </template>
-                <!-- More dropdown -->
-                <ButtonGroupSeparator />
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button variant="outline" size="icon-sm">
-                      <MoreHorizontal class="w-3.5 h-3.5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      v-if="hasSettingsGear(svc.id)"
-                      @click="router.push(`/services/${svc.id}/settings`)"
-                    >
-                      <Settings2 class="w-4 h-4" />
-                      Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      v-if="hasConfigEditor(svc.id)"
-                      @click="router.push(configEditorPath(svc.id))"
-                    >
-                      <FileText class="w-4 h-4" />
-                      Edit config
-                    </DropdownMenuItem>
-                    <template v-if="svc.id.startsWith('php-fpm-') || (svc.installable && !svc.required)">
-                      <DropdownMenuSeparator v-if="hasSettingsGear(svc.id) || hasConfigEditor(svc.id)" />
-                      <DropdownMenuItem
-                        class="text-destructive focus:text-destructive"
-                        :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                        @click="svc.id.startsWith('php-fpm-') ? confirmPHPUninstall(svc.id) : confirmPurge(svc.id, svc.label)"
-                      >
-                        <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-4 h-4 animate-spin" />
-                        <Trash2 v-else class="w-4 h-4" />
-                        Uninstall
-                      </DropdownMenuItem>
-                    </template>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </ButtonGroup>
-              <!-- Expand credentials toggle (outside the group, pushed right) -->
-              <Button
-                v-if="hasExpandable(svc.id)"
-                variant="ghost" size="icon-sm" class="ml-auto"
-                :title="expandedCredentials.has(svc.id) ? 'Hide connection info' : 'Show connection info'"
-                @click="toggleCredentials(svc.id)"
-              >
-                <ChevronDown v-if="expandedCredentials.has(svc.id)" class="w-3.5 h-3.5" />
-                <ChevronRight v-else class="w-3.5 h-3.5" />
-              </Button>
+    <!-- Mobile card list (< md) -->
+    <div class="grid gap-3 md:grid-cols-2 lg:hidden">
+      <Surface v-for="svc in installedServices" :key="svc.id" class="p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-3">
+            <ServiceMark :id="svc.id" />
+            <div class="min-w-0">
+              <div class="truncate text-sm font-medium">{{ svc.label }}</div>
+              <StatusDot :status="svc.status" :pending="isPending(svc)" :label="statusLabel(svc)" />
             </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-1.5">
+            <span class="font-mono text-xs tabular-nums text-muted-foreground">{{ svc.version || '—' }}</span>
+            <Badge v-if="svc.update_available" variant="warning">update</Badge>
+          </div>
+        </div>
 
-            <!-- Expanded credentials (mobile stacked) -->
-            <div
-              v-if="hasExpandable(svc.id) && expandedCredentials.has(svc.id)"
-              class="mt-3 pt-3 border-t border-border space-y-2"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-medium text-muted-foreground">Credentials</p>
-                <Button
-                  v-if="showDbClientAction(svc.id, svc.has_credentials)"
-                  variant="outline"
-                  size="sm"
-                  class="h-7 text-xs"
-                  @click="openDbClientForService(svc.id, svc.label)"
-                >
-                  <ExternalLink class="w-3 h-3" />
-                  Open in DB client
-                </Button>
-              </div>
-              <template v-if="hasCredentials(svc.id)">
-                <div
-                  v-for="(value, key) in store.credentials[svc.id]"
-                  :key="key"
-                  class="space-y-1"
-                >
-                  <p class="text-xs text-muted-foreground">{{ key }}</p>
-                  <div class="flex items-center gap-2">
-                    <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-1 truncate"
-                      :class="value === '' ? 'text-muted-foreground italic' : ''"
-                    >{{ value !== '' ? value : '(empty)' }}</code>
-                     <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
-                      <Copy class="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              </template>
-              <template v-if="hasDetails(svc.id) && store.details[svc.id]">
-                <div
-                  v-for="(value, key) in store.details[svc.id]"
-                  :key="key"
-                  class="space-y-1"
-                >
-                  <p class="text-xs text-muted-foreground">{{ key }}</p>
-                  <div class="flex items-center gap-2">
-                    <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-1 truncate">{{ value }}</code>
-                     <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
-                      <Copy class="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </CardContent>
-        </Card>
-      </template>
+        <div class="mt-4 flex items-center gap-2">
+          <ServiceActions
+            compact
+            :svc="svc"
+            :busy="pending[svc.id]"
+            :installing="!!store.installing[svc.id]"
+            :updating="!!store.updating[svc.id]"
+            :has-settings="hasSettingsGear(svc.id)"
+            :has-config="hasConfigEditor(svc.id)"
+            :can-uninstall="canUninstall(svc)"
+            @start="start(svc.id, svc.label)"
+            @stop="stop(svc.id, svc.label)"
+            @restart="restart(svc.id, svc.label)"
+            @update="update(svc.id, svc.label)"
+            @settings="router.push(`/services/${svc.id}/settings`)"
+            @config="router.push(configEditorPath(svc.id))"
+            @uninstall="uninstall(svc)"
+          />
+          <Button
+            v-if="hasExpandable(svc.id)"
+            variant="ghost"
+            size="sm"
+            class="ml-auto text-muted-foreground"
+            :aria-expanded="expandedCredentials.has(svc.id)"
+            @click="toggleCredentials(svc.id)"
+          >
+            Connection
+            <ChevronDown class="size-3.5 transition-transform" :class="expandedCredentials.has(svc.id) && 'rotate-180'" />
+          </Button>
+        </div>
 
-      <EmptyState v-if="installedServices.length === 0">
-        No services installed. Tap "Add Service" to install one.
+        <ServiceConnectionInfo
+          v-if="hasExpandable(svc.id) && expandedCredentials.has(svc.id)"
+          class="mt-4 border-t border-border pt-4"
+          :entries="connectionEntries(svc.id)"
+          :show-db-client="showDbClientAction(svc.id, svc.has_credentials)"
+          @copy="copyToClipboard"
+          @open-db-client="openDbClientForService(svc.id, svc.label)"
+        />
+      </Surface>
+
+      <EmptyState v-if="installedServices.length === 0" title="No services installed" class="md:col-span-2">
+        Tap “Add Service” to install one.
       </EmptyState>
     </div>
 
-    <!-- ── Desktop table (md+) ─────────────────────────────────────── -->
-    <Surface class="hidden md:block overflow-hidden">
+    <!-- Desktop table (md+) -->
+    <Surface class="hidden overflow-hidden lg:block">
       <SectionHeader
         title="Local services"
         description="Each engine binds to localhost. Start, stop, or inspect credentials from the row."
       />
       <Table class="data-table">
         <TableHeader>
-          <TableRow>
-            <TableHead class="w-8"></TableHead>
+          <TableRow class="hover:bg-transparent">
+            <TableHead class="w-10"><span class="sr-only">Expand</span></TableHead>
             <TableHead>Service</TableHead>
             <TableHead>State</TableHead>
             <TableHead>Version</TableHead>
@@ -556,137 +433,54 @@ async function doPHPUninstall() {
         <TableBody>
           <template v-for="svc in installedServices" :key="svc.id">
             <TableRow>
-              <!-- Chevron toggle for credentials / connection details -->
-              <TableCell class="w-8 pr-0">
+              <TableCell class="w-10 pr-0">
                 <Button
                   v-if="hasExpandable(svc.id)"
                   variant="ghost"
-                  size="icon"
-                  class="w-5 h-5 text-muted-foreground"
+                  size="icon-xs"
+                  class="text-muted-foreground"
+                  :aria-expanded="expandedCredentials.has(svc.id)"
+                  :aria-label="expandedCredentials.has(svc.id) ? 'Hide connection info' : 'Show connection info'"
                   :title="expandedCredentials.has(svc.id) ? 'Hide connection info' : 'Show connection info'"
                   @click="toggleCredentials(svc.id)"
                 >
-                  <ChevronDown v-if="expandedCredentials.has(svc.id)" class="w-3.5 h-3.5" />
-                  <ChevronRight v-else class="w-3.5 h-3.5" />
+                  <ChevronDown v-if="expandedCredentials.has(svc.id)" class="size-4" />
+                  <ChevronRight v-else class="size-4" />
                 </Button>
               </TableCell>
-              <TableCell>
-                <div class="flex items-center gap-2.5">
+              <TableCell class="font-medium">
+                <div class="flex items-center gap-3">
                   <ServiceMark :id="svc.id" size="sm" />
-                  <span class="font-medium">{{ svc.label }}</span>
+                  <span>{{ svc.label }}</span>
                 </div>
               </TableCell>
               <TableCell>
                 <StatusDot :status="svc.status" :pending="isPending(svc)" :label="statusLabel(svc)" />
               </TableCell>
-              <TableCell class="font-mono text-xs text-muted-foreground tabular-nums">
+              <TableCell class="font-mono text-xs tabular-nums text-muted-foreground">
                 <span class="flex items-center gap-1.5">
                   {{ svc.version || '—' }}
-                  <Badge v-if="svc.update_available" variant="warning">
-                    update
-                  </Badge>
+                  <Badge v-if="svc.update_available" variant="warning" class="font-sans">update</Badge>
                 </span>
               </TableCell>
-              <TableCell class="text-right">
-                <div class="flex items-center justify-end">
-                  <ButtonGroup>
-                    <!-- Start / Stop -->
-                    <Button
-                      v-if="svc.status !== 'running'"
-                      variant="outline" size="sm"
-                      :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                      :title="`Start ${svc.label}`"
-                      @click="start(svc.id, svc.label)"
-                    >
-                      <Loader2 v-if="pending[svc.id] === 'start'" class="w-3.5 h-3.5 animate-spin" />
-                      <Play v-else class="w-3.5 h-3.5" />
-                      Start
-                    </Button>
-                    <Button
-                      v-if="svc.status === 'running' && !svc.required"
-                      variant="outline" size="sm"
-                      :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                      :title="`Stop ${svc.label}`"
-                      @click="stop(svc.id, svc.label)"
-                    >
-                      <Loader2 v-if="pending[svc.id] === 'stop'" class="w-3.5 h-3.5 animate-spin" />
-                      <CircleStop v-else class="w-3.5 h-3.5" />
-                      Stop
-                    </Button>
-                    <!-- Sep + Restart only when running -->
-                    <ButtonGroupSeparator v-if="svc.status === 'running'" />
-                    <Button
-                      v-if="svc.status === 'running'"
-                      variant="outline" size="sm"
-                      :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                      :title="`Restart ${svc.label}`"
-                      @click="restart(svc.id, svc.label)"
-                    >
-                      <Loader2 v-if="pending[svc.id] === 'restart'" class="w-3.5 h-3.5 animate-spin" />
-                      <RotateCcw v-else class="w-3.5 h-3.5" />
-                      Restart
-                    </Button>
-                    <!-- Update (top-level, amber) -->
-                    <template v-if="svc.update_available">
-                      <ButtonGroupSeparator />
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger as-child>
-                            <Button
-                              variant="outline" size="sm"
-                              class="text-amber-600 hover:text-amber-600"
-                              :disabled="!!pending[svc.id] || !!store.updating[svc.id]"
-                              @click="update(svc.id, svc.label)"
-                            >
-                              <Loader2 v-if="pending[svc.id] === 'update' || store.updating[svc.id]" class="w-3.5 h-3.5 animate-spin" />
-                              <ArrowUpCircle v-else class="w-3.5 h-3.5" />
-                              Update
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Update from {{ svc.version || svc.install_version }} to {{ svc.latest_version }}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </template>
-                    <!-- More dropdown -->
-                    <ButtonGroupSeparator />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger as-child>
-                        <Button variant="outline" size="sm">
-                          <MoreHorizontal class="w-3.5 h-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          v-if="hasSettingsGear(svc.id)"
-                          @click="router.push(`/services/${svc.id}/settings`)"
-                        >
-                          <Settings2 class="w-4 h-4" />
-                          Settings
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          v-if="hasConfigEditor(svc.id)"
-                          @click="router.push(configEditorPath(svc.id))"
-                        >
-                          <FileText class="w-4 h-4" />
-                          Edit config
-                        </DropdownMenuItem>
-                        <template v-if="svc.id.startsWith('php-fpm-') || (svc.installable && !svc.required)">
-                          <DropdownMenuSeparator v-if="hasSettingsGear(svc.id) || hasConfigEditor(svc.id)" />
-                          <DropdownMenuItem
-                            class="text-destructive focus:text-destructive"
-                            :disabled="!!pending[svc.id] || !!store.installing[svc.id]"
-                            @click="svc.id.startsWith('php-fpm-') ? confirmPHPUninstall(svc.id) : confirmPurge(svc.id, svc.label)"
-                          >
-                            <Loader2 v-if="pending[svc.id] === 'uninstall'" class="w-4 h-4 animate-spin" />
-                            <Trash2 v-else class="w-4 h-4" />
-                            Uninstall
-                          </DropdownMenuItem>
-                        </template>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </ButtonGroup>
+              <TableCell>
+                <div class="flex justify-end">
+                  <ServiceActions
+                    :svc="svc"
+                    :busy="pending[svc.id]"
+                    :installing="!!store.installing[svc.id]"
+                    :updating="!!store.updating[svc.id]"
+                    :has-settings="hasSettingsGear(svc.id)"
+                    :has-config="hasConfigEditor(svc.id)"
+                    :can-uninstall="canUninstall(svc)"
+                    @start="start(svc.id, svc.label)"
+                    @stop="stop(svc.id, svc.label)"
+                    @restart="restart(svc.id, svc.label)"
+                    @update="update(svc.id, svc.label)"
+                    @settings="router.push(`/services/${svc.id}/settings`)"
+                    @config="router.push(configEditorPath(svc.id))"
+                    @uninstall="uninstall(svc)"
+                  />
                 </div>
               </TableCell>
             </TableRow>
@@ -696,55 +490,21 @@ async function doPHPUninstall() {
               v-if="hasExpandable(svc.id) && expandedCredentials.has(svc.id)"
               class="bg-muted/30 hover:bg-muted/30"
             >
-              <TableCell></TableCell>
-              <TableCell colspan="4" class="py-3 px-4">
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between gap-2 mb-2">
-                    <p class="text-xs font-medium text-muted-foreground">Credentials</p>
-                    <Button
-                      v-if="showDbClientAction(svc.id, svc.has_credentials)"
-                      variant="outline"
-                      size="sm"
-                      class="h-7 text-xs"
-                      @click="openDbClientForService(svc.id, svc.label)"
-                    >
-                      <ExternalLink class="w-3 h-3" />
-                      Open in DB client
-                    </Button>
-                  </div>
-                  <template v-if="hasCredentials(svc.id)">
-                    <div
-                      v-for="(value, key) in store.credentials[svc.id]"
-                      :key="key"
-                      class="flex items-center gap-2"
-                    >
-                      <span class="text-xs text-muted-foreground w-40 shrink-0">{{ key }}</span>
-                      <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-0.5 truncate" :class="value === '' ? 'text-muted-foreground italic' : ''">{{ value !== '' ? value : '(empty)' }}</code>
-                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
-                        <Copy class="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </template>
-                  <template v-if="hasDetails(svc.id) && store.details[svc.id]">
-                    <div
-                      v-for="(value, key) in store.details[svc.id]"
-                      :key="key"
-                      class="flex items-center gap-2"
-                    >
-                      <span class="text-xs text-muted-foreground w-40 shrink-0">{{ key }}</span>
-                      <code class="flex-1 text-xs font-mono bg-background border border-border rounded px-2 py-0.5 truncate">{{ value }}</code>
-                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click="copyToClipboard(value ?? '')">
-                        <Copy class="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </template>
-                </div>
+              <TableCell />
+              <TableCell colspan="4" class="whitespace-normal py-4">
+                <ServiceConnectionInfo
+                  class="max-w-3xl"
+                  :entries="connectionEntries(svc.id)"
+                  :show-db-client="showDbClientAction(svc.id, svc.has_credentials)"
+                  @copy="copyToClipboard"
+                  @open-db-client="openDbClientForService(svc.id, svc.label)"
+                />
               </TableCell>
             </TableRow>
           </template>
 
           <TableEmpty v-if="installedServices.length === 0" :columns="5">
-            No services installed. Click "Add Service" to install one.
+            No services installed. Click “Add Service” to install one.
           </TableEmpty>
         </TableBody>
       </Table>
@@ -769,8 +529,7 @@ async function doPHPUninstall() {
           This action cannot be undone.
         </AlertDialogDescription>
       </AlertDialogHeader>
-      <!-- Preserve data option for database services -->
-      <div v-if="purgeTarget && hasPreserveData(purgeTarget.id)" class="flex items-center gap-2 py-1">
+            <div v-if="purgeTarget && hasPreserveData(purgeTarget.id)" class="flex items-center gap-2">
         <Checkbox id="preserve-data" :checked="preserveData" @update:checked="(v) => { if (v === true || v === false) preserveData = v }" />
         <Label for="preserve-data" class="text-sm font-normal cursor-pointer">
           Keep database data (data/ directory)
@@ -779,7 +538,7 @@ async function doPHPUninstall() {
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
         <AlertDialogAction
-          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          variant="destructive"
           @click="executePurge"
         >
           Uninstall
@@ -801,7 +560,7 @@ async function doPHPUninstall() {
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
         <AlertDialogAction
-          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          variant="destructive"
           :disabled="phpUninstalling"
           @click="doPHPUninstall"
         >

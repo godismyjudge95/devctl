@@ -30,6 +30,14 @@ func TestExpandHome(t *testing.T) {
 	}
 }
 
+func TestCABundlePath(t *testing.T) {
+	got := CABundlePath("/home/alice/ddev/sites/server")
+	want := "/home/alice/ddev/sites/server/php/ca-bundle.crt"
+	if got != want {
+		t.Errorf("CABundlePath = %q, want %q", got, want)
+	}
+}
+
 func TestDefaultSitesDirFor(t *testing.T) {
 	linux := DefaultSitesDirFor("linux", "/home/alice")
 	if linux != "/home/alice/ddev/sites" {

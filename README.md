@@ -355,6 +355,7 @@ On first install, devctl creates a `php.ini` based on the full upstream `php.ini
 | OPcache | Enabled with `validate_timestamps=1`, `revalidate_freq=0` (dev-safe) |
 | SPX profiler | Pre-configured (zero overhead when not active) |
 | `auto_prepend_file` | Points to `{serverRoot}/devctl/prepend.php` (for `php_dd()`) |
+| `openssl.cafile` / `curl.cainfo` | `{serverRoot}/php/ca-bundle.crt` (OS CAs + Caddy local CA) |
 
 The `php.ini` is user-editable and never overwritten on restart. To regenerate it with updated defaults, delete the file and restart devctl.
 
@@ -453,6 +454,8 @@ sudo devctl elevate trust
 ```
 
 (Requires the daemon + Caddy to be running so the CA can be read.)
+
+PHP does not use the OS trust store (the static OpenSSL build looks at `openssl.cafile` / `curl.cainfo`). On startup — and after Caddy starts — devctl writes `{serverRoot}/php/ca-bundle.crt` (OS CAs plus Caddy's local root) and points every PHP version at it. That is what lets `file_get_contents`, Guzzle, Meilisearch, and the AWS SDK call `https://meilisearch.test`, `https://s3.maxio.test`, and other `*.test` hosts without TLS errors. PHP-FPM also gets `SSL_CERT_FILE` and `CURL_CA_BUNDLE` in its process environment. You do not need `elevate trust` for PHP; that command is for browsers.
 
 **Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress (classic and Bedrock), Drupal, Craft CMS, Symfony, and generic PHP projects.
 
@@ -813,6 +816,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | `{serverRoot}/reverb/` | Laravel app that runs `php artisan reverb:start` |
 | `{serverRoot}/maxio/` | MaxIO binary, `config.env`, object data |
 | `{serverRoot}/clickhouse/` | ClickHouse binary, `config.xml`, `users.xml`, data |
+| `{serverRoot}/php/ca-bundle.crt` | Combined OS + Caddy local CA bundle (PHP `openssl.cafile` / `curl.cainfo`) |
 | `{serverRoot}/php/{version}/` | PHP static binary, `php.ini`, `php-fpm.conf`, SPX data |
 | `/etc/systemd/system/devctl.service` | Linux dashboard unit |
 | `/etc/systemd/system/devctl-elevate.service` | Linux elevate daemon (Caddy bind) |

@@ -60,7 +60,7 @@ test.describe('services install lifecycle — Mailpit', () => {
 
     // If already running, skip — purge test will handle cleanup.
     const rowText = await row.innerText()
-    if (rowText.includes('running')) {
+    if (rowText.toLowerCase().includes('running')) {
       test.skip()
       return
     }

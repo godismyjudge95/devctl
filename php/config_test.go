@@ -45,6 +45,16 @@ func setupFakeServerRoot(t *testing.T, ver string) string {
 		t.Fatalf("create logs dir: %v", err)
 	}
 
+	// Seed a Caddy local CA so WriteCABundle always has material, even when
+	// the test host has no OS CA bundle.
+	caddyRoot := filepath.Join(serverRoot, "caddy", ".local", "share", "caddy", "pki", "authorities", "local", "root.crt")
+	if err := os.MkdirAll(filepath.Dir(caddyRoot), 0755); err != nil {
+		t.Fatalf("create caddy pki dir: %v", err)
+	}
+	if err := os.WriteFile(caddyRoot, testCACertPEM(t, "devctl-test-ca"), 0644); err != nil {
+		t.Fatalf("write caddy root: %v", err)
+	}
+
 	return serverRoot
 }
 
@@ -253,6 +263,49 @@ func TestWriteConfigs_LogsDirOwnedBySiteUser(t *testing.T) {
 	logsDir := filepath.Join(serverRoot, "logs")
 	if gotUID := ownerUID(logsDir); gotUID != expectedUID {
 		t.Errorf("logs dir %s: want uid %d (siteUser), got uid %d", logsDir, expectedUID, gotUID)
+	}
+}
+
+func TestWriteConfigs_PHPIni_PointsAtCABundle(t *testing.T) {
+	ver := "8.4"
+	serverRoot := setupFakeServerRoot(t, ver)
+	if err := WriteConfigs(ver, serverRoot, currentUser(t)); err != nil {
+		t.Fatalf("WriteConfigs: %v", err)
+	}
+	data, err := os.ReadFile(PHPIniPath(ver, serverRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(serverRoot, "php", "ca-bundle.crt")
+	s := string(data)
+	if !strings.Contains(s, "openssl.cafile = "+bundle) {
+		t.Fatalf("php.ini missing openssl.cafile = %s\n%s", bundle, s)
+	}
+	if !strings.Contains(s, "curl.cainfo = "+bundle) {
+		t.Fatalf("php.ini missing curl.cainfo = %s", bundle)
+	}
+	if _, err := os.Stat(bundle); err != nil {
+		t.Fatalf("ca bundle not written: %v", err)
+	}
+}
+
+func TestWriteConfigs_MigratesExistingPHPIniCAFile(t *testing.T) {
+	ver := "8.4"
+	serverRoot := setupFakeServerRoot(t, ver)
+	ini := PHPIniPath(ver, serverRoot)
+	if err := os.WriteFile(ini, []byte("memory_limit = 128M\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteConfigs(ver, serverRoot, currentUser(t)); err != nil {
+		t.Fatalf("WriteConfigs: %v", err)
+	}
+	data, err := os.ReadFile(ini)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(serverRoot, "php", "ca-bundle.crt")
+	if !strings.Contains(string(data), "openssl.cafile = "+bundle) {
+		t.Fatalf("existing php.ini was not migrated:\n%s", data)
 	}
 }
 

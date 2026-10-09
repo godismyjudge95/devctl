@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { ArrowLeft, Save } from 'lucide-vue-next'
+import { ArrowLeft, Loader2, Save } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ServiceMark from '@/components/layout/ServiceMark.vue'
@@ -125,54 +125,65 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="flex flex-col h-full" @keydown="onKeydown" tabindex="-1">
+  <div class="flex h-full flex-col" tabindex="-1" @keydown="onKeydown">
     <!-- Top bar -->
-    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border shrink-0 bg-card">
-      <Button variant="ghost" size="icon" class="shrink-0" @click="router.push('/services')">
-        <ArrowLeft class="w-4 h-4" />
+    <div class="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="-ml-2 shrink-0"
+        aria-label="Back to services"
+        title="Back to services"
+        @click="router.push('/services')"
+      >
+        <ArrowLeft class="size-4" />
       </Button>
 
-      <ServiceMark :id="serviceId" size="sm" />
-      <div class="flex items-center gap-2 min-w-0">
-        <span class="font-medium text-sm truncate">{{ meta?.label ?? serviceId }}</span>
-        <span class="text-muted-foreground text-sm">/</span>
-        <span class="text-sm text-muted-foreground font-mono truncate">{{ activeFile }}</span>
+      <ServiceMark :id="serviceId" size="sm" class="hidden sm:inline-flex" />
+      <div class="min-w-0 flex-1">
+        <h1 class="truncate text-sm font-semibold leading-tight">{{ meta?.label ?? serviceId }}</h1>
+        <p class="truncate font-mono text-xs text-muted-foreground">{{ activeFile }}</p>
       </div>
 
-      <!-- File tabs (only shown when the service has multiple files) -->
+      <div class="flex shrink-0 items-center gap-3">
+        <span class="hidden text-xs text-muted-foreground lg:block">
+          <kbd class="rounded border border-border bg-muted px-1 font-mono">Ctrl</kbd>
+          +
+          <kbd class="rounded border border-border bg-muted px-1 font-mono">S</kbd>
+          to save &amp; restart
+        </span>
+        <Button size="sm" :disabled="saving || loading" @click="save">
+          <Save class="size-3.5" />
+          {{ saving ? 'Saving…' : 'Save & Restart' }}
+        </Button>
+      </div>
+    </div>
+
+    <!-- File tabs (only when the service has several files) -->
+    <div v-if="meta && meta.files.length > 1" class="flex shrink-0 items-center border-b border-border bg-card px-4 py-2">
       <Tabs
-        v-if="meta && meta.files.length > 1"
         :model-value="activeFile"
         @update:model-value="(f) => { activeFile = f as string }"
-        class="ml-2"
       >
         <TabsList>
           <TabsTrigger
             v-for="f in meta.files"
             :key="f.name"
             :value="f.name"
+            class="font-mono text-xs"
           >
             {{ f.label }}
           </TabsTrigger>
         </TabsList>
       </Tabs>
-
-      <div class="ml-auto flex items-center gap-2 shrink-0">
-        <span class="text-xs text-muted-foreground hidden sm:block">Ctrl+S to save &amp; restart</span>
-        <Button size="sm" :disabled="saving || loading" @click="save">
-          <Save class="w-3.5 h-3.5 mr-2" />
-          {{ saving ? 'Saving…' : 'Save & Restart' }}
-        </Button>
-      </div>
     </div>
 
-    <!-- Loading state -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+    <div v-if="loading" class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
+      <Loader2 class="size-4 animate-spin" />
       Loading…
     </div>
 
-    <!-- Editor -->
-    <div v-else class="flex-1 min-h-0 overflow-hidden">
+    <div v-else class="min-h-0 flex-1 overflow-hidden">
       <CodeEditor
         v-model="content"
         :language="fileLanguage(activeFile)"

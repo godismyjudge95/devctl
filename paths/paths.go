@@ -80,6 +80,14 @@ func BinDir(serverRoot string) string {
 	return filepath.Join(serverRoot, "bin")
 }
 
+// CABundlePath returns the combined CA bundle PHP (openssl/curl) uses so
+// HTTPS to *.test hosts signed by Caddy's local CA succeeds.
+//
+//	{serverRoot}/php/ca-bundle.crt
+func CABundlePath(serverRoot string) string {
+	return filepath.Join(ServerDir(serverRoot), "php", "ca-bundle.crt")
+}
+
 // LogsDir returns the directory where all service log files are written.
 // Every service writes its log to {logsDir}/{serviceID}.log.
 //

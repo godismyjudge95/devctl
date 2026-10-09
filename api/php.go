@@ -172,6 +172,20 @@ func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, settings)
 }
 
+// refreshPHPCABundle writes the combined CA bundle (OS CAs + Caddy local
+// root) so PHP HTTPS to *.test succeeds. Safe to call whenever Caddy is up.
+func (s *Server) refreshPHPCABundle() {
+	var rootPEM []byte
+	if cert, err := s.caddy.RootCert(); err != nil {
+		log.Printf("php: caddy root cert: %v", err)
+	} else {
+		rootPEM = cert
+	}
+	if err := php.ApplyCABundle(s.serverRoot, rootPEM); err != nil {
+		log.Printf("php: apply ca bundle: %v", err)
+	}
+}
+
 // phpFPMServiceDef builds the supervised Definition for a PHP-FPM version.
 func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 	versionCmd := php.FPMBinary(ver, s.serverRoot) + " -v"
@@ -179,16 +193,17 @@ func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 		versionCmd = fmt.Sprintf("printf 'PHP %s\n'", patch)
 	}
 	return services.Definition{
-		ID:           php.FPMServiceID(ver),
-		Label:        "PHP " + ver + " FPM",
-		Managed:      true,
-		ManagedCmd:   php.FPMBinary(ver, s.serverRoot),
-		ManagedArgs:  fmt.Sprintf("-c %s/php.ini --nodaemonize --fpm-config %s", php.PHPDir(ver, s.serverRoot), php.FPMConfigPath(ver, s.serverRoot)),
-		ManagedDir:   php.PHPDir(ver, s.serverRoot),
-		Log:          php.FPMLogPath(ver, s.serverRoot),
-		Version:      versionCmd,
-		VersionRegex: `PHP (?P<version>[\d.]+)`,
-		PreStart:     func() error { return php.StopLeftover(ver, s.serverRoot) },
+		ID:              php.FPMServiceID(ver),
+		Label:           "PHP " + ver + " FPM",
+		Managed:         true,
+		ManagedCmd:      php.FPMBinary(ver, s.serverRoot),
+		ManagedArgs:     fmt.Sprintf("-c %s/php.ini --nodaemonize --fpm-config %s", php.PHPDir(ver, s.serverRoot), php.FPMConfigPath(ver, s.serverRoot)),
+		ManagedDir:      php.PHPDir(ver, s.serverRoot),
+		ManagedExtraEnv: php.CertEnv(s.serverRoot),
+		Log:             php.FPMLogPath(ver, s.serverRoot),
+		Version:         versionCmd,
+		VersionRegex:    `PHP (?P<version>[\d.]+)`,
+		PreStart:        func() error { return php.StopLeftover(ver, s.serverRoot) },
 	}
 }
 

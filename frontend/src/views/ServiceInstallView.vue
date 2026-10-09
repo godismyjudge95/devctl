@@ -147,71 +147,74 @@ function handleInstall(row: InstallRow) {
       back-label="Services"
     />
 
-    <EmptyState v-if="!hasAnythingToInstall">
+    <EmptyState v-if="!hasAnythingToInstall" title="Everything is installed">
       All available services are already installed.
     </EmptyState>
 
     <Surface v-else class="overflow-hidden">
       <SectionHeader title="Available" description="Pick one to download and start." />
-      <div class="px-5 pb-4">
+      <div class="px-4 pb-4 sm:px-5">
         <div class="relative">
-          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             v-model="searchQuery"
-            placeholder="Search services..."
-            class="pl-8"
+            placeholder="Search services…"
+            aria-label="Search services"
+            class="pl-9"
           />
         </div>
       </div>
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead class="w-10"></TableHead>
+          <TableRow class="hover:bg-transparent">
+            <TableHead class="w-12"><span class="sr-only">Icon</span></TableHead>
             <TableHead>Name</TableHead>
-            <TableHead class="w-28">Version</TableHead>
-            <TableHead></TableHead>
+            <TableHead class="hidden w-28 sm:table-cell">Version</TableHead>
+            <TableHead><span class="sr-only">Actions</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           <TableRow v-for="row in filteredRows" :key="row.id">
-            <TableCell>
+            <TableCell class="w-12 pr-0">
               <ServiceMark :id="row.kind === 'php' ? `php-fpm-${row.version}` : row.id" size="sm" />
             </TableCell>
-            <TableCell>
-              <p class="text-sm font-medium leading-tight">{{ row.label }}</p>
-              <p class="text-xs text-muted-foreground leading-snug line-clamp-1 mt-0.5">{{ row.description }}</p>
+            <!-- max-w-0 + w-full lets the description truncate instead of widening the table -->
+            <TableCell class="w-full max-w-0">
+              <p class="truncate text-sm font-medium">{{ row.label }}</p>
+              <p class="mt-0.5 truncate text-xs text-muted-foreground" :title="row.description">{{ row.description }}</p>
             </TableCell>
-            <TableCell class="font-mono text-xs text-muted-foreground">
+            <TableCell class="hidden font-mono text-xs text-muted-foreground sm:table-cell">
               {{ row.version || '—' }}
             </TableCell>
             <TableCell class="text-right">
               <Button
                 size="sm"
+                variant="outline"
                 :disabled="isInstalling(row)"
                 @click="handleInstall(row)"
               >
-                <Loader2 v-if="isInstalling(row)" class="w-3.5 h-3.5 animate-spin" />
-                <Download v-else class="w-3.5 h-3.5" />
+                <Loader2 v-if="isInstalling(row)" class="size-3.5 animate-spin" />
+                <Download v-else class="size-3.5" />
                 Install
               </Button>
             </TableCell>
           </TableRow>
           <TableEmpty v-if="filteredRows.length === 0" :columns="4">
-            No services match "{{ searchQuery }}".
+            No services match “{{ searchQuery }}”.
           </TableEmpty>
         </TableBody>
       </Table>
     </Surface>
 
     <Dialog :open="outputDialogOpen" @update:open="(v) => outputDialogOpen = v">
-      <DialogContent class="sm:max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent class="flex max-h-[80vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Install output — {{ outputDialogLabel }}</DialogTitle>
           <DialogDescription>
             Something went wrong. Check the output below for details.
           </DialogDescription>
         </DialogHeader>
-        <pre class="flex-1 overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre-wrap break-words">{{ outputDialogContent }}</pre>
+        <pre class="flex-1 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 font-mono text-xs">{{ outputDialogContent }}</pre>
       </DialogContent>
     </Dialog>
   </div>

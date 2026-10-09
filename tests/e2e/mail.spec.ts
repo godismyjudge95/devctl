@@ -67,7 +67,7 @@ test.describe('Mail page — text-only email rendering', () => {
     await page.goto('/mail')
 
     // Click the first message in the list to open it.
-    const firstMsg = page.locator('[class*="cursor-pointer"][class*="border-b"]').first()
+    const firstMsg = page.locator('[data-mail-row]').first()
     await expect(firstMsg).toBeVisible({ timeout: 10_000 })
     await firstMsg.click()
 

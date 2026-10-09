@@ -33,10 +33,14 @@ import {
 } from '@/components/ui/context-menu'
 import {
   HardDrive, Folder, File, Upload, Trash2, Download, Link,
-  MoreHorizontal, Plus, ArrowLeft, FolderOpen, Database,
+  MoreHorizontal, Plus, FolderOpen, Database,
   FolderPlus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
-  RefreshCw, Globe, Lock,
+  RefreshCw, Globe, Lock, ArrowUp, FolderUp,
 } from 'lucide-vue-next'
+import SplitView from '@/components/layout/SplitView.vue'
+import PaneHeader from '@/components/layout/PaneHeader.vue'
+import PaneListItem from '@/components/layout/PaneListItem.vue'
+import EmptyState from '@/components/layout/EmptyState.vue'
 
 const store = useMaxIOStore()
 const refreshing = computed(() => store.loadingBuckets || store.loadingObjects)
@@ -60,11 +64,13 @@ const TreeNodeRow: ReturnType<typeof defineComponent> = defineComponent({
 
       const rowEl = h('div', {
         class: [
-          'flex items-center gap-1 px-2 py-1 cursor-pointer select-none text-xs rounded-sm mx-1 transition-colors',
+          'flex h-8 items-center gap-1.5 pr-2 cursor-pointer select-none text-sm rounded-lg transition-colors',
           isDropTarget ? 'bg-primary/10 ring-1 ring-inset ring-primary' : '',
-          isActive ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+          currentPrefix === node.prefix
+            ? 'bg-accent text-accent-foreground font-medium'
+            : isActive ? 'text-foreground font-medium hover:bg-muted' : 'text-foreground/80 hover:text-foreground hover:bg-muted',
         ],
-        style: { paddingLeft: `${indent + 8}px` },
+        style: { paddingLeft: `${indent + 4}px` },
         onClick: () => emit('navigate', node.prefix),
         onDragover: (e: DragEvent) => emit('dragover', e, node.prefix),
         onDragleave: () => emit('dragleave'),
@@ -72,14 +78,14 @@ const TreeNodeRow: ReturnType<typeof defineComponent> = defineComponent({
       }, [
         // Expand toggle
         h('span', {
-          class: 'shrink-0 w-3 h-3 flex items-center justify-center',
+          class: 'shrink-0 size-4 flex items-center justify-center text-muted-foreground',
           onClick: (e: MouseEvent) => { e.stopPropagation(); emit('expand', node) },
         }, node.children.length > 0 || node.loaded
-          ? h(node.expanded ? ChevronDown : ChevronRight, { class: 'w-3 h-3' })
-          : h('span', { class: 'w-3 h-3' })
+          ? h(node.expanded ? ChevronDown : ChevronRight, { class: 'size-3.5' })
+          : h('span', { class: 'size-3.5' })
         ),
-        h(Folder, { class: 'w-3 h-3 shrink-0 text-primary' }),
-        h('span', { class: 'truncate flex-1 ml-1' }, node.label),
+        h(Folder, { class: 'size-4 shrink-0 text-primary' }),
+        h('span', { class: 'truncate flex-1' }, node.label),
       ])
 
       const childrenEl = node.expanded
@@ -482,574 +488,637 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden">
+  <!-- Hidden file inputs -->
+  <input ref="fileInputRef" type="file" multiple class="hidden" @change="onFileInputChange" />
+  <input ref="folderInputRef" type="file" multiple webkitdirectory class="hidden" @change="onFileInputChange" />
 
-    <!-- Hidden file inputs -->
-    <input ref="fileInputRef" type="file" multiple class="hidden" @change="onFileInputChange" />
-    <input ref="folderInputRef" type="file" multiple webkitdirectory class="hidden" @change="onFileInputChange" />
+  <SplitView :show-detail="mobileView === 'objects'" list-class="md:w-72">
+    <!-- ── Bucket list ──────────────────────────────────────────────────── -->
+    <template #list>
+      <PaneHeader title="Storage" description="S3-compatible buckets">
+        <template #actions>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="New bucket"
+            title="New bucket"
+            @click="showCreateBucket = true"
+          >
+            <Plus class="size-4" />
+          </Button>
+        </template>
+      </PaneHeader>
 
-    <!-- ── Left panel ─────────────────────────────────────────────────────── -->
-    <div
-      class="flex flex-col border-r border-border shrink-0 w-full md:w-72"
-      :class="mobileView === 'objects' ? 'hidden md:flex' : 'flex'"
-    >
-      <!-- Info bar -->
-      <div class="px-4 py-3 border-b border-border">
-        <div class="kicker text-[12px]">Storage</div>
-        <div class="text-[11px] text-muted-foreground mt-0.5">S3-compatible buckets</div>
-      </div>
-
-      <!-- New bucket button -->
-      <div class="px-3 py-2 border-b border-border">
-        <Button variant="outline" size="sm" class="w-full h-7 text-xs gap-1.5" @click="showCreateBucket = true">
-          <Plus class="w-3.5 h-3.5" />
-          New Bucket
-        </Button>
-      </div>
-
-      <!-- Bucket list -->
-      <ScrollArea class="flex-1">
-        <div v-if="store.loadingBuckets" class="px-3 py-2 space-y-1.5">
-          <Skeleton v-for="i in 4" :key="i" class="h-8 w-full rounded-md" />
+      <ScrollArea class="min-h-0 flex-1">
+        <div v-if="store.loadingBuckets" class="space-y-1 p-2">
+          <Skeleton v-for="i in 4" :key="i" class="h-9 w-full rounded-lg" />
         </div>
-        <div v-else-if="store.buckets.length === 0" class="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
-          <Database class="w-7 h-7 opacity-30" />
-          <span class="text-xs">No buckets</span>
-        </div>
-        <ContextMenu v-for="bucket in store.buckets" :key="bucket.name">
-          <ContextMenuTrigger as-child>
-            <div
-              class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent/50 transition-colors border-b border-border/30"
-              :class="store.selectedBucket === bucket.name ? 'bg-accent text-accent-foreground border-l-2 border-l-primary' : ''"
-              @click="store.selectBucket(bucket.name)"
-            >
-              <HardDrive class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-              <span class="text-sm flex-1 truncate">{{ bucket.name }}</span>
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child @click.stop>
-                  <Button variant="ghost" size="icon-sm" class="opacity-0 group-hover:opacity-100 hover:opacity-100">
-                    <MoreHorizontal class="w-3.5 h-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel class="text-xs">{{ bucket.name }}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    v-if="store.selectedBucket === bucket.name && !bucketIsPublic"
-                    @click="openVisibilityConfirm(true, bucket.name)"
-                  >
-                    <Globe class="w-3.5 h-3.5 mr-2" />
-                    Make public
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    v-else-if="store.selectedBucket === bucket.name && bucketIsPublic"
-                    @click="openVisibilityConfirm(false, bucket.name)"
-                  >
-                    <Lock class="w-3.5 h-3.5 mr-2" />
-                    Make private
-                  </DropdownMenuItem>
-                  <template v-else>
-                    <DropdownMenuItem @click="openVisibilityConfirm(true, bucket.name)">
-                      <Globe class="w-3.5 h-3.5 mr-2" />
+        <EmptyState
+          v-else-if="store.buckets.length === 0"
+          variant="fill"
+          :icon="Database"
+          title="No buckets"
+        >
+          <template #actions>
+            <Button variant="outline" size="sm" @click="showCreateBucket = true">
+              <Plus class="size-3.5" />
+              New bucket
+            </Button>
+          </template>
+        </EmptyState>
+        <div v-else class="space-y-0.5 p-2">
+          <ContextMenu v-for="bucket in store.buckets" :key="bucket.name">
+            <ContextMenuTrigger as-child>
+              <div class="group relative">
+                <PaneListItem
+                  :active="store.selectedBucket === bucket.name"
+                  class="pr-10"
+                  @click="store.selectBucket(bucket.name)"
+                >
+                  <HardDrive class="size-4 shrink-0 text-muted-foreground" />
+                  <span class="min-w-0 flex-1 truncate">{{ bucket.name }}</span>
+                </PaneListItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      class="absolute right-1 top-1/2 -translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:data-[state=open]:opacity-100"
+                      :aria-label="`${bucket.name} actions`"
+                    >
+                      <MoreHorizontal class="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel class="max-w-48 truncate text-xs">{{ bucket.name }}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      v-if="store.selectedBucket === bucket.name && !bucketIsPublic"
+                      @click="openVisibilityConfirm(true, bucket.name)"
+                    >
+                      <Globe class="size-4" />
                       Make public
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openVisibilityConfirm(false, bucket.name)">
-                      <Lock class="w-3.5 h-3.5 mr-2" />
+                    <DropdownMenuItem
+                      v-else-if="store.selectedBucket === bucket.name && bucketIsPublic"
+                      @click="openVisibilityConfirm(false, bucket.name)"
+                    >
+                      <Lock class="size-4" />
                       Make private
                     </DropdownMenuItem>
-                  </template>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem class="text-destructive focus:text-destructive" @click="confirmDeleteBucket(bucket.name)">
-                    <Trash2 class="w-3.5 h-3.5 mr-2" />
-                    Delete bucket
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent class="w-48">
-            <ContextMenuLabel class="text-xs truncate max-w-44">{{ bucket.name }}</ContextMenuLabel>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              v-if="store.selectedBucket === bucket.name && !bucketIsPublic"
-              @click="openVisibilityConfirm(true, bucket.name)"
-            >
-              <Globe class="w-3.5 h-3.5 mr-2" />
-              Make public
-            </ContextMenuItem>
-            <ContextMenuItem
-              v-else-if="store.selectedBucket === bucket.name && bucketIsPublic"
-              @click="openVisibilityConfirm(false, bucket.name)"
-            >
-              <Lock class="w-3.5 h-3.5 mr-2" />
-              Make private
-            </ContextMenuItem>
-            <template v-else>
-              <ContextMenuItem @click="openVisibilityConfirm(true, bucket.name)">
-                <Globe class="w-3.5 h-3.5 mr-2" />
+                    <template v-else>
+                      <DropdownMenuItem @click="openVisibilityConfirm(true, bucket.name)">
+                        <Globe class="size-4" />
+                        Make public
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="openVisibilityConfirm(false, bucket.name)">
+                        <Lock class="size-4" />
+                        Make private
+                      </DropdownMenuItem>
+                    </template>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem class="text-destructive focus:text-destructive" @click="confirmDeleteBucket(bucket.name)">
+                      <Trash2 class="size-4" />
+                      Delete bucket
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent class="w-48">
+              <ContextMenuLabel class="max-w-44 truncate text-xs">{{ bucket.name }}</ContextMenuLabel>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                v-if="store.selectedBucket === bucket.name && !bucketIsPublic"
+                @click="openVisibilityConfirm(true, bucket.name)"
+              >
+                <Globe class="size-4" />
                 Make public
               </ContextMenuItem>
-              <ContextMenuItem @click="openVisibilityConfirm(false, bucket.name)">
-                <Lock class="w-3.5 h-3.5 mr-2" />
+              <ContextMenuItem
+                v-else-if="store.selectedBucket === bucket.name && bucketIsPublic"
+                @click="openVisibilityConfirm(false, bucket.name)"
+              >
+                <Lock class="size-4" />
                 Make private
               </ContextMenuItem>
-            </template>
-            <ContextMenuSeparator />
-            <ContextMenuItem class="text-destructive focus:text-destructive" @click="confirmDeleteBucket(bucket.name)">
-              <Trash2 class="w-3.5 h-3.5 mr-2" />
-              Delete bucket
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </ScrollArea>
-    </div>
-
-    <!-- ── Tree panel ─────────────────────────────────────────────────────── -->
-    <div
-      v-if="store.selectedBucket"
-      class="hidden md:flex flex-col border-r border-border shrink-0 w-52 overflow-hidden"
-    >
-      <div class="px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border shrink-0">
-        Folders
-      </div>
-      <ScrollArea class="flex-1">
-        <!-- Bucket root drop target -->
-        <div
-          class="flex items-center gap-1 px-2 py-1 mx-1 mt-1 cursor-pointer select-none text-xs rounded-sm transition-colors"
-          :class="[
-            treeDropTarget === '' ? 'bg-primary/10 ring-1 ring-inset ring-primary' : '',
-            !store.currentPrefix ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-          ]"
-          @click="store.navigateToPrefix('')"
-          @dragover="onTreeDragOver($event, '')"
-          @dragleave="onTreeDragLeave()"
-          @drop="onTreeDrop($event, '')"
-        >
-          <HardDrive class="w-3 h-3 shrink-0 text-muted-foreground" />
-          <span class="truncate ml-1">{{ store.selectedBucket }}</span>
-        </div>
-        <!-- Tree nodes -->
-        <ContextMenu v-for="node in store.treeRoots" :key="node.prefix">
-          <ContextMenuTrigger as-child>
-            <TreeNodeRow
-              :node="node"
-              :depth="0"
-              :currentPrefix="store.currentPrefix"
-              :dropTarget="treeDropTarget"
-              @navigate="(prefix: string) => store.navigateToPrefix(prefix)"
-              @expand="(node: TreeNode) => store.expandTreeNode(node)"
-              @dragover="(e: DragEvent, prefix: string) => onTreeDragOver(e, prefix)"
-              @dragleave="onTreeDragLeave()"
-              @drop="(e: DragEvent, prefix: string) => onTreeDrop(e, prefix)"
-            />
-          </ContextMenuTrigger>
-          <ContextMenuContent class="w-52">
-            <ContextMenuLabel class="text-xs truncate max-w-48">{{ node.label }}</ContextMenuLabel>
-            <ContextMenuSeparator />
-            <ContextMenuItem @click="openNewFolderIn(node.prefix)">
-              <FolderPlus class="w-3.5 h-3.5 mr-2" />
-              New folder inside
-            </ContextMenuItem>
-            <ContextMenuItem @click="store.downloadObjectsAsZip(['__prefix__' + node.prefix], node.label)">
-              <Download class="w-3.5 h-3.5 mr-2" />
-              Download
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem class="text-destructive focus:text-destructive" @click="store.deletePrefix(node.prefix)">
-              <Trash2 class="w-3.5 h-3.5 mr-2" />
-              Delete folder
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </ScrollArea>
-    </div>
-
-    <!-- ── Right panel ────────────────────────────────────────────────────── -->
-    <div
-      class="flex flex-col flex-1 overflow-hidden relative w-full md:w-auto"
-      :class="mobileView === 'list' ? 'hidden md:flex' : 'flex'"
-      @dragenter="store.selectedBucket && !draggingRowKey ? onDragEnter($event) : undefined"
-      @dragleave="!draggingRowKey ? onDragLeave($event) : undefined"
-      @dragover="!draggingRowKey ? onDragOver($event) : undefined"
-      @drop="!draggingRowKey ? onDrop($event) : undefined"
-    >
-      <!-- File-upload drag overlay -->
-      <div
-        v-if="isDragging && store.selectedBucket && !draggingRowKey"
-        class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-background/80 border-2 border-dashed border-primary rounded-none pointer-events-none"
-      >
-        <Upload class="w-10 h-10 text-primary opacity-80" />
-        <p class="text-sm font-medium">Drop files to upload</p>
-      </div>
-
-      <!-- Empty state: no bucket selected -->
-      <div v-if="!store.selectedBucket" class="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3">
-        <FolderOpen class="w-12 h-12 opacity-20" />
-        <span class="text-sm">Select a bucket to browse objects</span>
-      </div>
-
-      <!-- Bucket content -->
-      <template v-else>
-
-        <!-- ── Header row ─────────────────────────────────────────────────── -->
-        <div class="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-border shrink-0">
-
-          <!-- Mobile back -->
-          <Button variant="ghost" size="sm" class="gap-1.5 -ml-1 md:hidden shrink-0" @click="goBackToList">
-            <ArrowLeft class="w-4 h-4" />
-            Back
-          </Button>
-
-          <!-- Breadcrumb -->
-          <Breadcrumb class="flex-1 min-w-0 overflow-hidden">
-            <BreadcrumbList class="flex-nowrap overflow-hidden">
-              <BreadcrumbItem>
-                <BreadcrumbLink class="cursor-pointer text-sm truncate max-w-[120px] md:max-w-none" @click="store.navigateToPrefix('')">
-                  {{ store.selectedBucket }}
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <template v-for="(crumb, i) in store.breadcrumbs" :key="crumb.prefix">
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage v-if="i === store.breadcrumbs.length - 1" class="text-sm truncate max-w-[100px] md:max-w-none">
-                    {{ crumb.label }}
-                  </BreadcrumbPage>
-                  <BreadcrumbLink v-else class="cursor-pointer text-sm truncate max-w-[80px] md:max-w-none" @click="store.navigateToPrefix(crumb.prefix)">
-                    {{ crumb.label }}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
+              <template v-else>
+                <ContextMenuItem @click="openVisibilityConfirm(true, bucket.name)">
+                  <Globe class="size-4" />
+                  Make public
+                </ContextMenuItem>
+                <ContextMenuItem @click="openVisibilityConfirm(false, bucket.name)">
+                  <Lock class="size-4" />
+                  Make private
+                </ContextMenuItem>
               </template>
-            </BreadcrumbList>
-          </Breadcrumb>
-
-          <!-- Desktop: navigate up button (nav-only, stays in header) -->
-          <Button v-if="store.currentPrefix" variant="ghost" size="icon-xs" class="hidden md:inline-flex shrink-0" title="Go up" @click="store.navigateUp()">
-            <ArrowLeft class="w-3.5 h-3.5" />
-          </Button>
-
-          <!-- Bucket visibility badge -->
-          <Skeleton v-if="store.loadingVisibility" class="h-6 w-16 shrink-0 hidden sm:block" />
-          <Badge
-            v-else-if="bucketIsPublic"
-            variant="outline"
-            class="text-xs gap-1 shrink-0 hidden sm:flex border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-          >
-            <Globe class="w-3 h-3" />
-            Public
-          </Badge>
-          <Badge v-else variant="secondary" class="text-xs gap-1 shrink-0 hidden sm:flex">
-            <Lock class="w-3 h-3" />
-            Private
-          </Badge>
+              <ContextMenuSeparator />
+              <ContextMenuItem class="text-destructive focus:text-destructive" @click="confirmDeleteBucket(bucket.name)">
+                <Trash2 class="size-4" />
+                Delete bucket
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         </div>
+      </ScrollArea>
+    </template>
 
-        <!-- ── Search bar ─────────────────────────────────────────────────── -->
-        <div class="px-3 md:px-4 py-2 border-b border-border shrink-0">
-          <div class="relative">
-            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              :model-value="store.searchQuery"
-              placeholder="Filter by name…"
-              class="h-7 pl-8 pr-8 text-xs"
-              @update:model-value="onSearchInput(String($event))"
-            />
-            <Button
-              v-if="store.searchQuery"
-              variant="ghost"
-              size="icon-sm"
-              class="absolute right-1 top-1/2 -translate-y-1/2"
-              @click="clearSearch"
-            >
-              <X class="w-3.5 h-3.5" />
-            </Button>
+    <!-- ── Bucket browser ───────────────────────────────────────────────── -->
+    <template #detail>
+      <EmptyState
+        v-if="!store.selectedBucket"
+        variant="fill"
+        :icon="FolderOpen"
+        title="No bucket selected"
+      >
+        Select a bucket to browse objects.
+      </EmptyState>
+
+      <div v-else class="flex min-h-0 flex-1">
+        <!-- Folder tree (lg+) -->
+        <div class="hidden w-56 shrink-0 flex-col overflow-hidden border-r border-border lg:flex">
+          <div class="flex h-14 shrink-0 items-center border-b border-border px-4 text-sm font-semibold">
+            Folders
           </div>
-        </div>
-
-        <!-- Upload / download progress bar -->
-        <div v-if="store.uploading" class="px-4 py-2 border-b border-border bg-muted/30 shrink-0">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-xs text-muted-foreground truncate">{{ store.uploadFileName }}</span>
-            <span class="text-xs text-muted-foreground ml-2 shrink-0">{{ store.uploadProgress }}%</span>
-          </div>
-          <Progress :model-value="store.uploadProgress" class="h-1.5" />
-        </div>
-
-        <!-- ── Object table ───────────────────────────────────────────────── -->
-        <ScrollArea class="flex-1 pb-16">
-
-          <!-- Loading skeletons -->
-          <div v-if="store.loadingObjects" class="p-4 space-y-2">
-            <Skeleton v-for="i in 6" :key="i" class="h-9 w-full rounded" />
-          </div>
-
-          <!-- Empty state -->
-          <div
-            v-else-if="store.sortedObjects.length === 0 && store.sortedPrefixes.length === 0"
-            class="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2"
-          >
-            <template v-if="store.searchQuery">
-              <Search class="w-8 h-8 opacity-30" />
-              <span class="text-sm">No results for "{{ store.searchQuery }}"</span>
-              <Button variant="outline" size="sm" class="mt-1 text-xs" @click="clearSearch">Clear search</Button>
-            </template>
-            <template v-else>
-              <FolderOpen class="w-8 h-8 opacity-30" />
-              <span class="text-sm">No objects in this location</span>
-              <Button variant="outline" size="sm" class="mt-1 text-xs gap-1.5" @click="triggerUpload">
-                <Upload class="w-3.5 h-3.5" />Upload files
-              </Button>
-            </template>
-          </div>
-
-          <!-- Table -->
-          <Table v-else>
-            <TableHeader>
-              <TableRow>
-                <TableHead class="w-8 pl-4">
-                  <Checkbox :modelValue="selectAllState" @update:modelValue="handleSelectAll" />
-                </TableHead>
-                <TableHead class="w-5"></TableHead>
-                <!-- Sortable Name -->
-                <TableHead class="cursor-pointer select-none" @click="store.setSort('name')">
-                  <div class="flex items-center gap-1">
-                    Name
-                    <ChevronUp v-if="sortIcon('name') === 'asc'" class="w-3 h-3" />
-                    <ChevronDown v-else-if="sortIcon('name') === 'desc'" class="w-3 h-3" />
-                    <ChevronsUpDown v-else class="w-3 h-3 text-muted-foreground/50" />
-                  </div>
-                </TableHead>
-                <!-- Sortable Size -->
-                <TableHead class="w-24 text-right hidden sm:table-cell cursor-pointer select-none" @click="store.setSort('size')">
-                  <div class="flex items-center justify-end gap-1">
-                    Size
-                    <ChevronUp v-if="sortIcon('size') === 'asc'" class="w-3 h-3" />
-                    <ChevronDown v-else-if="sortIcon('size') === 'desc'" class="w-3 h-3" />
-                    <ChevronsUpDown v-else class="w-3 h-3 text-muted-foreground/50" />
-                  </div>
-                </TableHead>
-                <!-- Sortable Modified -->
-                <TableHead class="w-28 hidden md:table-cell cursor-pointer select-none" @click="store.setSort('modified')">
-                  <div class="flex items-center gap-1">
-                    Modified
-                    <ChevronUp v-if="sortIcon('modified') === 'asc'" class="w-3 h-3" />
-                    <ChevronDown v-else-if="sortIcon('modified') === 'desc'" class="w-3 h-3" />
-                    <ChevronsUpDown v-else class="w-3 h-3 text-muted-foreground/50" />
-                  </div>
-                </TableHead>
-                <TableHead class="w-24 hidden sm:table-cell">Visibility</TableHead>
-                <TableHead class="w-10"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <!-- Folder rows -->
-              <ContextMenu v-for="prefix in store.sortedPrefixes" :key="prefix">
+          <ScrollArea class="min-h-0 flex-1">
+            <div class="space-y-0.5 p-2">
+              <!-- Bucket root drop target -->
+              <div
+                class="flex h-8 cursor-pointer select-none items-center gap-2 rounded-lg px-2 text-sm transition-colors"
+                :class="[
+                  treeDropTarget === '' ? 'bg-primary/10 ring-1 ring-inset ring-primary' : '',
+                  !store.currentPrefix ? 'bg-accent font-medium text-accent-foreground' : 'text-foreground/80 hover:bg-muted hover:text-foreground',
+                ]"
+                @click="store.navigateToPrefix('')"
+                @dragover="onTreeDragOver($event, '')"
+                @dragleave="onTreeDragLeave()"
+                @drop="onTreeDrop($event, '')"
+              >
+                <HardDrive class="size-4 shrink-0 text-muted-foreground" />
+                <span class="truncate">{{ store.selectedBucket }}</span>
+              </div>
+              <!-- Tree nodes -->
+              <ContextMenu v-for="node in store.treeRoots" :key="node.prefix">
                 <ContextMenuTrigger as-child>
-                  <TableRow
-                    class="cursor-pointer hover:bg-accent/50 transition-colors"
-                    :class="dropTargetPrefix === prefix ? 'bg-primary/10 ring-1 ring-inset ring-primary' : ''"
-                    @click="store.navigateToPrefix(prefix)"
-                    @dragover="onFolderDragOver($event, prefix)"
-                    @dragleave="onFolderDragLeave($event)"
-                    @drop="onFolderDrop($event, prefix)"
-                  >
-                    <TableCell class="pl-4" @click.stop>
-                      <Checkbox
-                        :modelValue="store.selectedKeys.includes('__prefix__' + prefix)"
-                        @update:modelValue="store.toggleSelect('__prefix__' + prefix)"
-                      />
-                    </TableCell>
-                    <TableCell class="pr-0">
-                      <Folder class="w-4 h-4 text-primary" />
-                    </TableCell>
-                    <TableCell class="text-primary font-medium text-sm">
-                      {{ folderName(prefix) }}
-                    </TableCell>
-                    <TableCell class="text-right text-xs text-muted-foreground hidden sm:table-cell">—</TableCell>
-                    <TableCell class="text-xs text-muted-foreground hidden md:table-cell">—</TableCell>
-                    <TableCell class="hidden sm:table-cell text-xs text-muted-foreground">—</TableCell>
-                    <TableCell></TableCell>
-                  </TableRow>
+                  <TreeNodeRow
+                    :node="node"
+                    :depth="0"
+                    :currentPrefix="store.currentPrefix"
+                    :dropTarget="treeDropTarget"
+                    @navigate="(prefix: string) => store.navigateToPrefix(prefix)"
+                    @expand="(node: TreeNode) => store.expandTreeNode(node)"
+                    @dragover="(e: DragEvent, prefix: string) => onTreeDragOver(e, prefix)"
+                    @dragleave="onTreeDragLeave()"
+                    @drop="(e: DragEvent, prefix: string) => onTreeDrop(e, prefix)"
+                  />
                 </ContextMenuTrigger>
                 <ContextMenuContent class="w-52">
-                  <ContextMenuLabel class="text-xs truncate max-w-48">{{ folderName(prefix) }}</ContextMenuLabel>
+                  <ContextMenuLabel class="max-w-48 truncate text-xs">{{ node.label }}</ContextMenuLabel>
                   <ContextMenuSeparator />
-                  <ContextMenuItem @click="store.navigateToPrefix(prefix)">
-                    <FolderOpen class="w-3.5 h-3.5 mr-2" />
-                    Open folder
-                  </ContextMenuItem>
-                  <ContextMenuItem @click="openNewFolderIn(prefix)">
-                    <FolderPlus class="w-3.5 h-3.5 mr-2" />
+                  <ContextMenuItem @click="openNewFolderIn(node.prefix)">
+                    <FolderPlus class="size-4" />
                     New folder inside
                   </ContextMenuItem>
-                  <ContextMenuItem @click="store.downloadObjectsAsZip(['__prefix__' + prefix], folderName(prefix))">
-                    <Download class="w-3.5 h-3.5 mr-2" />
+                  <ContextMenuItem @click="store.downloadObjectsAsZip(['__prefix__' + node.prefix], node.label)">
+                    <Download class="size-4" />
                     Download
                   </ContextMenuItem>
                   <ContextMenuSeparator />
-                  <ContextMenuItem class="text-destructive focus:text-destructive" @click="store.deletePrefix(prefix)">
-                    <Trash2 class="w-3.5 h-3.5 mr-2" />
+                  <ContextMenuItem class="text-destructive focus:text-destructive" @click="store.deletePrefix(node.prefix)">
+                    <Trash2 class="size-4" />
                     Delete folder
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
+            </div>
+          </ScrollArea>
+        </div>
 
-              <!-- Object rows -->
-              <ContextMenu v-for="obj in store.sortedObjects" :key="obj.key">
-                <ContextMenuTrigger as-child>
-                  <TableRow
-                    class="hover:bg-accent/50 transition-colors"
-                    :class="draggingRowKey === obj.key ? 'opacity-50' : ''"
-                    draggable="true"
-                    @dragstart="onRowDragStart($event, obj.key)"
-                    @dragend="onRowDragEnd"
-                  >
-                    <TableCell class="pl-4">
-                      <Checkbox
-                        :modelValue="store.selectedKeys.includes(obj.key)"
-                        @update:modelValue="store.toggleSelect(obj.key)"
-                      />
-                    </TableCell>
-                    <TableCell class="pr-0">
-                      <File class="w-4 h-4 text-muted-foreground" />
-                    </TableCell>
-                    <TableCell class="text-sm max-w-[140px] sm:max-w-xs">
-                      <span class="truncate block" :title="obj.key">{{ fileName(obj.key) }}</span>
-                      <span class="text-xs text-muted-foreground font-mono hidden sm:block">{{ obj.etag }}</span>
-                    </TableCell>
-                    <TableCell class="text-right text-xs text-muted-foreground tabular-nums hidden sm:table-cell">
-                      {{ formatSize(obj.size) }}
-                    </TableCell>
-                    <TableCell class="text-xs text-muted-foreground hidden md:table-cell">
-                      {{ formatDate(obj.lastModified) }}
-                    </TableCell>
-                    <TableCell class="hidden sm:table-cell">
-                      <Skeleton v-if="store.loadingVisibility" class="h-5 w-16" />
-                      <Badge
-                        v-else-if="bucketIsPublic"
-                        variant="outline"
-                        class="text-xs gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-                      >
-                        <Globe class="w-3 h-3" />
-                        Public
-                      </Badge>
-                      <Badge v-else variant="secondary" class="text-xs gap-1">
-                        <Lock class="w-3 h-3" />
-                        Private
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger as-child>
-                          <Button variant="ghost" size="icon-sm">
-                            <MoreHorizontal class="w-3.5 h-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel class="text-xs truncate max-w-48">{{ fileName(obj.key) }}</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem @click="store.downloadObject(obj.key)">
-                            <Download class="w-3.5 h-3.5 mr-2" />Download
-                          </DropdownMenuItem>
-                          <DropdownMenuItem @click="store.copyObjectUrl(obj.key)">
-                            <Link class="w-3.5 h-3.5 mr-2" />{{ copyUrlLabel() }}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            v-if="!bucketIsPublic"
-                            @click="openVisibilityConfirm(true)"
-                          >
-                            <Globe class="w-3.5 h-3.5 mr-2" />Make public
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            v-else
-                            @click="openVisibilityConfirm(false)"
-                          >
-                            <Lock class="w-3.5 h-3.5 mr-2" />Make private
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem class="text-destructive focus:text-destructive" @click="store.removeObject(obj.key)">
-                            <Trash2 class="w-3.5 h-3.5 mr-2" />Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                </ContextMenuTrigger>
-                <ContextMenuContent class="w-52">
-                  <!-- Context-aware label -->
-                  <ContextMenuLabel class="text-xs truncate max-w-48">
-                    <template v-if="store.selectedKeys.includes(obj.key) && store.selectedKeys.length > 1">
-                      {{ store.selectedKeys.length }} items selected
-                    </template>
-                    <template v-else>{{ fileName(obj.key) }}</template>
-                  </ContextMenuLabel>
-                  <ContextMenuSeparator />
-                  <!-- Download — single file or multiple (auto-ZIP) -->
-                  <ContextMenuItem
-                    v-if="!store.selectedKeys.includes(obj.key) || store.selectedKeys.length === 1"
-                    @click="store.downloadObject(obj.key)"
-                  >
-                    <Download class="w-3.5 h-3.5 mr-2" />
-                    Download
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    v-else
-                    @click="store.downloadObjectsAsZip(contextKeys(obj.key), zipNameFor(contextKeys(obj.key)))"
-                  >
-                    <Download class="w-3.5 h-3.5 mr-2" />
-                    Download {{ store.selectedKeys.length }} items
-                  </ContextMenuItem>
-                  <!-- Copy URL — single only -->
-                  <ContextMenuItem
-                    v-if="!store.selectedKeys.includes(obj.key) || store.selectedKeys.length === 1"
-                    @click="store.copyObjectUrl(obj.key)"
-                  >
-                    <Link class="w-3.5 h-3.5 mr-2" />
-                    {{ copyUrlLabel() }}
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    v-if="!bucketIsPublic"
-                    @click="openVisibilityConfirm(true)"
-                  >
-                    <Globe class="w-3.5 h-3.5 mr-2" />
-                    Make public
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    v-else
-                    @click="openVisibilityConfirm(false)"
-                  >
-                    <Lock class="w-3.5 h-3.5 mr-2" />
-                    Make private
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <!-- Single delete -->
-                  <ContextMenuItem
-                    v-if="!store.selectedKeys.includes(obj.key) || store.selectedKeys.length === 1"
-                    class="text-destructive focus:text-destructive"
-                    @click="store.removeObject(obj.key)"
-                  >
-                    <Trash2 class="w-3.5 h-3.5 mr-2" />
-                    Delete
-                  </ContextMenuItem>
-                  <!-- Bulk delete -->
-                  <ContextMenuItem
-                    v-else
-                    class="text-destructive focus:text-destructive"
-                    @click="showDeleteSelected = true"
-                  >
-                    <Trash2 class="w-3.5 h-3.5 mr-2" />
-                    Delete {{ store.selectedKeys.length }} items
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
-            </TableBody>
-          </Table>
+        <!-- Objects -->
+        <div
+          class="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+          @dragenter="!draggingRowKey ? onDragEnter($event) : undefined"
+          @dragleave="!draggingRowKey ? onDragLeave($event) : undefined"
+          @dragover="!draggingRowKey ? onDragOver($event) : undefined"
+          @drop="!draggingRowKey ? onDrop($event) : undefined"
+        >
+          <!-- File-upload drag overlay -->
+          <div
+            v-if="isDragging && !draggingRowKey"
+            class="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-primary bg-background/90"
+          >
+            <Upload class="size-8 text-primary" />
+            <p class="text-sm font-medium">Drop files to upload</p>
+          </div>
+
+          <!-- Header: breadcrumb + visibility -->
+          <PaneHeader back @back="goBackToList">
+            <template #title>
+              <Breadcrumb class="min-w-0 overflow-hidden">
+                <BreadcrumbList class="flex-nowrap overflow-hidden">
+                  <BreadcrumbItem class="min-w-0">
+                    <BreadcrumbPage v-if="store.breadcrumbs.length === 0" class="truncate text-sm font-semibold">
+                      {{ store.selectedBucket }}
+                    </BreadcrumbPage>
+                    <BreadcrumbLink v-else class="max-w-32 cursor-pointer truncate text-sm md:max-w-none" @click="store.navigateToPrefix('')">
+                      {{ store.selectedBucket }}
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <template v-for="(crumb, i) in store.breadcrumbs" :key="crumb.prefix">
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem class="min-w-0">
+                      <BreadcrumbPage v-if="i === store.breadcrumbs.length - 1" class="truncate text-sm font-semibold">
+                        {{ crumb.label }}
+                      </BreadcrumbPage>
+                      <BreadcrumbLink v-else class="max-w-24 cursor-pointer truncate text-sm md:max-w-none" @click="store.navigateToPrefix(crumb.prefix)">
+                        {{ crumb.label }}
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                  </template>
+                </BreadcrumbList>
+              </Breadcrumb>
+            </template>
+            <template #actions>
+              <Button
+                v-if="store.currentPrefix"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Go up"
+                title="Go up"
+                @click="store.navigateUp()"
+              >
+                <ArrowUp class="size-4" />
+              </Button>
+              <Skeleton v-if="store.loadingVisibility" class="hidden h-5 w-16 sm:block" />
+              <Badge v-else-if="bucketIsPublic" variant="success" class="hidden sm:inline-flex">
+                <Globe />
+                Public
+              </Badge>
+              <Badge v-else variant="secondary" class="hidden sm:inline-flex">
+                <Lock />
+                Private
+              </Badge>
+            </template>
+          </PaneHeader>
+
+          <!-- Toolbar: filter + actions -->
+          <div class="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+            <div class="relative min-w-0 flex-1">
+              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                :model-value="store.searchQuery"
+                placeholder="Filter by name…"
+                class="h-8 pl-8 pr-8"
+                @update:model-value="onSearchInput(String($event))"
+              />
+              <Button
+                v-if="store.searchQuery"
+                variant="ghost"
+                size="icon-xs"
+                class="absolute right-0.5 top-1/2 -translate-y-1/2"
+                aria-label="Clear filter"
+                @click="clearSearch"
+              >
+                <X class="size-3.5" />
+              </Button>
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Refresh storage"
+                title="Refresh storage"
+                :disabled="refreshing"
+                @click="store.refresh()"
+              >
+                <RefreshCw class="size-4" :class="refreshing ? 'animate-spin' : ''" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" aria-label="New folder" title="New folder" @click="showCreateFolder = true">
+                <FolderPlus class="size-4" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" aria-label="Upload folder" title="Upload folder" @click="triggerFolderUpload">
+                <FolderUp class="size-4" />
+              </Button>
+              <Button variant="outline" size="sm" title="Upload files" @click="triggerUpload">
+                <Upload class="size-3.5" />
+                <span class="hidden sm:inline">Upload</span>
+              </Button>
+            </div>
+          </div>
+
+          <!-- Selection bar -->
+          <div
+            v-if="store.hasSelection"
+            class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-4 py-2"
+          >
+            <span class="mr-auto text-sm font-medium tabular-nums">{{ store.selectedKeys.length }} selected</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Download selected"
+              @click="store.downloadObjectsAsZip(store.selectedKeys.filter(k => !k.startsWith('__prefix__')), store.selectedBucket!)"
+            >
+              <Download class="size-3.5" />
+              <span class="hidden sm:inline">Download</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              :title="bucketIsPublic ? 'Make bucket private' : 'Make bucket public'"
+              @click="openVisibilityConfirm(!bucketIsPublic)"
+            >
+              <Globe v-if="!bucketIsPublic" class="size-3.5" />
+              <Lock v-else class="size-3.5" />
+              <span class="hidden sm:inline">{{ bucketIsPublic ? 'Make private' : 'Make public' }}</span>
+            </Button>
+            <Button variant="destructive" size="sm" title="Delete selected" @click="showDeleteSelected = true">
+              <Trash2 class="size-3.5" />
+              <span class="hidden sm:inline">Delete</span>
+            </Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Clear selection" title="Clear selection" @click="store.clearSelection()">
+              <X class="size-4" />
+            </Button>
+          </div>
+
+          <!-- Upload / download progress -->
+          <div v-if="store.uploading" class="shrink-0 space-y-1.5 border-b border-border bg-muted/40 px-4 py-2">
+            <div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span class="truncate">{{ store.uploadFileName }}</span>
+              <span class="shrink-0 tabular-nums">{{ store.uploadProgress }}%</span>
+            </div>
+            <Progress :model-value="store.uploadProgress" class="h-1.5" />
+          </div>
+
+          <!-- ── Object table ─────────────────────────────────────────────── -->
+          <ScrollArea class="min-h-0 flex-1">
+            <!-- Loading skeletons -->
+            <div v-if="store.loadingObjects" class="space-y-2 p-4">
+              <Skeleton v-for="i in 6" :key="i" class="h-10 w-full rounded-lg" />
+            </div>
+
+            <!-- Empty states -->
+            <EmptyState
+              v-else-if="store.sortedObjects.length === 0 && store.sortedPrefixes.length === 0 && store.searchQuery"
+              variant="fill"
+              :icon="Search"
+              title="No matches"
+            >
+              No objects match "{{ store.searchQuery }}".
+              <template #actions>
+                <Button variant="outline" size="sm" @click="clearSearch">Clear filter</Button>
+              </template>
+            </EmptyState>
+            <EmptyState
+              v-else-if="store.sortedObjects.length === 0 && store.sortedPrefixes.length === 0"
+              variant="fill"
+              :icon="FolderOpen"
+              title="This folder is empty"
+            >
+              Drop files here or upload them.
+              <template #actions>
+                <Button variant="outline" size="sm" @click="triggerUpload">
+                  <Upload class="size-3.5" />
+                  Upload files
+                </Button>
+              </template>
+            </EmptyState>
+
+            <!-- Table -->
+            <Table v-else class="data-table">
+              <TableHeader>
+                <TableRow class="hover:bg-transparent">
+                  <TableHead class="w-10">
+                    <Checkbox :modelValue="selectAllState" aria-label="Select all" @update:modelValue="handleSelectAll" />
+                  </TableHead>
+                  <TableHead class="cursor-pointer select-none" @click="store.setSort('name')">
+                    <div class="flex items-center gap-1">
+                      Name
+                      <ChevronUp v-if="sortIcon('name') === 'asc'" class="size-3" />
+                      <ChevronDown v-else-if="sortIcon('name') === 'desc'" class="size-3" />
+                      <ChevronsUpDown v-else class="size-3 text-muted-foreground/50" />
+                    </div>
+                  </TableHead>
+                  <TableHead class="hidden w-24 cursor-pointer select-none text-right sm:table-cell" @click="store.setSort('size')">
+                    <div class="flex items-center justify-end gap-1">
+                      Size
+                      <ChevronUp v-if="sortIcon('size') === 'asc'" class="size-3" />
+                      <ChevronDown v-else-if="sortIcon('size') === 'desc'" class="size-3" />
+                      <ChevronsUpDown v-else class="size-3 text-muted-foreground/50" />
+                    </div>
+                  </TableHead>
+                  <TableHead class="hidden w-40 cursor-pointer select-none lg:table-cell" @click="store.setSort('modified')">
+                    <div class="flex items-center gap-1">
+                      Modified
+                      <ChevronUp v-if="sortIcon('modified') === 'asc'" class="size-3" />
+                      <ChevronDown v-else-if="sortIcon('modified') === 'desc'" class="size-3" />
+                      <ChevronsUpDown v-else class="size-3 text-muted-foreground/50" />
+                    </div>
+                  </TableHead>
+                  <TableHead class="hidden w-28 xl:table-cell">Visibility</TableHead>
+                  <TableHead class="w-12"><span class="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <!-- Folder rows -->
+                <ContextMenu v-for="prefix in store.sortedPrefixes" :key="prefix">
+                  <ContextMenuTrigger as-child>
+                    <TableRow
+                      class="cursor-pointer"
+                      :class="dropTargetPrefix === prefix ? 'bg-primary/10 ring-1 ring-inset ring-primary' : ''"
+                      @click="store.navigateToPrefix(prefix)"
+                      @dragover="onFolderDragOver($event, prefix)"
+                      @dragleave="onFolderDragLeave($event)"
+                      @drop="onFolderDrop($event, prefix)"
+                    >
+                      <TableCell @click.stop>
+                        <Checkbox
+                          :modelValue="store.selectedKeys.includes('__prefix__' + prefix)"
+                          :aria-label="`Select ${folderName(prefix)}`"
+                          @update:modelValue="store.toggleSelect('__prefix__' + prefix)"
+                        />
+                      </TableCell>
+                      <TableCell class="max-w-0">
+                        <div class="flex min-w-0 items-center gap-2.5">
+                          <Folder class="size-4 shrink-0 text-primary" />
+                          <span class="truncate font-medium">{{ folderName(prefix) }}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell class="hidden text-right text-muted-foreground sm:table-cell">—</TableCell>
+                      <TableCell class="hidden text-muted-foreground lg:table-cell">—</TableCell>
+                      <TableCell class="hidden text-muted-foreground xl:table-cell">—</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent class="w-52">
+                    <ContextMenuLabel class="max-w-48 truncate text-xs">{{ folderName(prefix) }}</ContextMenuLabel>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem @click="store.navigateToPrefix(prefix)">
+                      <FolderOpen class="size-4" />
+                      Open folder
+                    </ContextMenuItem>
+                    <ContextMenuItem @click="openNewFolderIn(prefix)">
+                      <FolderPlus class="size-4" />
+                      New folder inside
+                    </ContextMenuItem>
+                    <ContextMenuItem @click="store.downloadObjectsAsZip(['__prefix__' + prefix], folderName(prefix))">
+                      <Download class="size-4" />
+                      Download
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem class="text-destructive focus:text-destructive" @click="store.deletePrefix(prefix)">
+                      <Trash2 class="size-4" />
+                      Delete folder
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+
+                <!-- Object rows -->
+                <ContextMenu v-for="obj in store.sortedObjects" :key="obj.key">
+                  <ContextMenuTrigger as-child>
+                    <TableRow
+                      :class="draggingRowKey === obj.key ? 'opacity-50' : ''"
+                      draggable="true"
+                      @dragstart="onRowDragStart($event, obj.key)"
+                      @dragend="onRowDragEnd"
+                    >
+                      <TableCell>
+                        <Checkbox
+                          :modelValue="store.selectedKeys.includes(obj.key)"
+                          :aria-label="`Select ${fileName(obj.key)}`"
+                          @update:modelValue="store.toggleSelect(obj.key)"
+                        />
+                      </TableCell>
+                      <TableCell class="max-w-0">
+                        <div class="flex min-w-0 items-center gap-2.5">
+                          <File class="size-4 shrink-0 text-muted-foreground" />
+                          <div class="min-w-0">
+                            <span class="block truncate" :title="obj.key">{{ fileName(obj.key) }}</span>
+                            <!-- Compact meta for narrow screens -->
+                            <span class="block truncate text-xs text-muted-foreground sm:hidden">
+                              {{ formatSize(obj.size) }} · {{ formatDate(obj.lastModified) }}
+                            </span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell class="hidden text-right text-muted-foreground sm:table-cell">
+                        {{ formatSize(obj.size) }}
+                      </TableCell>
+                      <TableCell class="hidden text-muted-foreground lg:table-cell">
+                        {{ formatDate(obj.lastModified) }}
+                      </TableCell>
+                      <TableCell class="hidden xl:table-cell">
+                        <Skeleton v-if="store.loadingVisibility" class="h-5 w-16" />
+                        <Badge v-else-if="bucketIsPublic" variant="success">
+                          <Globe />
+                          Public
+                        </Badge>
+                        <Badge v-else variant="secondary">
+                          <Lock />
+                          Private
+                        </Badge>
+                      </TableCell>
+                      <TableCell class="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger as-child>
+                            <Button variant="ghost" size="icon-xs" :aria-label="`${fileName(obj.key)} actions`">
+                              <MoreHorizontal class="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel class="max-w-48 truncate text-xs">{{ fileName(obj.key) }}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem @click="store.downloadObject(obj.key)">
+                              <Download class="size-4" />Download
+                            </DropdownMenuItem>
+                            <DropdownMenuItem @click="store.copyObjectUrl(obj.key)">
+                              <Link class="size-4" />{{ copyUrlLabel() }}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem v-if="!bucketIsPublic" @click="openVisibilityConfirm(true)">
+                              <Globe class="size-4" />Make public
+                            </DropdownMenuItem>
+                            <DropdownMenuItem v-else @click="openVisibilityConfirm(false)">
+                              <Lock class="size-4" />Make private
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem class="text-destructive focus:text-destructive" @click="store.removeObject(obj.key)">
+                              <Trash2 class="size-4" />Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent class="w-52">
+                    <!-- Context-aware label -->
+                    <ContextMenuLabel class="max-w-48 truncate text-xs">
+                      <template v-if="store.selectedKeys.includes(obj.key) && store.selectedKeys.length > 1">
+                        {{ store.selectedKeys.length }} items selected
+                      </template>
+                      <template v-else>{{ fileName(obj.key) }}</template>
+                    </ContextMenuLabel>
+                    <ContextMenuSeparator />
+                    <!-- Download — single file or multiple (auto-ZIP) -->
+                    <ContextMenuItem
+                      v-if="!store.selectedKeys.includes(obj.key) || store.selectedKeys.length === 1"
+                      @click="store.downloadObject(obj.key)"
+                    >
+                      <Download class="size-4" />
+                      Download
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      v-else
+                      @click="store.downloadObjectsAsZip(contextKeys(obj.key), zipNameFor(contextKeys(obj.key)))"
+                    >
+                      <Download class="size-4" />
+                      Download {{ store.selectedKeys.length }} items
+                    </ContextMenuItem>
+                    <!-- Copy URL — single only -->
+                    <ContextMenuItem
+                      v-if="!store.selectedKeys.includes(obj.key) || store.selectedKeys.length === 1"
+                      @click="store.copyObjectUrl(obj.key)"
+                    >
+                      <Link class="size-4" />
+                      {{ copyUrlLabel() }}
+                    </ContextMenuItem>
+                    <ContextMenuItem v-if="!bucketIsPublic" @click="openVisibilityConfirm(true)">
+                      <Globe class="size-4" />
+                      Make public
+                    </ContextMenuItem>
+                    <ContextMenuItem v-else @click="openVisibilityConfirm(false)">
+                      <Lock class="size-4" />
+                      Make private
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <!-- Single delete -->
+                    <ContextMenuItem
+                      v-if="!store.selectedKeys.includes(obj.key) || store.selectedKeys.length === 1"
+                      class="text-destructive focus:text-destructive"
+                      @click="store.removeObject(obj.key)"
+                    >
+                      <Trash2 class="size-4" />
+                      Delete
+                    </ContextMenuItem>
+                    <!-- Bulk delete -->
+                    <ContextMenuItem
+                      v-else
+                      class="text-destructive focus:text-destructive"
+                      @click="showDeleteSelected = true"
+                    >
+                      <Trash2 class="size-4" />
+                      Delete {{ store.selectedKeys.length }} items
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              </TableBody>
+            </Table>
+          </ScrollArea>
 
           <!-- Footer summary -->
           <div
             v-if="!store.loadingObjects && (store.sortedObjects.length > 0 || store.sortedPrefixes.length > 0)"
-            class="px-4 py-2 border-t border-border text-xs text-muted-foreground flex items-center justify-between"
+            class="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-2 text-xs text-muted-foreground"
           >
-            <span>
+            <span class="truncate">
               <template v-if="store.searchQuery">
                 {{ store.sortedPrefixes.length + store.sortedObjects.length }} {{ (store.sortedPrefixes.length + store.sortedObjects.length) === 1 ? 'result' : 'results' }}
               </template>
@@ -1057,200 +1126,92 @@ onMounted(() => {
                 {{ store.sortedPrefixes.length > 0 ? `${store.sortedPrefixes.length} ${store.sortedPrefixes.length === 1 ? 'folder' : 'folders'}, ` : '' }}{{ store.sortedObjects.length }} {{ store.sortedObjects.length === 1 ? 'object' : 'objects' }}
               </template>
             </span>
-            <span>{{ formatSize(store.totalSize) }} total</span>
+            <span class="shrink-0 tabular-nums">{{ formatSize(store.totalSize) }} total</span>
           </div>
-        </ScrollArea>
-
-        <!-- ── Floating Action Bar ───────────────────────────────────────── -->
-        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-2 py-1.5 rounded-full shadow-lg border border-border bg-background/95 backdrop-blur-sm">
-
-          <Button
-            variant="ghost"
-            size="sm"
-            class="h-8 text-xs gap-1.5 rounded-full px-3"
-            title="Refresh storage"
-            :disabled="refreshing"
-            @click="store.refresh()"
-          >
-            <RefreshCw class="w-3.5 h-3.5" :class="refreshing ? 'animate-spin' : ''" />
-            <span class="hidden sm:inline">Refresh</span>
-          </Button>
-
-          <!-- New Folder -->
-          <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="New folder" @click="showCreateFolder = true">
-            <FolderPlus class="w-3.5 h-3.5" />
-            <span class="hidden sm:inline">New Folder</span>
-          </Button>
-
-          <!-- Upload files -->
-          <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="Upload files" @click="triggerUpload">
-            <Upload class="w-3.5 h-3.5" />
-            <span class="hidden sm:inline">Upload</span>
-          </Button>
-
-          <!-- Upload folder -->
-          <Button variant="ghost" size="sm" class="h-8 text-xs gap-1.5 rounded-full px-3" title="Upload folder" @click="triggerFolderUpload">
-            <Folder class="w-3.5 h-3.5" />
-            <span class="hidden sm:inline">Upload Folder</span>
-          </Button>
-
-          <!-- Separator — only visible when items are selected -->
-          <div v-if="store.hasSelection" class="w-px h-5 bg-border mx-1 shrink-0" />
-
-          <!-- Download selected (selection-aware) -->
-          <Transition
-            enter-active-class="transition-all duration-150 ease-out"
-            enter-from-class="opacity-0 scale-75"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition-all duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-75"
-          >
-            <Button
-              v-if="store.hasSelection"
-              variant="ghost"
-              size="sm"
-              class="h-8 text-xs gap-1.5 rounded-full px-3"
-              title="Download selected"
-              @click="store.downloadObjectsAsZip(store.selectedKeys.filter(k => !k.startsWith('__prefix__')), store.selectedBucket!)"
-            >
-              <Download class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Download ({{ store.selectedKeys.filter(k => !k.startsWith('__prefix__')).length }})</span>
-            </Button>
-          </Transition>
-
-          <!-- Visibility toggle (bucket-wide) -->
-          <Transition
-            enter-active-class="transition-all duration-150 ease-out"
-            enter-from-class="opacity-0 scale-75"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition-all duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-75"
-          >
-            <Button
-              v-if="store.hasSelection"
-              variant="ghost"
-              size="sm"
-              class="h-8 text-xs gap-1.5 rounded-full px-3"
-              :title="bucketIsPublic ? 'Make bucket private' : 'Make bucket public'"
-              @click="openVisibilityConfirm(!bucketIsPublic)"
-            >
-              <Globe v-if="!bucketIsPublic" class="w-3.5 h-3.5" />
-              <Lock v-else class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">{{ bucketIsPublic ? 'Make private' : 'Make public' }}</span>
-            </Button>
-          </Transition>
-
-          <!-- Delete selected (selection-aware) -->
-          <Transition
-            enter-active-class="transition-all duration-150 ease-out"
-            enter-from-class="opacity-0 scale-75"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition-all duration-100 ease-in"
-            leave-from-class="opacity-100 scale-100"
-            leave-to-class="opacity-0 scale-75"
-          >
-            <Button
-              v-if="store.hasSelection"
-              variant="destructive"
-              size="sm"
-              class="h-8 text-xs gap-1.5 rounded-full px-3"
-              @click="showDeleteSelected = true"
-            >
-              <Trash2 class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Delete ({{ store.selectedKeys.length }})</span>
-              <span class="sm:hidden">{{ store.selectedKeys.length }}</span>
-            </Button>
-          </Transition>
-
         </div>
-      </template>
-    </div>
+      </div>
+    </template>
+  </SplitView>
 
-    <!-- ── Dialogs ─────────────────────────────────────────────────────────── -->
+  <!-- ── Dialogs ─────────────────────────────────────────────────────────── -->
 
-    <!-- Create bucket -->
-    <Dialog v-model:open="showCreateBucket">
-      <DialogContent class="sm:max-w-sm">
-        <DialogHeader><DialogTitle>Create bucket</DialogTitle></DialogHeader>
-        <div class="py-2">
-          <Input v-model="newBucketName" placeholder="my-bucket" class="h-8 text-sm" @keydown.enter="handleCreateBucket" />
-        </div>
-        <DialogFooter class="gap-2">
-          <DialogClose as-child><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-          <Button size="sm" :disabled="!newBucketName.trim()" @click="handleCreateBucket">Create</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+  <!-- Create bucket -->
+  <Dialog v-model:open="showCreateBucket">
+    <DialogContent class="sm:max-w-sm">
+      <DialogHeader><DialogTitle>New bucket</DialogTitle></DialogHeader>
+      <Input v-model="newBucketName" placeholder="my-bucket" aria-label="Bucket name" @keydown.enter="handleCreateBucket" />
+      <DialogFooter class="gap-2">
+        <DialogClose as-child><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+        <Button size="sm" :disabled="!newBucketName.trim()" @click="handleCreateBucket">Create</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 
-    <!-- Create folder -->
-    <Dialog v-model:open="showCreateFolder">
-      <DialogContent class="sm:max-w-sm">
-        <DialogHeader><DialogTitle>New folder</DialogTitle></DialogHeader>
-        <div class="py-2">
-          <Input v-model="newFolderName" placeholder="folder-name" class="h-8 text-sm" @keydown.enter="handleCreateFolder" />
-        </div>
-        <DialogFooter class="gap-2">
-          <DialogClose as-child><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-          <Button size="sm" :disabled="!newFolderName.trim()" @click="handleCreateFolder">Create</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+  <!-- Create folder -->
+  <Dialog v-model:open="showCreateFolder">
+    <DialogContent class="sm:max-w-sm">
+      <DialogHeader><DialogTitle>New folder</DialogTitle></DialogHeader>
+      <Input v-model="newFolderName" placeholder="folder-name" aria-label="Folder name" @keydown.enter="handleCreateFolder" />
+      <DialogFooter class="gap-2">
+        <DialogClose as-child><Button variant="outline" size="sm">Cancel</Button></DialogClose>
+        <Button size="sm" :disabled="!newFolderName.trim()" @click="handleCreateFolder">Create</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 
-    <!-- Delete bucket confirmation -->
-    <AlertDialog v-model:open="showDeleteBucket">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete '{{ bucketToDelete }}'?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This bucket will be permanently deleted. The bucket must be empty before it can be deleted.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="handleDeleteBucket">Delete</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+  <!-- Delete bucket confirmation -->
+  <AlertDialog v-model:open="showDeleteBucket">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete '{{ bucketToDelete }}'?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This bucket will be permanently deleted. The bucket must be empty before it can be deleted.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+        variant="destructive" @click="handleDeleteBucket">Delete</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
-    <!-- Visibility confirmation -->
-    <AlertDialog v-model:open="showVisibilityConfirm">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {{ pendingVisibilityPublic ? 'Make bucket public?' : 'Make bucket private?' }}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            MaxIO applies visibility at the bucket level. This affects every object in
-            <span class="font-medium text-foreground">{{ pendingVisibilityBucket ?? store.selectedBucket }}</span>
-            — per-file ACLs are not supported.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction @click="handleVisibilityConfirm">
-            {{ pendingVisibilityPublic ? 'Make public' : 'Make private' }}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+  <!-- Visibility confirmation -->
+  <AlertDialog v-model:open="showVisibilityConfirm">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          {{ pendingVisibilityPublic ? 'Make bucket public?' : 'Make bucket private?' }}
+        </AlertDialogTitle>
+        <AlertDialogDescription>
+          MaxIO applies visibility at the bucket level. This affects every object in
+          <span class="font-medium text-foreground">{{ pendingVisibilityBucket ?? store.selectedBucket }}</span>
+          — per-file ACLs are not supported.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction @click="handleVisibilityConfirm">
+          {{ pendingVisibilityPublic ? 'Make public' : 'Make private' }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
-    <!-- Delete selected confirmation -->
-    <AlertDialog v-model:open="showDeleteSelected">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {{ store.selectedKeys.length }} {{ store.selectedKeys.length === 1 ? 'item' : 'items' }}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            These objects will be permanently deleted. This cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="store.deleteSelected(); showDeleteSelected = false">Delete</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-
-  </div>
+  <!-- Delete selected confirmation -->
+  <AlertDialog v-model:open="showDeleteSelected">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete {{ store.selectedKeys.length }} {{ store.selectedKeys.length === 1 ? 'item' : 'items' }}?</AlertDialogTitle>
+        <AlertDialogDescription>
+          These objects will be permanently deleted. This cannot be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+        variant="destructive" @click="store.deleteSelected(); showDeleteSelected = false">Delete</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>

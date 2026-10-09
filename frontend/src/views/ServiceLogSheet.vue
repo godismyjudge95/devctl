@@ -92,22 +92,20 @@ watch(() => props.open, (val) => {
 
 <template>
   <Sheet :open="open" @update:open="(v) => { if (!v) closeLog() }">
-    <SheetContent side="right" class="w-full sm:max-w-2xl flex flex-col p-0">
-      <SheetHeader class="px-5 py-4 border-b border-border shrink-0">
-        <div class="flex items-center gap-2 pr-8">
-          <div class="flex-1 min-w-0">
-            <SheetTitle class="kicker text-[12px]">{{ serviceLabel }}</SheetTitle>
-            <p class="text-[11px] text-muted-foreground mt-0.5">Live logs</p>
-          </div>
-          <Button variant="ghost" size="sm" @click="clearLog">
-            <Eraser class="w-3.5 h-3.5" />
-            Clear
-          </Button>
+    <SheetContent side="right" class="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
+      <SheetHeader class="h-14 shrink-0 flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-0 pr-12">
+        <div class="min-w-0 flex-1">
+          <SheetTitle class="truncate text-sm font-semibold leading-tight">{{ serviceLabel }}</SheetTitle>
+          <p class="text-xs text-muted-foreground">Live logs</p>
         </div>
+        <Button variant="ghost" size="sm" @click="clearLog">
+          <Eraser class="size-3.5" />
+          Clear
+        </Button>
       </SheetHeader>
       <div
         ref="logScroll"
-        class="flex-1 overflow-auto bg-[oklch(0.18_0.014_264)] text-[oklch(0.82_0.04_155)] font-mono text-xs p-4 leading-5"
+        class="flex-1 overflow-auto bg-log-background p-4 font-mono text-xs leading-5 text-log-foreground"
       >
         <div v-if="displayedLogLines.length === 0" class="text-muted-foreground">Waiting for log output…</div>
         <div v-for="(line, i) in displayedLogLines" :key="i"

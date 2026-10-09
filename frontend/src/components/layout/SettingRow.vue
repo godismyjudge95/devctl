@@ -7,13 +7,13 @@ defineProps<{
 </script>
 
 <template>
-  <div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-8 py-4 border-b border-border last:border-b-0">
-    <div class="sm:w-52 shrink-0">
-      <label v-if="for" :for="for" class="text-sm font-medium leading-none cursor-pointer">{{ label }}</label>
+  <div class="flex flex-col gap-2 border-b border-border py-4 last:border-b-0 sm:flex-row sm:items-start sm:gap-8">
+    <div class="shrink-0 space-y-1 sm:w-56">
+      <label v-if="for" :for="for" class="cursor-pointer text-sm font-medium leading-none">{{ label }}</label>
       <p v-else class="text-sm font-medium leading-none">{{ label }}</p>
-      <p v-if="hint" class="text-xs text-muted-foreground mt-1 leading-relaxed">{{ hint }}</p>
+      <p v-if="hint" class="text-xs leading-relaxed text-muted-foreground">{{ hint }}</p>
     </div>
-    <div class="flex-1 min-w-0">
+    <div class="min-w-0 flex-1">
       <slot />
     </div>
   </div>

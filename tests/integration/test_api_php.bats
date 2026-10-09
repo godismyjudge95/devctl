@@ -66,3 +66,21 @@ load setup
   sleep 2
   container_exec grep -q "^html_errors = Off" "$php_ini"
 }
+
+# ─── PHP trusts Caddy's local CA for *.test HTTPS ─────────────────────────────
+# Static PHP OpenSSL does not use the OS trust store. devctl writes a combined
+# CA bundle and points openssl.cafile / curl.cainfo at it so PHP can call
+# https://meilisearch.test, https://s3.maxio.test, and other *.test hosts.
+
+@test "php.ini: openssl.cafile and curl.cainfo point at the CA bundle" {
+  php_ini="${SERVER_ROOT}/php/8.4/php.ini"
+  bundle="${SERVER_ROOT}/php/ca-bundle.crt"
+  container_exec grep -q "^openssl.cafile = ${bundle}" "$php_ini"
+  container_exec grep -q "^curl.cainfo = ${bundle}" "$php_ini"
+}
+
+@test "php CA bundle exists and contains at least one certificate" {
+  bundle="${SERVER_ROOT}/php/ca-bundle.crt"
+  container_exec test -s "$bundle"
+  container_exec grep -q "BEGIN CERTIFICATE" "$bundle"
+}

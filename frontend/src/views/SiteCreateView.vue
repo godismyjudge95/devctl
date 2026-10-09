@@ -12,8 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import Surface from '@/components/layout/Surface.vue'
-import SectionHeader from '@/components/layout/SectionHeader.vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import SettingRow from '@/components/layout/SettingRow.vue'
 
 const store = useSitesStore()
@@ -78,19 +77,14 @@ async function addSite() {
       description="Configure a new local PHP virtual host."
       back-to="/sites"
       back-label="Sites"
-    >
-      <template #actions>
-        <Button variant="outline" @click="router.push('/sites')" :disabled="creating">Cancel</Button>
-        <Button @click="addSite" :disabled="!form.domain || !form.root_path || creating">
-          <Loader2 v-if="creating" class="w-4 h-4 animate-spin" />
-          {{ creating ? 'Creating…' : 'Create' }}
-        </Button>
-      </template>
-    </PageHeader>
+    />
 
-    <Surface>
-      <SectionHeader title="Virtual host" description="Domain, document root, and PHP version." />
-      <div class="px-5 pb-2">
+    <Card>
+      <CardHeader class="border-b">
+        <CardTitle>Virtual host</CardTitle>
+        <CardDescription>Domain, document root, and PHP version.</CardDescription>
+      </CardHeader>
+      <CardContent class="pb-0 sm:pb-0">
         <SettingRow label="Domain" hint="Served at this .test hostname." for="domain">
           <Input id="domain" v-model="form.domain" placeholder="myapp.test" />
         </SettingRow>
@@ -99,13 +93,13 @@ async function addSite() {
         </SettingRow>
         <SettingRow label="Public directory" hint="Optional web root inside the project, e.g. public." for="public_dir">
           <Input id="public_dir" v-model="form.public_dir" placeholder="public" class="font-mono" />
-          <p v-if="detectedFramework" class="text-xs text-muted-foreground mt-1.5">
+          <p v-if="detectedFramework" class="mt-2 text-xs text-muted-foreground">
             Detected: <span class="capitalize">{{ detectedFramework }}</span>
           </p>
         </SettingRow>
         <SettingRow label="PHP version" for="php_version">
           <Select v-model="form.php_version">
-            <SelectTrigger id="php_version">
+            <SelectTrigger id="php_version" class="w-full sm:w-48">
               <SelectValue placeholder="Select version" />
             </SelectTrigger>
             <SelectContent>
@@ -119,11 +113,19 @@ async function addSite() {
           <Input id="aliases" v-model="form.aliases" placeholder="www.myapp.test" />
         </SettingRow>
         <SettingRow label="Force HTTPS" hint="Redirect HTTP to HTTPS for this site." for="https">
-          <div class="flex items-center h-9">
+          <div class="flex h-9 items-center">
             <Checkbox id="https" v-model:checked="form.https" />
           </div>
         </SettingRow>
-      </div>
-    </Surface>
+      </CardContent>
+    </Card>
+
+    <div class="flex flex-wrap items-center justify-end gap-2">
+      <Button variant="outline" :disabled="creating" @click="router.push('/sites')">Cancel</Button>
+      <Button :disabled="!form.domain || !form.root_path || creating" @click="addSite">
+        <Loader2 v-if="creating" class="size-4 animate-spin" />
+        {{ creating ? 'Creating…' : 'Create site' }}
+      </Button>
+    </div>
   </div>
 </template>

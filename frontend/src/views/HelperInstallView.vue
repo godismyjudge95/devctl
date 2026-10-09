@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Download, Loader2, Search } from 'lucide-vue-next'
+import { Download, Loader2, Search, Wrench } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,18 +53,19 @@ async function install(id: string, label: string) {
       back-label="Helpers"
     />
 
-    <EmptyState v-if="!store.loading && store.available.length === 0">
-      All helpers are already installed.
+    <EmptyState v-if="!store.loading && store.available.length === 0" :icon="Wrench" title="All helpers are installed">
+      There is nothing more to add from the catalog.
     </EmptyState>
 
     <Surface v-else class="overflow-hidden">
       <SectionHeader title="Available" description="Pick one to download." />
-      <div class="px-5 pb-4">
+      <div class="px-4 pb-4 sm:px-5">
         <div class="relative">
-          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             v-model="searchQuery"
-            placeholder="Search helpers..."
+            placeholder="Search helpers…"
+            aria-label="Search helpers"
             class="pl-8"
           />
         </div>
@@ -73,14 +74,14 @@ async function install(id: string, label: string) {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead></TableHead>
+            <TableHead class="w-px"><span class="sr-only">Actions</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           <TableRow v-for="h in filtered" :key="h.id">
-            <TableCell>
-              <p class="text-sm font-medium leading-tight">{{ h.label }}</p>
-              <p class="text-xs text-muted-foreground leading-snug line-clamp-1 mt-0.5">{{ h.description }}</p>
+            <TableCell class="whitespace-normal">
+              <p class="text-sm font-medium">{{ h.label }}</p>
+              <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-1">{{ h.description }}</p>
             </TableCell>
             <TableCell class="text-right">
               <Button
@@ -88,8 +89,8 @@ async function install(id: string, label: string) {
                 :disabled="!!store.installing[h.id]"
                 @click="install(h.id, h.label)"
               >
-                <Loader2 v-if="store.installing[h.id]" class="w-3.5 h-3.5 animate-spin" />
-                <Download v-else class="w-3.5 h-3.5" />
+                <Loader2 v-if="store.installing[h.id]" class="size-3.5 animate-spin" />
+                <Download v-else class="size-3.5" />
                 Install
               </Button>
             </TableCell>

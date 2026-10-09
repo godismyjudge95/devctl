@@ -24,7 +24,7 @@ import PageHeader from '@/components/layout/PageHeader.vue'
 import Surface from '@/components/layout/Surface.vue'
 import SectionHeader from '@/components/layout/SectionHeader.vue'
 import SettingRow from '@/components/layout/SettingRow.vue'
-import ServiceMark from '@/components/layout/ServiceMark.vue'
+import { Badge } from '@/components/ui/badge'
 import EmptyState from '@/components/layout/EmptyState.vue'
 
 const route = useRoute()
@@ -201,23 +201,11 @@ onMounted(loadSettings)
       description="Changes restart the service when you save."
       back-to="/services"
       back-label="Services"
-    >
-      <template #actions>
-        <Button variant="outline" @click="router.push('/services')">Cancel</Button>
-        <Button v-if="known && !isPostgres(serviceId)" @click="saveSettings" :disabled="saving || loading">
-          <Loader2 v-if="saving" class="w-4 h-4 animate-spin" />
-          {{ saving ? 'Saving…' : 'Save & Restart' }}
-        </Button>
-      </template>
-    </PageHeader>
+    />
 
-    <div class="flex items-center gap-2.5 text-sm text-muted-foreground">
-      <ServiceMark :id="serviceId" size="sm" />
-      <span>{{ serviceLabel }}</span>
-    </div>
-
-    <div v-if="loading" class="text-sm text-muted-foreground py-8 text-center">
-      <Loader2 class="w-4 h-4 animate-spin inline-block mr-2" />Loading…
+    <div v-if="loading" class="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+      <Loader2 class="size-4 animate-spin" />
+      Loading…
     </div>
 
     <EmptyState v-else-if="!known" title="No settings">
@@ -226,19 +214,19 @@ onMounted(loadSettings)
 
     <Surface v-else-if="isMailpit(serviceId)">
       <SectionHeader title="Ports" description="Mailpit restarts when saved." />
-      <div class="px-5 pb-2">
+      <div class="px-4 pb-1 sm:px-5">
         <SettingRow label="HTTP port" for="svc_mailpit_http">
-          <Input id="svc_mailpit_http" v-model="mailpitHttpPort" class="font-mono" />
+          <Input id="svc_mailpit_http" v-model="mailpitHttpPort" class="font-mono sm:max-w-xs" />
         </SettingRow>
         <SettingRow label="SMTP port" for="svc_mailpit_smtp">
-          <Input id="svc_mailpit_smtp" v-model="mailpitSmtpPort" class="font-mono" />
+          <Input id="svc_mailpit_smtp" v-model="mailpitSmtpPort" class="font-mono sm:max-w-xs" />
         </SettingRow>
       </div>
     </Surface>
 
     <Surface v-else-if="isMeilisearch(serviceId)">
       <SectionHeader title="Runtime" description="Meilisearch restarts when saved." />
-      <div class="px-5 pb-2">
+      <div class="px-4 pb-1 sm:px-5">
         <SettingRow label="Environment variables" hint="One KEY=VALUE entry per line." for="meilisearch_env">
           <Textarea
             id="meilisearch_env"
@@ -260,48 +248,48 @@ onMounted(loadSettings)
 
     <Surface v-else-if="isPHPFPM(serviceId)">
       <SectionHeader title="php.ini" description="PHP-FPM restarts when saved." />
-      <div class="px-5 pb-2">
+      <div class="px-4 pb-1 sm:px-5">
         <SettingRow label="memory_limit" for="php_memory_limit">
-          <Input id="php_memory_limit" v-model="phpMemoryLimit" class="font-mono" placeholder="256M" />
+          <Input id="php_memory_limit" v-model="phpMemoryLimit" class="font-mono sm:max-w-xs" placeholder="256M" />
         </SettingRow>
         <SettingRow label="upload_max_filesize" for="php_upload_max">
-          <Input id="php_upload_max" v-model="phpUploadMaxFilesize" class="font-mono" placeholder="128M" />
+          <Input id="php_upload_max" v-model="phpUploadMaxFilesize" class="font-mono sm:max-w-xs" placeholder="128M" />
         </SettingRow>
         <SettingRow label="post_max_size" for="php_post_max">
-          <Input id="php_post_max" v-model="phpPostMaxSize" class="font-mono" placeholder="128M" />
+          <Input id="php_post_max" v-model="phpPostMaxSize" class="font-mono sm:max-w-xs" placeholder="128M" />
         </SettingRow>
         <SettingRow label="max_execution_time" for="php_max_exec">
-          <Input id="php_max_exec" v-model="phpMaxExecutionTime" class="font-mono" placeholder="120" />
+          <Input id="php_max_exec" v-model="phpMaxExecutionTime" class="font-mono sm:max-w-xs" placeholder="120" />
         </SettingRow>
       </div>
     </Surface>
 
     <Surface v-else-if="isMySQL(serviceId)">
       <SectionHeader title="Listen" description="MySQL restarts when saved." />
-      <div class="px-5 pb-2">
+      <div class="px-4 pb-1 sm:px-5">
         <SettingRow label="Port" for="mysql_port">
-          <Input id="mysql_port" v-model="mysqlPort" class="font-mono" placeholder="3306" />
+          <Input id="mysql_port" v-model="mysqlPort" class="font-mono sm:max-w-xs" placeholder="3306" />
         </SettingRow>
         <SettingRow label="Bind address" for="mysql_bind">
-          <Input id="mysql_bind" v-model="mysqlBindAddress" class="font-mono" placeholder="127.0.0.1" />
+          <Input id="mysql_bind" v-model="mysqlBindAddress" class="font-mono sm:max-w-xs" placeholder="127.0.0.1" />
         </SettingRow>
       </div>
     </Surface>
 
     <Surface v-else-if="isDNS(serviceId)">
       <SectionHeader title="Resolver" description="The DNS server restarts when saved." />
-      <div class="px-5 pb-2">
+      <div class="px-4 pb-1 sm:px-5">
         <SettingRow label="Port" for="dns_port">
-          <Input id="dns_port" v-model="dnsPort" class="font-mono" placeholder="5354" />
+          <Input id="dns_port" v-model="dnsPort" class="font-mono sm:max-w-xs" placeholder="5354" />
         </SettingRow>
         <SettingRow label="TLDs" for="dns_tld">
-          <Input id="dns_tld" v-model="dnsTLD" class="font-mono" placeholder=".test" />
+          <Input id="dns_tld" v-model="dnsTLD" class="font-mono sm:max-w-xs" placeholder=".test" />
         </SettingRow>
         <SettingRow label="Target IP" for="dns_target_ip">
-          <div class="flex gap-2">
-            <Input id="dns_target_ip" v-model="dnsTargetIP" class="font-mono flex-1" placeholder="192.168.1.x" />
+          <div class="flex gap-2 sm:max-w-md">
+            <Input id="dns_target_ip" v-model="dnsTargetIP" class="flex-1 font-mono" placeholder="192.168.1.x" />
             <Button variant="outline" :disabled="dnsDetecting" @click="autoDetectDNSIP">
-              <Loader2 v-if="dnsDetecting" class="w-3.5 h-3.5 animate-spin" />
+              <Loader2 v-if="dnsDetecting" class="size-3.5 animate-spin" />
               Auto-detect
             </Button>
           </div>
@@ -318,7 +306,7 @@ onMounted(loadSettings)
             :disabled="dnsSetupLoading"
             @click="configureSystemDNS"
           >
-            <Loader2 v-if="dnsSetupLoading" class="w-3.5 h-3.5 animate-spin" />
+            <Loader2 v-if="dnsSetupLoading" class="size-3.5 animate-spin" />
             Configure
           </Button>
           <Button
@@ -327,7 +315,7 @@ onMounted(loadSettings)
             :disabled="dnsSetupLoading"
             @click="removeSystemDNS"
           >
-            <Loader2 v-if="dnsSetupLoading" class="w-3.5 h-3.5 animate-spin" />
+            <Loader2 v-if="dnsSetupLoading" class="size-3.5 animate-spin" />
             Remove
           </Button>
         </SettingRow>
@@ -339,11 +327,11 @@ onMounted(loadSettings)
         title="Managed extensions"
         description="Installed with PostgreSQL. pg_clickhouse wires into template1 when ClickHouse is also installed. Contrib search modules are created in every connectable database."
       />
-      <div class="px-5 pb-5">
-        <div v-if="postgresExtensions.length === 0" class="text-sm text-muted-foreground py-4">
+      <div class="px-4 pb-4 sm:px-5 sm:pb-5">
+        <div v-if="postgresExtensions.length === 0" class="py-4 text-sm text-muted-foreground">
           No managed extensions.
         </div>
-        <ul v-else class="divide-y divide-border rounded-xl border">
+        <ul v-else class="divide-y divide-border rounded-lg border border-border">
           <li
             v-for="ext in postgresExtensions"
             :key="ext.id"
@@ -351,24 +339,25 @@ onMounted(loadSettings)
           >
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="font-medium text-sm">{{ ext.label }}</span>
-                <span v-if="ext.version" class="text-xs font-mono text-muted-foreground">{{ ext.version }}</span>
+                <span class="text-sm font-medium">{{ ext.label }}</span>
+                <span v-if="ext.version" class="font-mono text-xs text-muted-foreground">{{ ext.version }}</span>
               </div>
-              <p class="text-xs text-muted-foreground mt-0.5">{{ ext.note }}</p>
+              <p v-if="ext.note && ext.note.toLowerCase() !== 'ready'" class="mt-0.5 text-xs text-muted-foreground">{{ ext.note }}</p>
             </div>
-            <span
-              class="shrink-0 text-[10px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5"
-              :class="ext.ready
-                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                : ext.files_installed
-                  ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
-                  : 'bg-muted text-muted-foreground'"
-            >
+            <Badge :variant="ext.ready ? 'success' : ext.files_installed ? 'warning' : 'secondary'">
               {{ ext.ready ? 'Ready' : ext.files_installed ? 'Partial' : 'Missing' }}
-            </span>
+            </Badge>
           </li>
         </ul>
       </div>
     </Surface>
+
+    <div v-if="!loading" class="flex flex-wrap justify-end gap-2">
+      <Button variant="outline" size="sm" @click="router.push('/services')">Cancel</Button>
+      <Button v-if="known && !isPostgres(serviceId)" size="sm" :disabled="saving || loading" @click="saveSettings">
+        <Loader2 v-if="saving" class="size-3.5 animate-spin" />
+        {{ saving ? 'Saving…' : 'Save & Restart' }}
+      </Button>
+    </div>
   </div>
 </template>

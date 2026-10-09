@@ -30,9 +30,12 @@ import {
 } from '@/components/ui/select'
 import StatusDot from '@/components/layout/StatusDot.vue'
 import ResizeHandle from '@/components/layout/ResizeHandle.vue'
+import PaneHeader from '@/components/layout/PaneHeader.vue'
+import PaneListItem from '@/components/layout/PaneListItem.vue'
+import EmptyState from '@/components/layout/EmptyState.vue'
 import CodeEditor from '@/components/CodeEditor.vue'
 import {
-  ArrowLeft, ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown,
   Copy, Database, Download, Play, Plus, RefreshCw, Search, Table2,
   Trash2, X, KeyRound, Rows3, PanelRight, Pencil,
 } from 'lucide-vue-next'
@@ -52,6 +55,21 @@ watch(() => store.selectedTable, (val) => {
 onMounted(() => {
   store.loadEngines()
 })
+
+// A plain click (no multi-select modifier) drills into the next mobile pane.
+function isPlainClick(e: MouseEvent) {
+  return !e.shiftKey && !e.metaKey && !e.ctrlKey
+}
+
+function onCatalogClick(engineId: string, name: string, e: MouseEvent) {
+  store.clickCatalog(engineId, name, e)
+  if (isPlainClick(e)) mobileView.value = 'tables'
+}
+
+function onTableClick(t: DatabaseTable, e: MouseEvent) {
+  store.clickTable(t, e)
+  if (isPlainClick(e)) mobileView.value = 'data'
+}
 
 const refreshing = computed(() =>
   store.loadingEngines || store.loadingCatalogs || store.loadingTables || store.loadingRows,
@@ -645,45 +663,44 @@ function copySelectionSQL() {
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden">
+  <div class="flex h-full min-h-0 overflow-hidden">
 
     <!-- ── Engines / databases ─────────────────────────────────────────── -->
-    <div
-      class="flex flex-col border-r border-border shrink-0 w-full md:w-auto overflow-hidden"
-      :class="mobileView === 'engines' ? 'flex' : 'hidden md:flex'"
-      :style="{ width: engineWidth + 'px' }"
+    <aside
+      class="w-full min-h-0 flex-col overflow-hidden bg-card md:flex md:w-[var(--pane-w)] md:shrink-0"
+      :class="mobileView === 'engines' ? 'flex' : 'hidden'"
+      :style="{ '--pane-w': engineWidth + 'px' }"
     >
-      <div class="px-4 py-3 border-b border-border flex items-center gap-2">
-        <div class="flex-1 min-w-0">
-          <div class="kicker text-[12px]">Databases</div>
-          <div class="text-[11px] text-muted-foreground mt-0.5">
-            <template v-if="store.selectedCatalogs.length > 1">{{ store.selectedCatalogs.length }} databases selected</template>
-            <template v-else>Browse local engines</template>
-          </div>
-        </div>
-        <Button variant="ghost" size="icon-sm" title="Refresh databases" :disabled="refreshing" @click="handleRefresh">
-          <RefreshCw class="w-3.5 h-3.5" :class="refreshing ? 'animate-spin' : ''" />
-        </Button>
-      </div>
+      <PaneHeader
+        title="Databases"
+        :description="store.selectedCatalogs.length > 1 ? `${store.selectedCatalogs.length} databases selected` : 'Browse local engines'"
+      >
+        <template #actions>
+          <Button variant="ghost" size="icon-sm" title="Refresh databases" aria-label="Refresh databases" :disabled="refreshing" @click="handleRefresh">
+            <RefreshCw class="size-4" :class="refreshing ? 'animate-spin' : ''" />
+          </Button>
+        </template>
+      </PaneHeader>
 
-      <ScrollArea class="flex-1">
-        <div v-if="store.loadingEngines" class="px-3 py-2 space-y-1.5">
-          <Skeleton v-for="i in 4" :key="i" class="h-8 w-full rounded-md" />
+      <ScrollArea class="min-h-0 flex-1">
+        <div v-if="store.loadingEngines && !store.engines.length" class="space-y-1.5 p-2">
+          <Skeleton v-for="i in 4" :key="i" class="h-8 w-full rounded-lg" />
         </div>
 
-        <div v-else class="py-1">
+        <div v-else class="space-y-1 p-2">
           <div v-for="eng in store.engines" :key="eng.id">
             <ContextMenu>
               <ContextMenuTrigger as-child>
-                <div class="flex items-center gap-1 pr-1 hover:bg-accent/50 group">
+                <div class="group flex items-center gap-1 rounded-lg pr-1 hover:bg-muted">
                   <button
                     type="button"
-                    class="flex items-center gap-1.5 flex-1 min-w-0 px-3 py-1.5 text-left text-xs"
+                    class="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-sm"
+                    :aria-expanded="store.expandedEngines.includes(eng.id)"
                     @click="store.toggleEngineExpanded(eng.id); if (eng.running) store.loadCatalogs(eng.id)"
                   >
-                    <ChevronDown v-if="store.expandedEngines.includes(eng.id)" class="w-3 h-3 shrink-0 text-muted-foreground" />
-                    <ChevronRight v-else class="w-3 h-3 shrink-0 text-muted-foreground" />
-                    <Database class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <ChevronDown v-if="store.expandedEngines.includes(eng.id)" class="size-3.5 shrink-0 text-muted-foreground" />
+                    <ChevronRight v-else class="size-3.5 shrink-0 text-muted-foreground" />
+                    <Database class="size-4 shrink-0 text-muted-foreground" />
                     <span class="flex-1 truncate font-medium">{{ eng.label }}</span>
                     <StatusDot :status="engineStatus(eng.id)" :show-label="false" />
                   </button>
@@ -691,12 +708,12 @@ function copySelectionSQL() {
                     v-if="eng.capabilities.create_database && (eng.installed || eng.id === 'sqlite')"
                     variant="ghost"
                     size="icon-xs"
-                    class="opacity-80 hover:opacity-100"
                     :disabled="!eng.running && eng.id !== 'sqlite'"
                     :title="eng.running || eng.id === 'sqlite' ? 'New database' : 'Start ' + eng.label + ' first'"
+                    :aria-label="'New ' + eng.label + ' database'"
                     @click.stop="openCreateDb(eng.id)"
                   >
-                    <Plus class="w-3.5 h-3.5" />
+                    <Plus class="size-4" />
                   </Button>
                 </div>
               </ContextMenuTrigger>
@@ -704,47 +721,43 @@ function copySelectionSQL() {
                 <ContextMenuLabel class="text-xs">{{ eng.label }}</ContextMenuLabel>
                 <ContextMenuSeparator />
                 <ContextMenuItem v-if="eng.capabilities.create_database && (eng.running || eng.id === 'sqlite')" @click="openCreateDb(eng.id)">
-                  <Plus class="w-3.5 h-3.5 mr-2" />New database
+                  <Plus class="size-4" />New database
                 </ContextMenuItem>
-                <ContextMenuItem v-if="eng.running" @click="store.loadCatalogs(eng.id)">Refresh</ContextMenuItem>
+                <ContextMenuItem v-if="eng.running" @click="store.loadCatalogs(eng.id)"><RefreshCw class="size-4" />Refresh</ContextMenuItem>
                 <ContextMenuItem v-if="!eng.installed" @click="goServices">Install from Services</ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
 
-            <div v-if="store.expandedEngines.includes(eng.id)" class="pb-1">
-              <div v-if="!eng.installed" class="px-8 py-1.5 text-[11px] text-muted-foreground">
-                Not installed
-                <button class="underline ml-1" @click="goServices">Install</button>
+            <div v-if="store.expandedEngines.includes(eng.id)" class="space-y-0.5 pb-2 pt-0.5">
+              <div v-if="!eng.installed" class="py-1.5 pl-10 pr-3 text-xs text-muted-foreground">
+                Not installed.
+                <button type="button" class="font-medium text-foreground underline-offset-4 hover:underline" @click="goServices">Install</button>
               </div>
-              <div v-else-if="!eng.running" class="px-8 py-1.5 text-[11px] text-muted-foreground">
+              <div v-else-if="!eng.running" class="py-1.5 pl-10 pr-3 text-xs text-muted-foreground">
                 Stopped
               </div>
               <template v-else>
                 <ContextMenu v-for="db in (store.catalogs[eng.id] ?? []).filter(c => !c.system)" :key="eng.id + db.name">
                   <ContextMenuTrigger as-child>
-                    <button
-                      type="button"
-                      class="flex items-center gap-1.5 w-full pl-8 pr-3 py-1 text-left text-xs hover:bg-accent/50 select-none"
+                    <PaneListItem
+                      class="select-none py-1.5 pl-10 font-mono text-xs"
+                      :active="store.isCatalogSelected(eng.id, db.name)"
                       :data-catalog="eng.id + '::' + db.name"
                       :data-selected="store.isCatalogSelected(eng.id, db.name) ? 'true' : 'false'"
-                      :class="[
-                        store.isCatalogSelected(eng.id, db.name) ? 'bg-accent text-accent-foreground' : '',
-                        store.selectedEngine === eng.id && store.selectedDatabase === db.name ? 'border-l-2 border-l-primary pl-[30px]' : '',
-                      ]"
                       @mousedown="(e: MouseEvent) => { if (e.shiftKey) e.preventDefault() }"
-                      @click="store.clickCatalog(eng.id, db.name, $event)"
+                      @click="onCatalogClick(eng.id, db.name, $event)"
                       @contextmenu="prepareCatalogContext(eng.id, db.name)"
                     >
-                      <span class="truncate font-mono">{{ db.name }}</span>
-                    </button>
+                      <span class="truncate">{{ db.name }}</span>
+                    </PaneListItem>
                   </ContextMenuTrigger>
                   <ContextMenuContent class="w-52">
-                    <ContextMenuLabel class="text-xs font-mono truncate max-w-48">
+                    <ContextMenuLabel class="max-w-48 truncate font-mono text-xs">
                       {{ catalogMenuLabel(eng.id, db.name) }}
                     </ContextMenuLabel>
                     <ContextMenuSeparator />
                     <ContextMenuItem @click="store.selectDatabase(eng.id, db.name)">Open</ContextMenuItem>
-                    <ContextMenuItem @click="copyCatalogNames(eng.id, db.name)"><Copy class="w-3.5 h-3.5 mr-2" />Copy name</ContextMenuItem>
+                    <ContextMenuItem @click="copyCatalogNames(eng.id, db.name)"><Copy class="size-4" />Copy name</ContextMenuItem>
                     <ContextMenuItem v-if="eng.capabilities.create_table && catalogTargets(eng.id, db.name).length === 1" @click="store.selectDatabase(eng.id, db.name).then(() => openCreateTable())">New table</ContextMenuItem>
                     <ContextMenuItem v-if="eng.capabilities.duplicate_database && catalogTargets(eng.id, db.name).length === 1" @click="openDupDb(db.name, eng.id)">Duplicate…</ContextMenuItem>
                     <ContextMenuItem v-if="eng.capabilities.rename_database && catalogTargets(eng.id, db.name).length === 1" @click="openRenameDb(db.name, eng.id)">Rename…</ContextMenuItem>
@@ -754,114 +767,110 @@ function copySelectionSQL() {
                       class="text-destructive focus:text-destructive"
                       @click="confirmDropCatalogs(eng.id, db.name)"
                     >
-                      <Trash2 class="w-3.5 h-3.5 mr-2" />Delete
+                      <Trash2 class="size-4" />Delete
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
 
-                <div v-if="(store.catalogs[eng.id] ?? []).some(c => c.system)" class="px-8 pt-1 pb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                <div v-if="(store.catalogs[eng.id] ?? []).some(c => c.system)" class="pb-1 pl-10 pr-3 pt-2 text-xs font-medium text-muted-foreground">
                   System
                 </div>
-                <button
+                <PaneListItem
                   v-for="db in (store.catalogs[eng.id] ?? []).filter(c => c.system)"
                   :key="eng.id + 'sys' + db.name"
-                  type="button"
-                  class="flex items-center gap-1.5 w-full pl-8 pr-3 py-1 text-left text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground select-none"
+                  class="select-none py-1.5 pl-10 font-mono text-xs"
+                  :class="store.isCatalogSelected(eng.id, db.name) ? '' : 'text-muted-foreground'"
+                  :active="store.isCatalogSelected(eng.id, db.name)"
                   :data-catalog="eng.id + '::' + db.name"
                   :data-selected="store.isCatalogSelected(eng.id, db.name) ? 'true' : 'false'"
-                  :class="[
-                    store.isCatalogSelected(eng.id, db.name) ? 'bg-accent text-accent-foreground' : '',
-                    store.selectedEngine === eng.id && store.selectedDatabase === db.name ? 'border-l-2 border-l-primary' : '',
-                  ]"
                   @mousedown="(e: MouseEvent) => { if (e.shiftKey) e.preventDefault() }"
-                  @click="store.clickCatalog(eng.id, db.name, $event)"
+                  @click="onCatalogClick(eng.id, db.name, $event)"
                 >
-                  <span class="truncate font-mono">{{ db.name }}</span>
-                </button>
+                  <span class="truncate">{{ db.name }}</span>
+                </PaneListItem>
               </template>
             </div>
           </div>
         </div>
       </ScrollArea>
-    </div>
+    </aside>
     <ResizeHandle :storage-key="'db.engineWidth'" :default-width="engineWidth" :min="180" :max="420" @update:width="engineWidth = $event" />
 
     <!-- ── Tables ──────────────────────────────────────────────────────── -->
-    <div
+    <section
       v-if="store.selectedDatabase"
-      class="flex flex-col border-r border-border shrink-0 w-full overflow-hidden"
-      :class="mobileView === 'tables' ? 'flex' : 'hidden md:flex'"
-      :style="{ width: tableWidth + 'px' }"
+      class="w-full min-h-0 flex-col overflow-hidden bg-card md:flex md:w-[var(--pane-w)] md:shrink-0"
+      :class="mobileView === 'tables' ? 'flex' : 'hidden'"
+      :style="{ '--pane-w': tableWidth + 'px' }"
     >
-      <div class="px-3 py-2 border-b border-border flex items-center gap-2">
-        <Button variant="ghost" size="icon-xs" class="md:hidden" @click="mobileView = 'engines'">
-          <ArrowLeft class="w-3.5 h-3.5" />
-        </Button>
-        <span class="text-xs font-medium truncate font-mono flex-1">
-          {{ store.selectedDatabase }}
-          <span v-if="store.selectedTableKeys.length > 1" class="text-muted-foreground font-sans"> · {{ store.selectedTableKeys.length }} selected</span>
-        </span>
-        <Button
-          v-if="store.caps?.create_table"
-          variant="ghost"
-          size="icon-xs"
-          title="New table"
-          @click="openCreateTable"
-        >
-          <Plus class="w-3.5 h-3.5" />
-        </Button>
-      </div>
-      <div class="px-2 py-2 border-b border-border">
+      <PaneHeader back @back="mobileView = 'engines'">
+        <template #title>
+          <h2 class="truncate font-mono text-sm font-semibold leading-tight">{{ store.selectedDatabase }}</h2>
+          <p class="truncate text-xs text-muted-foreground">
+            {{ store.currentEngine?.label }}<template v-if="store.selectedTableKeys.length > 1"> · {{ store.selectedTableKeys.length }} selected</template>
+          </p>
+        </template>
+        <template #actions>
+          <Button
+            v-if="store.caps?.create_table"
+            variant="ghost"
+            size="icon-sm"
+            title="New table"
+            aria-label="New table"
+            @click="openCreateTable"
+          >
+            <Plus class="size-4" />
+          </Button>
+        </template>
+      </PaneHeader>
+      <div class="border-b border-border p-2">
         <div class="relative">
-          <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <Input v-model="store.tableFilter" placeholder="Filter tables…" class="h-7 pl-7 text-xs" />
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input v-model="store.tableFilter" placeholder="Filter tables…" aria-label="Filter tables" class="h-8 pl-8" />
         </div>
       </div>
-      <ScrollArea class="flex-1">
-        <div v-if="store.loadingTables" class="px-3 py-2 space-y-1.5">
-          <Skeleton v-for="i in 6" :key="i" class="h-6 w-full" />
+      <ScrollArea class="min-h-0 flex-1">
+        <div v-if="store.loadingTables" class="space-y-1.5 p-2">
+          <Skeleton v-for="i in 6" :key="i" class="h-7 w-full rounded-lg" />
         </div>
-        <div v-else-if="store.filteredTables.length === 0" class="px-3 py-8 text-center text-xs text-muted-foreground">
-          No tables
-        </div>
-        <template v-else>
-          <div v-for="[schema, list] in store.tablesBySchema" :key="schema || '_'">
-            <div v-if="store.caps?.schemas && schema" class="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <EmptyState v-else-if="store.filteredTables.length === 0" variant="fill" :icon="Table2" title="No tables" />
+        <div v-else class="space-y-0.5 p-2">
+          <div v-for="[schema, list] in store.tablesBySchema" :key="schema || '_'" class="space-y-0.5">
+            <div v-if="store.caps?.schemas && schema" class="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">
               {{ schema }}
             </div>
             <ContextMenu v-for="t in list" :key="tableKey(t)">
               <ContextMenuTrigger as-child>
-                <button
-                  type="button"
-                  class="flex items-center gap-1.5 w-full px-3 py-1 text-left text-xs hover:bg-accent/50 select-none"
-                  :data-table="store.tableId(t)"
-                  :data-selected="store.isTableSelected(t) ? 'true' : 'false'"
+                <PaneListItem
+                  class="select-none gap-2 py-1.5"
                   :class="[
-                    store.isTableSelected(t) ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground',
-                    isActiveTable(t) ? 'border-l-2 border-l-primary' : '',
+                    store.isTableSelected(t) ? '' : 'text-muted-foreground',
                     t.internal ? 'opacity-60' : '',
                   ]"
+                  :active="store.isTableSelected(t)"
+                  :data-table="store.tableId(t)"
+                  :data-selected="store.isTableSelected(t) ? 'true' : 'false'"
                   @mousedown="(e: MouseEvent) => { if (e.shiftKey) e.preventDefault() }"
-                  @click="store.clickTable(t, $event)"
+                  @click="onTableClick(t, $event)"
                   @contextmenu="prepareTableContext(t)"
                 >
-                  <Table2 class="w-3 h-3 shrink-0" :class="t.type === 'view' ? 'opacity-50' : 'text-primary'" />
-                  <span class="truncate flex-1">{{ t.name }}</span>
-                  <span v-if="t.rows != null" class="text-[10px] tabular-nums opacity-60">{{ t.rows }}</span>
-                </button>
+                  <Table2 class="size-3.5 shrink-0" :class="t.type === 'view' ? 'text-muted-foreground' : 'text-primary'" />
+                  <span class="flex-1 truncate">{{ t.name }}</span>
+                  <span v-if="t.rows != null" class="text-xs tabular-nums text-muted-foreground">{{ t.rows }}</span>
+                </PaneListItem>
               </ContextMenuTrigger>
               <ContextMenuContent class="w-56">
-                <ContextMenuLabel class="text-xs font-mono truncate max-w-52">{{ tableMenuLabel(t) }}</ContextMenuLabel>
+                <ContextMenuLabel class="max-w-52 truncate font-mono text-xs">{{ tableMenuLabel(t) }}</ContextMenuLabel>
                 <ContextMenuSeparator />
                 <ContextMenuItem @click="store.selectTable(t, 'data')">Open data</ContextMenuItem>
                 <ContextMenuItem @click="store.selectTable(t, 'structure')">Edit structure</ContextMenuItem>
                 <ContextMenuItem @click="store.selectTable(t, 'query')">Query table</ContextMenuItem>
-                <ContextMenuItem @click="copyTableNames(t)"><Copy class="w-3.5 h-3.5 mr-2" />Copy name</ContextMenuItem>
+                <ContextMenuItem @click="copyTableNames(t)"><Copy class="size-4" />Copy name</ContextMenuItem>
                 <ContextMenuItem v-if="store.caps?.create_table" @click="openCreateTable">New table</ContextMenuItem>
                 <ContextMenuItem v-if="store.caps?.duplicate_table && t.type !== 'view'" @click="openDupTable(t)">Duplicate…</ContextMenuItem>
                 <ContextMenuItem v-if="store.caps?.rename_table && t.type !== 'view'" @click="openRenameTable(t)">Rename…</ContextMenuItem>
                 <ContextMenuSub>
-                  <ContextMenuSubTrigger><Download class="w-3.5 h-3.5 mr-2" />Export</ContextMenuSubTrigger>
+                  <ContextMenuSubTrigger><Download class="size-4" />Export</ContextMenuSubTrigger>
                   <ContextMenuSubContent>
                     <ContextMenuItem @click="store.exportTable(t, 'sql')">SQL</ContextMenuItem>
                     <ContextMenuItem @click="store.exportTable(t, 'csv')">CSV</ContextMenuItem>
@@ -878,281 +887,282 @@ function copySelectionSQL() {
                   class="text-destructive focus:text-destructive"
                   @click="confirmDropTables(t)"
                 >
-                  <Trash2 class="w-3.5 h-3.5 mr-2" />Delete
+                  <Trash2 class="size-4" />Delete
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
           </div>
-        </template>
+        </div>
       </ScrollArea>
-    </div>
+    </section>
     <ResizeHandle v-if="store.selectedDatabase" :storage-key="'db.tableWidth'" :default-width="tableWidth" :min="160" :max="400" @update:width="tableWidth = $event" />
 
     <!-- ── Main pane ───────────────────────────────────────────────────── -->
-    <div
-      class="flex flex-col flex-1 overflow-hidden min-w-0"
-      :class="mobileView === 'data' || (!store.selectedDatabase) ? 'flex' : 'hidden md:flex'"
+    <section
+      class="min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex"
+      :class="mobileView === 'data' ? 'flex' : 'hidden'"
     >
-      <div v-if="!store.selectedDatabase" class="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2 px-6 text-center">
-        <Database class="w-12 h-12 opacity-20" />
-        <span class="text-sm">Select a database to browse tables</span>
-        <span v-if="!store.engines.some(e => e.installed && e.running)" class="text-xs max-w-sm">
-          Install and start MySQL or PostgreSQL from Services, or add a Laravel `database/database.sqlite` file to a site.
-        </span>
-        <Button v-if="!store.engines.some(e => e.installed)" variant="outline" size="sm" class="mt-1" @click="goServices">
-          Open Services
-        </Button>
-      </div>
+      <EmptyState v-if="!store.selectedDatabase" variant="fill" :icon="Database" title="Select a database to browse tables">
+        <template v-if="!store.engines.some(e => e.installed && e.running)">
+          Install and start MySQL or PostgreSQL from Services, or add a Laravel <code class="font-mono">database/database.sqlite</code> file to a site.
+        </template>
+        <template v-if="!store.engines.some(e => e.installed)" #actions>
+          <Button variant="outline" size="sm" @click="goServices">Open Services</Button>
+        </template>
+      </EmptyState>
 
       <template v-else-if="!store.selectedTable">
-        <div class="flex items-center gap-2 px-3 py-2 border-b border-border md:hidden">
-          <Button variant="ghost" size="sm" class="gap-1.5 -ml-1" @click="mobileView = 'tables'">
-            <ArrowLeft class="w-4 h-4" />
-            Tables
-          </Button>
-        </div>
-        <div class="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
-          <Table2 class="w-10 h-10 opacity-20" />
-          <span class="text-sm">Select a table</span>
-        </div>
+        <PaneHeader class="md:hidden" back title="Select a table" @back="mobileView = 'tables'" />
+        <EmptyState variant="fill" :icon="Table2" title="Select a table" />
       </template>
 
       <template v-else>
         <!-- Header -->
-        <div class="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-          <Button variant="ghost" size="sm" class="gap-1.5 -ml-1 md:hidden shrink-0" @click="mobileView = 'tables'">
-            <ArrowLeft class="w-4 h-4" />
-          </Button>
-          <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium truncate font-mono">{{ store.selectedTable }}</div>
-            <div class="text-[11px] text-muted-foreground truncate">
+        <PaneHeader back @back="mobileView = 'tables'">
+          <template #title>
+            <h2 class="truncate font-mono text-sm font-semibold leading-tight">{{ store.selectedTable }}</h2>
+            <p class="truncate text-xs text-muted-foreground">
               {{ store.currentEngine?.label }} · {{ store.selectedDatabase }}<template v-if="store.selectedSchema">.{{ store.selectedSchema }}</template>
+            </p>
+          </template>
+          <template #actions>
+            <div class="inline-flex h-8 items-center rounded-lg bg-muted p-[3px]" role="tablist" aria-label="Table view">
+              <button
+                v-for="p in (['data','structure','query'] as const)"
+                :key="p"
+                type="button"
+                role="tab"
+                :aria-selected="store.pane === p"
+                class="h-full rounded-md px-2.5 text-xs font-medium capitalize transition-colors"
+                :class="store.pane === p ? 'bg-background text-foreground shadow-sm dark:bg-input/40' : 'text-muted-foreground hover:text-foreground'"
+                @click="p === 'query' ? store.openQuery() : (store.pane = p)"
+              >
+                {{ p }}
+              </button>
             </div>
-          </div>
-          <div class="flex rounded-md border border-border p-0.5 text-xs">
-            <button
-              v-for="p in (['data','structure','query'] as const)"
-              :key="p"
-              type="button"
-              class="px-2 py-0.5 rounded-sm capitalize"
-              :class="store.pane === p ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'"
-              @click="p === 'query' ? store.openQuery() : (store.pane = p)"
-            >
-              {{ p }}
-            </button>
-          </div>
-        </div>
+          </template>
+        </PaneHeader>
 
         <!-- DATA -->
         <template v-if="store.pane === 'data'">
-          <div class="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-            <Input
-              v-model="store.where"
-              placeholder="WHERE …  e.g. id > 10"
-              class="h-7 text-xs font-mono flex-1"
-              @keydown.enter="store.applyWhere()"
-            />
-            <Button variant="outline" size="sm" class="h-7 text-xs" @click="store.applyWhere()">Filter</Button>
-            <Button v-if="store.where" variant="ghost" size="icon-xs" @click="store.where = ''; store.applyWhere()">
-              <X class="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              v-if="store.caps?.row_insert"
-              variant="outline"
-              size="sm"
-              class="h-7 text-xs gap-1"
-              @click="openInsert"
-            >
-              <Plus class="w-3.5 h-3.5" />
-              Insert
-            </Button>
-            <Button
-              v-if="store.selectedRowIndexes.length"
-              variant="outline"
-              size="sm"
-              class="h-7 text-xs gap-1 text-destructive"
-              @click="confirmDeleteRows"
-            >
-              <Trash2 class="w-3.5 h-3.5" />
-              Delete
-            </Button>
-            <Button
-              v-if="store.currentTable"
-              variant="outline"
-              size="sm"
-              class="h-7 text-xs gap-1"
-              @click="openExport(store.currentTable)"
-            >
-              <Download class="w-3.5 h-3.5" />
-              Export
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              title="Row inspector"
-              :class="sidebarOpen ? 'bg-accent' : ''"
-              @click="sidebarOpen = !sidebarOpen"
-            >
-              <PanelRight class="w-3.5 h-3.5" />
-            </Button>
-          </div>
-
-          <div class="flex flex-1 min-h-0 overflow-hidden">
-          <div class="flex-1 min-w-0 min-h-0 overflow-hidden bg-muted/30 border-y border-border">
-          <ScrollArea class="h-full">
-            <div v-if="store.loadingRows" class="p-4 space-y-2">
-              <Skeleton v-for="i in 8" :key="i" class="h-8 w-full" />
+          <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+            <div class="flex min-w-48 flex-1 items-center gap-2">
+              <Input
+                v-model="store.where"
+                placeholder="WHERE …  e.g. id > 10"
+                aria-label="Filter rows"
+                class="h-8 flex-1 font-mono text-xs md:text-xs"
+                @keydown.enter="store.applyWhere()"
+              />
+              <Button v-if="store.where" variant="ghost" size="icon-sm" aria-label="Clear filter" title="Clear filter" @click="store.where = ''; store.applyWhere()">
+                <X class="size-4" />
+              </Button>
+              <Button variant="outline" size="sm" @click="store.applyWhere()">Filter</Button>
             </div>
-            <div v-else-if="!store.rows || store.rows.rows.length === 0" class="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
-              <Rows3 class="w-8 h-8 opacity-30" />
-              <span class="text-sm">No rows</span>
-              <Button v-if="store.caps?.row_insert" variant="outline" size="sm" class="text-xs gap-1.5" @click="openInsert">
-                <Plus class="w-3.5 h-3.5" />Insert row
+            <div class="flex items-center gap-2">
+              <Button
+                v-if="store.caps?.row_insert"
+                variant="outline"
+                size="sm"
+                title="Insert row"
+                @click="openInsert"
+              >
+                <Plus class="size-3.5" />
+                <span class="hidden sm:inline">Insert</span>
+              </Button>
+              <Button
+                v-if="store.selectedRowIndexes.length"
+                variant="outline"
+                size="sm"
+                class="text-destructive hover:text-destructive"
+                title="Delete selected rows"
+                @click="confirmDeleteRows"
+              >
+                <Trash2 class="size-3.5" />
+                <span class="hidden sm:inline">Delete</span>
+              </Button>
+              <Button
+                v-if="store.currentTable"
+                variant="outline"
+                size="sm"
+                title="Export table"
+                @click="openExport(store.currentTable)"
+              >
+                <Download class="size-3.5" />
+                <span class="hidden sm:inline">Export</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="hidden md:inline-flex"
+                title="Row inspector"
+                aria-label="Toggle row inspector"
+                :aria-pressed="sidebarOpen"
+                :class="sidebarOpen ? 'bg-muted' : ''"
+                @click="sidebarOpen = !sidebarOpen"
+              >
+                <PanelRight class="size-4" />
               </Button>
             </div>
-            <Table v-else class="text-xs font-mono db-grid">
-              <TableHeader>
-                <TableRow>
-                  <TableHead class="w-8 pl-3">
-                    <Checkbox :checked="allRowsSelected" @update:checked="handleSelectAllRows" />
-                  </TableHead>
-                  <TableHead
-                    v-for="(col, ci) in store.rows.columns"
-                    :key="col.name"
-                    class="cursor-pointer select-none whitespace-nowrap"
-                    @click="store.setSort(col.name)"
-                  >
-                    <div class="flex items-center gap-1">
-                      <KeyRound v-if="col.primary_key" class="w-3 h-3 text-amber-500" />
-                      <span class="font-mono">{{ col.name }}</span>
-                      <ChevronUp v-if="sortIcon(col.name) === 'asc'" class="w-3 h-3" />
-                      <ChevronDown v-else-if="sortIcon(col.name) === 'desc'" class="w-3 h-3" />
-                      <ChevronsUpDown v-else class="w-3 h-3 text-muted-foreground/40" />
-                    </div>
-                    <div class="text-[10px] text-muted-foreground font-normal font-mono">{{ col.type }}</div>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <ContextMenu v-for="(row, ri) in store.rows.rows" :key="ri">
-                  <ContextMenuTrigger as-child>
-                    <TableRow
-                      class="hover:bg-accent/40 even:bg-background/40 select-none"
-                      :data-row="ri"
-                      :data-selected="store.selectedRowIndexes.includes(ri) ? 'true' : 'false'"
-                      :data-state="store.selectedRowIndexes.includes(ri) ? 'selected' : undefined"
-                      :class="store.selectedRowIndexes.includes(ri) ? 'bg-accent/60' : ''"
-                      @mousedown="(e: MouseEvent) => { if (e.shiftKey) e.preventDefault() }"
-                      @click="store.clickRow(ri, $event)"
-                      @contextmenu="ensureRowInSelection(ri)"
-                    >
-                      <TableCell class="pl-3" @click.stop="store.clickRow(ri, $event)">
-                        <Checkbox
-                          :checked="store.selectedRowIndexes.includes(ri)"
-                          @pointerdown.stop.prevent="store.clickRow(ri, $event)"
-                          @click.stop.prevent
-                        />
-                      </TableCell>
-                      <TableCell
-                        v-for="(col, ci) in store.rows.columns"
-                        :key="col.name"
-                        class="font-mono max-w-[220px] cursor-text"
-                        @dblclick="startEdit(ri, ci, row[ci])"
-                      >
-                        <Input
-                          v-if="editing && editing.row === ri && editing.col === ci"
-                          v-model="editDraft"
-                          class="h-6 text-xs font-mono"
-                          autofocus
-                          @blur="commitEdit"
-                          @keydown.enter.prevent="commitEdit"
-                          @keydown.esc.prevent="cancelEdit"
-                        />
-                        <span
-                          v-else
-                          class="block truncate"
-                          :class="isNull(row[ci]) ? 'italic text-muted-foreground/60' : ''"
-                          :title="formatCell(row[ci])"
-                        >{{ formatCell(row[ci]) }}</span>
-                      </TableCell>
-                    </TableRow>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent class="w-52">
-                    <ContextMenuItem @click="ensureRowInSelection(ri); sidebarOpen = true">Inspect in sidebar</ContextMenuItem>
-                    <ContextMenuItem @click="copyRowJSON(row)"><Copy class="w-3.5 h-3.5 mr-2" />Copy JSON</ContextMenuItem>
-                    <ContextMenuItem @click="copySelectionSQL()">Copy as SQL</ContextMenuItem>
-                    <ContextMenuSub>
-                      <ContextMenuSubTrigger>Export</ContextMenuSubTrigger>
-                      <ContextMenuSubContent>
-                        <ContextMenuItem @click="store.currentTable && store.exportTable(store.currentTable, 'csv')">CSV</ContextMenuItem>
-                        <ContextMenuItem @click="store.currentTable && store.exportTable(store.currentTable, 'json')">JSON</ContextMenuItem>
-                        <ContextMenuItem @click="store.currentTable && store.exportTable(store.currentTable, 'sql')">SQL</ContextMenuItem>
-                      </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      v-if="store.caps?.row_edit && store.rows.primary_key.length"
-                      class="text-destructive focus:text-destructive"
-                      @click="ensureRowInSelection(ri); confirmDeleteRows()"
-                    >
-                      Delete row
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              </TableBody>
-            </Table>
-          </ScrollArea>
           </div>
 
-          <ResizeHandle v-if="sidebarOpen" :storage-key="'db.sidebarWidth'" :default-width="sidebarWidth" :min="220" :max="420" reverse @update:width="sidebarWidth = $event" />
-          <aside
-            v-if="sidebarOpen"
-            class="hidden md:flex flex-col border-l border-border shrink-0 bg-card overflow-hidden"
-            :style="{ width: sidebarWidth + 'px' }"
-          >
-            <div class="px-3 py-2 border-b border-border text-xs font-medium flex items-center justify-between">
-              <span>{{ selectedRowCount ? selectedRowCount + ' row' + (selectedRowCount === 1 ? '' : 's') : 'Inspector' }}</span>
-              <Button variant="ghost" size="icon-xs" @click="sidebarOpen = false"><X class="w-3.5 h-3.5" /></Button>
+          <div class="flex min-h-0 flex-1 overflow-hidden">
+            <div class="min-h-0 min-w-0 flex-1 overflow-hidden bg-muted/30">
+              <ScrollArea class="h-full">
+                <div v-if="store.loadingRows" class="space-y-2 p-4">
+                  <Skeleton v-for="i in 8" :key="i" class="h-8 w-full" />
+                </div>
+                <EmptyState v-else-if="!store.rows || store.rows.rows.length === 0" variant="fill" class="min-h-48" :icon="Rows3" title="No rows">
+                  <template v-if="store.caps?.row_insert" #actions>
+                    <Button variant="outline" size="sm" @click="openInsert">
+                      <Plus class="size-3.5" />Insert row
+                    </Button>
+                  </template>
+                </EmptyState>
+                <Table v-else class="db-grid font-mono text-xs">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead class="w-8">
+                        <Checkbox :checked="allRowsSelected" aria-label="Select all rows" @update:checked="handleSelectAllRows" />
+                      </TableHead>
+                      <TableHead
+                        v-for="col in store.rows.columns"
+                        :key="col.name"
+                        class="h-auto cursor-pointer select-none whitespace-nowrap py-2"
+                        @click="store.setSort(col.name)"
+                      >
+                        <div class="flex items-center gap-1 text-foreground">
+                          <KeyRound v-if="col.primary_key" class="size-3 text-warning" />
+                          <span class="font-mono">{{ col.name }}</span>
+                          <ChevronUp v-if="sortIcon(col.name) === 'asc'" class="size-3" />
+                          <ChevronDown v-else-if="sortIcon(col.name) === 'desc'" class="size-3" />
+                          <ChevronsUpDown v-else class="size-3 text-muted-foreground/50" />
+                        </div>
+                        <div class="font-mono text-xs font-normal text-muted-foreground">{{ col.type }}</div>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <ContextMenu v-for="(row, ri) in store.rows.rows" :key="ri">
+                      <ContextMenuTrigger as-child>
+                        <TableRow
+                          class="select-none even:bg-background/40 hover:bg-accent/40"
+                          :data-row="ri"
+                          :data-selected="store.selectedRowIndexes.includes(ri) ? 'true' : 'false'"
+                          :data-state="store.selectedRowIndexes.includes(ri) ? 'selected' : undefined"
+                          :class="store.selectedRowIndexes.includes(ri) ? 'bg-accent/60' : ''"
+                          @mousedown="(e: MouseEvent) => { if (e.shiftKey) e.preventDefault() }"
+                          @click="store.clickRow(ri, $event)"
+                          @contextmenu="ensureRowInSelection(ri)"
+                        >
+                          <TableCell class="py-2" @click.stop="store.clickRow(ri, $event)">
+                            <Checkbox
+                              :checked="store.selectedRowIndexes.includes(ri)"
+                              aria-label="Select row"
+                              @pointerdown.stop.prevent="store.clickRow(ri, $event)"
+                              @click.stop.prevent
+                            />
+                          </TableCell>
+                          <TableCell
+                            v-for="(col, ci) in store.rows.columns"
+                            :key="col.name"
+                            class="max-w-56 cursor-text py-2 font-mono"
+                            @dblclick="startEdit(ri, ci, row[ci])"
+                          >
+                            <Input
+                              v-if="editing && editing.row === ri && editing.col === ci"
+                              v-model="editDraft"
+                              class="h-7 font-mono text-xs md:text-xs"
+                              autofocus
+                              @blur="commitEdit"
+                              @keydown.enter.prevent="commitEdit"
+                              @keydown.esc.prevent="cancelEdit"
+                            />
+                            <span
+                              v-else
+                              class="block truncate"
+                              :class="isNull(row[ci]) ? 'text-muted-foreground/60' : ''"
+                              :title="formatCell(row[ci])"
+                            >{{ formatCell(row[ci]) }}</span>
+                          </TableCell>
+                        </TableRow>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent class="w-52">
+                        <ContextMenuItem @click="ensureRowInSelection(ri); sidebarOpen = true">Inspect in sidebar</ContextMenuItem>
+                        <ContextMenuItem @click="copyRowJSON(row)"><Copy class="size-4" />Copy JSON</ContextMenuItem>
+                        <ContextMenuItem @click="copySelectionSQL()">Copy as SQL</ContextMenuItem>
+                        <ContextMenuSub>
+                          <ContextMenuSubTrigger>Export</ContextMenuSubTrigger>
+                          <ContextMenuSubContent>
+                            <ContextMenuItem @click="store.currentTable && store.exportTable(store.currentTable, 'csv')">CSV</ContextMenuItem>
+                            <ContextMenuItem @click="store.currentTable && store.exportTable(store.currentTable, 'json')">JSON</ContextMenuItem>
+                            <ContextMenuItem @click="store.currentTable && store.exportTable(store.currentTable, 'sql')">SQL</ContextMenuItem>
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          v-if="store.caps?.row_edit && store.rows.primary_key.length"
+                          class="text-destructive focus:text-destructive"
+                          @click="ensureRowInSelection(ri); confirmDeleteRows()"
+                        >
+                          Delete row
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  </TableBody>
+                </Table>
+              </ScrollArea>
             </div>
-            <ScrollArea class="flex-1">
-              <div v-if="!selectedRowCount" class="p-4 text-xs text-muted-foreground">
-                Select one or more rows to inspect and bulk-edit.
+
+            <ResizeHandle v-if="sidebarOpen" :storage-key="'db.sidebarWidth'" :default-width="sidebarWidth" :min="220" :max="420" reverse @update:width="sidebarWidth = $event" />
+            <aside
+              v-if="sidebarOpen"
+              class="hidden shrink-0 flex-col overflow-hidden bg-card md:flex"
+              :style="{ width: sidebarWidth + 'px' }"
+            >
+              <div class="flex h-11 shrink-0 items-center justify-between border-b border-border pl-4 pr-2">
+                <span class="text-sm font-semibold">{{ selectedRowCount ? selectedRowCount + ' row' + (selectedRowCount === 1 ? '' : 's') : 'Inspector' }}</span>
+                <Button variant="ghost" size="icon-sm" aria-label="Close inspector" title="Close inspector" @click="sidebarOpen = false"><X class="size-4" /></Button>
               </div>
-              <div v-else class="p-3 space-y-2">
-                <div v-for="col in store.rows?.columns ?? []" :key="col.name" class="space-y-1">
-                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground font-mono flex items-center gap-1">
-                    <KeyRound v-if="col.primary_key" class="w-3 h-3 text-amber-500" />
-                    {{ col.name }}
-                  </label>
-                  <div class="flex items-center gap-1">
-                    <Input
-                      :model-value="sidebarDraft[col.name]"
-                      :placeholder="sidebarMixed[col.name] ? '(mixed)' : col.type"
-                      class="h-7 font-mono text-xs"
-                      :disabled="col.auto_increment || sidebarNulls[col.name]"
-                      @update:model-value="(v) => { sidebarDraft[col.name] = String(v); sidebarMixed[col.name] = false }"
-                    />
-                    <label v-if="col.nullable" class="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0">
-                      <Checkbox :checked="sidebarNulls[col.name]" @update:checked="(v) => sidebarNulls[col.name] = v === true" />
-                      null
+              <ScrollArea class="min-h-0 flex-1">
+                <div v-if="!selectedRowCount" class="p-4 text-sm text-muted-foreground">
+                  Select one or more rows to inspect and bulk-edit.
+                </div>
+                <div v-else class="space-y-3 p-4">
+                  <div v-for="col in store.rows?.columns ?? []" :key="col.name" class="space-y-1.5">
+                    <label class="flex items-center gap-1 font-mono text-xs text-muted-foreground">
+                      <KeyRound v-if="col.primary_key" class="size-3 text-warning" />
+                      {{ col.name }}
                     </label>
+                    <div class="flex items-center gap-2">
+                      <Input
+                        :model-value="sidebarDraft[col.name]"
+                        :placeholder="sidebarMixed[col.name] ? '(mixed)' : col.type"
+                        class="h-8 font-mono text-xs md:text-xs"
+                        :disabled="col.auto_increment || sidebarNulls[col.name]"
+                        @update:model-value="(v) => { sidebarDraft[col.name] = String(v); sidebarMixed[col.name] = false }"
+                      />
+                      <label v-if="col.nullable" class="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        <Checkbox :checked="sidebarNulls[col.name]" @update:checked="(v) => sidebarNulls[col.name] = v === true" />
+                        null
+                      </label>
+                    </div>
                   </div>
                 </div>
+              </ScrollArea>
+              <div v-if="selectedRowCount" class="flex gap-2 border-t border-border p-3">
+                <Button size="sm" class="flex-1" :disabled="!store.caps?.row_edit" @click="saveSidebar">Save</Button>
+                <Button size="sm" variant="outline" class="text-destructive hover:text-destructive" @click="confirmDeleteRows">Delete</Button>
               </div>
-            </ScrollArea>
-            <div v-if="selectedRowCount" class="p-2 border-t border-border flex gap-2">
-              <Button size="sm" class="h-7 text-xs flex-1" :disabled="!store.caps?.row_edit" @click="saveSidebar">Save</Button>
-              <Button size="sm" variant="outline" class="h-7 text-xs text-destructive" @click="confirmDeleteRows">Delete</Button>
-            </div>
-          </aside>
+            </aside>
           </div>
 
-          <div class="flex items-center gap-2 px-3 py-1.5 border-t border-border text-[11px] text-muted-foreground shrink-0">
+          <div class="flex h-11 shrink-0 items-center gap-2 border-t border-border px-3 text-xs text-muted-foreground">
             <span class="tabular-nums">{{ rangeLabel() }}</span>
-            <span v-if="store.rows" class="hidden sm:inline tabular-nums">{{ store.rows.duration_ms }}ms</span>
+            <span v-if="store.rows" class="hidden tabular-nums sm:inline">· {{ store.rows.duration_ms }}ms</span>
             <div class="flex-1" />
             <Select :model-value="String(store.limit)" @update:model-value="(v) => store.setLimit(Number(v))">
-              <SelectTrigger class="h-6 w-[4.5rem] text-[11px]">
+              <SelectTrigger size="sm" class="h-7 w-[4.5rem] px-2 text-xs data-[size=sm]:h-7" aria-label="Rows per page">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1162,141 +1172,151 @@ function copySelectionSQL() {
                 <SelectItem value="500">500</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="ghost" size="icon-xs" :disabled="store.page <= 1" @click="store.setPage(store.page - 1)">‹</Button>
-            <span class="tabular-nums">{{ store.page }}/{{ store.pageCount }}</span>
-            <Button variant="ghost" size="icon-xs" :disabled="store.page >= store.pageCount" @click="store.setPage(store.page + 1)">›</Button>
+            <Button variant="ghost" size="icon-xs" aria-label="Previous page" :disabled="store.page <= 1" @click="store.setPage(store.page - 1)">
+              <ChevronLeft class="size-4" />
+            </Button>
+            <span class="tabular-nums">{{ store.page }} / {{ store.pageCount }}</span>
+            <Button variant="ghost" size="icon-xs" aria-label="Next page" :disabled="store.page >= store.pageCount" @click="store.setPage(store.page + 1)">
+              <ChevronRight class="size-4" />
+            </Button>
           </div>
         </template>
 
         <!-- STRUCTURE -->
         <template v-else-if="store.pane === 'structure'">
-          <ScrollArea class="flex-1">
-            <div v-if="store.loadingStructure" class="p-4 space-y-2">
+          <ScrollArea class="min-h-0 flex-1">
+            <div v-if="store.loadingStructure" class="space-y-2 p-4 md:p-6">
               <Skeleton v-for="i in 6" :key="i" class="h-8 w-full" />
             </div>
-            <div v-else-if="store.structure" class="p-4 space-y-6">
-              <div>
-                <div class="flex items-center justify-between mb-2">
-                  <div class="text-[11px] uppercase tracking-wide text-muted-foreground">Columns</div>
-                  <Button v-if="store.caps?.alter_table" variant="outline" size="sm" class="h-6 text-xs gap-1" @click="showAddCol = true">
-                    <Plus class="w-3 h-3" />Add column
+            <div v-else-if="store.structure" class="space-y-6 p-4 md:p-6">
+              <section class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="text-sm font-semibold">Columns</h3>
+                  <Button v-if="store.caps?.alter_table" variant="outline" size="sm" @click="showAddCol = true">
+                    <Plus class="size-3.5" />Add column
                   </Button>
                 </div>
-                <Table class="text-xs">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead class="hidden sm:table-cell">Null</TableHead>
-                      <TableHead class="hidden md:table-cell">Default</TableHead>
-                      <TableHead>Key</TableHead>
-                      <TableHead class="w-8"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <ContextMenu v-for="c in store.structure.columns" :key="c.name">
-                      <ContextMenuTrigger as-child>
-                        <TableRow class="hover:bg-accent/40">
-                          <TableCell class="font-mono font-medium">
-                            <span class="inline-flex items-center gap-1">
-                              <KeyRound v-if="c.primary_key" class="w-3 h-3 text-amber-500" />
-                              {{ c.name }}
-                            </span>
-                          </TableCell>
-                          <TableCell class="font-mono text-muted-foreground">{{ c.type }}</TableCell>
-                          <TableCell class="hidden sm:table-cell">{{ c.nullable ? 'YES' : 'NO' }}</TableCell>
-                          <TableCell class="hidden md:table-cell font-mono text-muted-foreground">{{ c.default ?? '—' }}</TableCell>
-                          <TableCell>
-                            <Badge v-if="c.primary_key" variant="secondary" class="text-[10px]">PK</Badge>
-                            <Badge v-else-if="c.key" variant="outline" class="text-[10px]">{{ c.key }}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button v-if="store.caps?.alter_table" variant="ghost" size="icon-xs" @click="openEditCol(c)">
-                              <Pencil class="w-3 h-3" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent class="w-48">
-                        <ContextMenuLabel class="font-mono text-xs">{{ c.name }}</ContextMenuLabel>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem @click="copyText(c.name, 'Name copied')">Copy name</ContextMenuItem>
-                        <ContextMenuItem v-if="store.caps?.alter_table" @click="openEditCol(c)">Edit column…</ContextMenuItem>
-                        <ContextMenuItem
-                          v-if="store.caps?.alter_table && !c.primary_key"
-                          class="text-destructive focus:text-destructive"
-                          @click="confirmDropCol(c.name)"
-                        >
-                          Drop column
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  </TableBody>
-                </Table>
-              </div>
-              <div v-if="store.structure.indexes.length">
-                <div class="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Indexes</div>
-                <Table class="text-xs">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Columns</TableHead>
-                      <TableHead>Type</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow v-for="ix in store.structure.indexes" :key="ix.name">
-                      <TableCell class="font-mono">{{ ix.name }}</TableCell>
-                      <TableCell class="font-mono text-muted-foreground">{{ ix.columns.join(', ') }}</TableCell>
-                      <TableCell>
-                        <Badge v-if="ix.primary" variant="secondary" class="text-[10px]">primary</Badge>
-                        <Badge v-else-if="ix.unique" variant="outline" class="text-[10px]">unique</Badge>
-                        <span v-else class="text-muted-foreground">{{ ix.type || 'index' }}</span>
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-              <div v-if="store.structure.create_sql">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="text-[11px] uppercase tracking-wide text-muted-foreground">Definition</div>
-                  <Button variant="ghost" size="sm" class="h-6 text-xs" @click="copyText(store.structure.create_sql!, 'DDL copied')">Copy</Button>
+                <div class="overflow-hidden rounded-xl border border-border bg-card">
+                  <Table class="text-xs">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead class="hidden sm:table-cell">Null</TableHead>
+                        <TableHead class="hidden md:table-cell">Default</TableHead>
+                        <TableHead>Key</TableHead>
+                        <TableHead class="w-8"><span class="sr-only">Actions</span></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <ContextMenu v-for="c in store.structure.columns" :key="c.name">
+                        <ContextMenuTrigger as-child>
+                          <TableRow>
+                            <TableCell class="py-2 font-mono font-medium">
+                              <span class="inline-flex items-center gap-1">
+                                <KeyRound v-if="c.primary_key" class="size-3 text-warning" />
+                                {{ c.name }}
+                              </span>
+                            </TableCell>
+                            <TableCell class="py-2 font-mono text-muted-foreground">{{ c.type }}</TableCell>
+                            <TableCell class="hidden py-2 sm:table-cell">{{ c.nullable ? 'YES' : 'NO' }}</TableCell>
+                            <TableCell class="hidden max-w-64 truncate py-2 font-mono text-muted-foreground md:table-cell" :title="c.default ?? undefined">{{ c.default ?? '—' }}</TableCell>
+                            <TableCell class="py-2">
+                              <Badge v-if="c.primary_key" variant="secondary">PK</Badge>
+                              <Badge v-else-if="c.key" variant="outline">{{ c.key }}</Badge>
+                            </TableCell>
+                            <TableCell class="py-2 text-right">
+                              <Button v-if="store.caps?.alter_table" variant="ghost" size="icon-xs" :aria-label="'Edit column ' + c.name" @click="openEditCol(c)">
+                                <Pencil class="size-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent class="w-48">
+                          <ContextMenuLabel class="font-mono text-xs">{{ c.name }}</ContextMenuLabel>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem @click="copyText(c.name, 'Name copied')">Copy name</ContextMenuItem>
+                          <ContextMenuItem v-if="store.caps?.alter_table" @click="openEditCol(c)">Edit column…</ContextMenuItem>
+                          <ContextMenuItem
+                            v-if="store.caps?.alter_table && !c.primary_key"
+                            class="text-destructive focus:text-destructive"
+                            @click="confirmDropCol(c.name)"
+                          >
+                            Drop column
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </TableBody>
+                  </Table>
                 </div>
-                <pre class="text-xs font-mono bg-muted/40 border border-border rounded-md p-3 overflow-x-auto whitespace-pre-wrap">{{ store.structure.create_sql }}</pre>
-              </div>
+              </section>
+              <section v-if="store.structure.indexes.length" class="space-y-3">
+                <h3 class="text-sm font-semibold">Indexes</h3>
+                <div class="overflow-hidden rounded-xl border border-border bg-card">
+                  <Table class="text-xs">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Columns</TableHead>
+                        <TableHead>Type</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow v-for="ix in store.structure.indexes" :key="ix.name">
+                        <TableCell class="py-2 font-mono">{{ ix.name }}</TableCell>
+                        <TableCell class="py-2 font-mono text-muted-foreground">{{ ix.columns.join(', ') }}</TableCell>
+                        <TableCell class="py-2">
+                          <Badge v-if="ix.primary" variant="secondary">primary</Badge>
+                          <Badge v-else-if="ix.unique" variant="outline">unique</Badge>
+                          <span v-else class="text-muted-foreground">{{ ix.type || 'index' }}</span>
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </section>
+              <section v-if="store.structure.create_sql" class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="text-sm font-semibold">Definition</h3>
+                  <Button variant="ghost" size="sm" @click="copyText(store.structure.create_sql!, 'DDL copied')">
+                    <Copy class="size-3.5" />Copy
+                  </Button>
+                </div>
+                <pre class="overflow-x-auto whitespace-pre-wrap rounded-xl border border-border bg-muted/40 p-4 font-mono text-xs">{{ store.structure.create_sql }}</pre>
+              </section>
             </div>
           </ScrollArea>
         </template>
 
         <!-- QUERY -->
         <template v-else>
-          <div class="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0" @keydown="onQueryKeydown">
-            <span class="text-xs text-muted-foreground flex-1">Ctrl/⌘ + Enter to run</span>
-            <Button size="sm" class="h-7 text-xs gap-1.5" :disabled="store.runningQuery || !store.querySQL.trim()" @click="store.runQuery()">
-              <Play class="w-3.5 h-3.5" />
+          <div class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2" @keydown="onQueryKeydown">
+            <span class="flex-1 text-xs text-muted-foreground">Ctrl/⌘ + Enter to run</span>
+            <Button size="sm" :disabled="store.runningQuery || !store.querySQL.trim()" @click="store.runQuery()">
+              <Play class="size-3.5" />
               Run
             </Button>
           </div>
-          <div class="h-40 border-b border-border shrink-0" @keydown="onQueryKeydown">
+          <div class="h-40 shrink-0 border-b border-border" @keydown="onQueryKeydown">
             <CodeEditor v-model="store.querySQL" language="sql" />
           </div>
-          <div v-if="store.queryError" class="px-3 py-2 text-xs text-destructive border-b border-border font-mono whitespace-pre-wrap">
+          <div v-if="store.queryError" class="whitespace-pre-wrap border-b border-border px-3 py-2 font-mono text-xs text-destructive">
             {{ store.queryError }}
           </div>
-          <div v-else-if="store.queryResult" class="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border flex gap-3">
+          <div v-else-if="store.queryResult" class="flex gap-3 border-b border-border px-3 py-2 text-xs text-muted-foreground">
             <span v-if="store.queryResult.rows.length">{{ store.queryResult.rows.length }} row(s)</span>
             <span v-else>{{ store.queryResult.rows_affected }} affected</span>
             <span class="tabular-nums">{{ store.queryResult.duration_ms }}ms</span>
             <span v-if="store.queryResult.limited">results truncated</span>
           </div>
-          <ScrollArea class="flex-1">
-            <div v-if="store.runningQuery" class="p-4 space-y-2">
+          <ScrollArea class="min-h-0 flex-1">
+            <div v-if="store.runningQuery" class="space-y-2 p-4">
               <Skeleton v-for="i in 4" :key="i" class="h-8 w-full" />
             </div>
-            <Table v-else-if="store.queryResult && store.queryResult.columns.length" class="text-xs">
+            <Table v-else-if="store.queryResult && store.queryResult.columns.length" class="db-grid text-xs">
               <TableHeader>
                 <TableRow>
-                  <TableHead v-for="c in store.queryResult.columns" :key="c.name" class="font-mono whitespace-nowrap">
+                  <TableHead v-for="c in store.queryResult.columns" :key="c.name" class="whitespace-nowrap font-mono text-foreground">
                     {{ c.name }}
                   </TableHead>
                 </TableRow>
@@ -1306,19 +1326,19 @@ function copySelectionSQL() {
                   <TableCell
                     v-for="(c, ci) in store.queryResult.columns"
                     :key="c.name"
-                    class="font-mono max-w-[240px] truncate"
-                    :class="isNull(row[ci]) ? 'italic text-muted-foreground/60' : ''"
+                    class="max-w-60 truncate py-2 font-mono"
+                    :class="isNull(row[ci]) ? 'text-muted-foreground/60' : ''"
                   >{{ formatCell(row[ci]) }}</TableCell>
                 </TableRow>
               </TableBody>
             </Table>
-            <div v-else class="p-8 text-center text-xs text-muted-foreground">
-              Run a statement against <span class="font-mono">{{ store.selectedDatabase }}</span>
-            </div>
+            <EmptyState v-else variant="fill" class="min-h-48" :icon="Play">
+              Run a statement against <span class="font-mono text-foreground">{{ store.selectedDatabase }}</span>.
+            </EmptyState>
           </ScrollArea>
         </template>
       </template>
-    </div>
+    </section>
 
     <!-- ── Dialogs ─────────────────────────────────────────────────────── -->
     <Dialog v-model:open="showCreateDb">
@@ -1346,7 +1366,8 @@ function copySelectionSQL() {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="handleDropDb">Drop</AlertDialogAction>
+          <AlertDialogAction
+          variant="destructive" @click="handleDropDb">Drop</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1357,22 +1378,22 @@ function copySelectionSQL() {
           <DialogTitle>New table</DialogTitle>
         </DialogHeader>
         <div class="space-y-3">
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid gap-2 sm:grid-cols-2">
             <Input v-model="newTableName" placeholder="table name" class="font-mono" />
             <Input v-if="store.caps?.schemas" v-model="newTableSchema" placeholder="schema" class="font-mono" />
           </div>
           <div class="space-y-1.5">
-            <div class="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-1 text-[10px] uppercase text-muted-foreground px-1">
+            <div class="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2 px-1 text-xs font-medium text-muted-foreground">
               <span>Name</span><span>Type</span><span>PK</span><span>Null</span><span>AI</span>
             </div>
-            <div v-for="(col, i) in newTableCols" :key="i" class="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-1 items-center">
-              <Input v-model="col.name" class="h-7 font-mono text-xs" />
-              <Input v-model="col.type" class="h-7 font-mono text-xs" />
+            <div v-for="(col, i) in newTableCols" :key="i" class="grid grid-cols-[1fr_1fr_auto_auto_auto] items-center gap-2">
+              <Input v-model="col.name" aria-label="Column name" class="h-8 font-mono text-xs md:text-xs" />
+              <Input v-model="col.type" aria-label="Column type" class="h-8 font-mono text-xs md:text-xs" />
               <Checkbox :checked="col.primary_key" @update:checked="(v) => col.primary_key = v === true" />
               <Checkbox :checked="col.nullable" @update:checked="(v) => col.nullable = v === true" />
               <Checkbox :checked="col.auto_increment" @update:checked="(v) => col.auto_increment = v === true" />
             </div>
-            <Button variant="ghost" size="sm" class="h-7 text-xs" @click="addColumnRow">Add column</Button>
+            <Button variant="ghost" size="sm" @click="addColumnRow"><Plus class="size-3.5" />Add column</Button>
           </div>
         </div>
         <DialogFooter>
@@ -1394,7 +1415,8 @@ function copySelectionSQL() {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="handleDropTable">Drop</AlertDialogAction>
+          <AlertDialogAction
+          variant="destructive" @click="handleDropTable">Drop</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1418,15 +1440,15 @@ function copySelectionSQL() {
           <DialogTitle>Insert row</DialogTitle>
         </DialogHeader>
         <div class="space-y-2">
-          <div v-for="c in insertColumns" :key="c.name" class="grid grid-cols-[120px_1fr_auto] gap-2 items-center">
-            <label class="text-xs font-mono truncate" :title="c.type">{{ c.name }}</label>
+          <div v-for="c in insertColumns" :key="c.name" class="grid grid-cols-[minmax(0,7.5rem)_1fr_auto] items-center gap-2">
+            <label class="truncate font-mono text-xs" :title="c.type">{{ c.name }}</label>
             <Input
               v-model="insertValues[c.name]"
-              class="h-7 font-mono text-xs"
+              class="h-8 font-mono text-xs md:text-xs"
               :disabled="insertNulls[c.name]"
               :placeholder="c.type"
             />
-            <label v-if="c.nullable" class="text-[10px] text-muted-foreground flex items-center gap-1">
+            <label v-if="c.nullable" class="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Checkbox :modelValue="insertNulls[c.name]" @update:modelValue="(v) => insertNulls[c.name] = v === true" />
               null
             </label>
@@ -1449,7 +1471,8 @@ function copySelectionSQL() {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="handleDeleteRows">Delete</AlertDialogAction>
+          <AlertDialogAction
+          variant="destructive" @click="handleDeleteRows">Delete</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1516,7 +1539,7 @@ function copySelectionSQL() {
         <div class="space-y-2">
           <Input v-model="addColDraft.name" placeholder="name" class="font-mono" />
           <Input v-model="addColDraft.type" placeholder="type" class="font-mono" />
-          <label class="flex items-center gap-2 text-xs"><Checkbox :checked="addColDraft.nullable" @update:checked="(v) => addColDraft.nullable = v === true" />Nullable</label>
+          <label class="flex items-center gap-2 text-sm"><Checkbox :checked="addColDraft.nullable" @update:checked="(v) => addColDraft.nullable = v === true" />Nullable</label>
         </div>
         <DialogFooter>
           <DialogClose as-child><Button variant="outline" size="sm">Cancel</Button></DialogClose>
@@ -1531,7 +1554,7 @@ function copySelectionSQL() {
         <div v-if="editColDraft" class="space-y-2">
           <Input v-model="editColDraft.name" class="font-mono" />
           <Input v-model="editColDraft.type" class="font-mono" />
-          <label class="flex items-center gap-2 text-xs"><Checkbox :checked="editColDraft.nullable" @update:checked="(v) => { if (editColDraft) editColDraft.nullable = v === true }" />Nullable</label>
+          <label class="flex items-center gap-2 text-sm"><Checkbox :checked="editColDraft.nullable" @update:checked="(v) => { if (editColDraft) editColDraft.nullable = v === true }" />Nullable</label>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" @click="editCol = null">Cancel</Button>
@@ -1548,7 +1571,8 @@ function copySelectionSQL() {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction class="bg-destructive text-destructive-foreground hover:bg-destructive/90" @click="handleDropCol">Drop</AlertDialogAction>
+          <AlertDialogAction
+          variant="destructive" @click="handleDropCol">Drop</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

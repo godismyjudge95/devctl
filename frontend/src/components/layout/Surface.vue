@@ -8,7 +8,7 @@ const props = defineProps<{
 </script>
 
 <template>
-  <section :class="cn('rounded-2xl border border-border bg-card', props.class)">
+  <section :class="cn('rounded-xl border border-border bg-card', props.class)">
     <slot />
   </section>
 </template>

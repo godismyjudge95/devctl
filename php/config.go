@@ -116,6 +116,7 @@ func SPXDataDir(ver, serverRoot string) string {
 //   - If the file already exists it is left untouched — the user may have
 //     customised it. Only the GlobalSettings keys (upload limits, memory
 //     limit, etc.) are patched in-place by ApplySettings / writeIni.
+//     openssl.cafile and curl.cainfo are also patched so PHP trusts Caddy.
 //
 // php-fpm.conf is always regenerated because it contains runtime paths
 // (socket, log dirs, site user) that must reflect the current environment.
@@ -168,6 +169,13 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 	}
 	chown(spxDataDir)
 
+	// Combined OS + Caddy CA bundle so static PHP OpenSSL trusts *.test.
+	bundlePath, bundleErr := WriteCABundle(serverRoot, nil)
+	if bundleErr != nil {
+		log.Printf("php: write ca bundle: %v", bundleErr)
+		bundlePath = ""
+	}
+
 	// Migrate existing php.ini files: restore spx.http_key = dev if it was
 	// previously cleared to empty (SPX requires a non-empty key).
 	if err := migrateSpxKey(iniPath); err != nil {
@@ -179,6 +187,17 @@ func WriteConfigs(ver, serverRoot, siteUser string) error {
 	// the user gets sensible defaults for all PHP directives. devctl overrides
 	// are appended at the end and take precedence (last-assignment-wins).
 	if _, err := os.Stat(iniPath); os.IsNotExist(err) {
+		caIni := ""
+		if bundlePath != "" {
+			caIni = fmt.Sprintf(`
+; --- TLS — trust Caddy local CA plus OS CAs ---
+; Static PHP OpenSSL does not use the OS trust store. Point curl and
+; openssl at the combined bundle so HTTPS to *.test (meilisearch.test,
+; s3.maxio.test, …) and public sites both succeed.
+openssl.cafile = %s
+curl.cainfo = %s
+`, bundlePath, bundlePath)
+		}
 		overrides := fmt.Sprintf(`
 ; ============================================================
 ; devctl overrides for PHP %s
@@ -218,11 +237,15 @@ spx.http_enabled = 1
 spx.http_key = dev
 spx.http_ip_whitelist = 127.0.0.1
 spx.data_dir = %s
-`, ver, prependPath, spxDataDir)
+%s`, ver, prependPath, spxDataDir, caIni)
 
 		content := append(phpIniDevelopment, []byte(overrides)...)
 		if err := os.WriteFile(iniPath, content, 0644); err != nil {
 			return fmt.Errorf("write php.ini: %w", err)
+		}
+	} else if bundlePath != "" {
+		if err := migrateCAFile(iniPath, bundlePath); err != nil {
+			log.Printf("php: migrate openssl.cafile in %s: %v", iniPath, err)
 		}
 	}
 	// Always chown php.ini — it may have been created by root on a previous

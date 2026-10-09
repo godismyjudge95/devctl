@@ -10,7 +10,7 @@ const props = defineProps<{
 <template>
   <div
     data-slot="card-header"
-    :class="cn('@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1 px-5 pt-5 pb-3 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-4', props.class)"
+    :class="cn('@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1 px-4 pt-4 pb-3 sm:px-5 sm:pt-5 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-4', props.class)"
   >
     <slot />
   </div>

@@ -13,11 +13,11 @@ const props = withDefaults(defineProps<{
 <template>
   <span
     :class="cn(
-      'inline-flex items-center gap-1 h-5 px-1.5 rounded-md text-[11px] font-medium tracking-tight whitespace-nowrap',
+      'inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs font-medium [&_svg]:size-3',
       tone === 'default' && 'bg-muted text-muted-foreground',
-      tone === 'muted' && 'bg-transparent text-muted-foreground border border-border',
-      tone === 'success' && 'bg-[oklch(0.94_0.04_150)] text-[oklch(0.38_0.11_150)] dark:bg-[oklch(0.28_0.05_150)] dark:text-[oklch(0.82_0.08_150)]',
-      tone === 'warning' && 'bg-[oklch(0.95_0.04_75)] text-[oklch(0.42_0.10_75)] dark:bg-[oklch(0.30_0.05_75)] dark:text-[oklch(0.86_0.08_75)]',
+      tone === 'muted' && 'border border-border text-muted-foreground',
+      tone === 'success' && 'bg-success-soft text-success-soft-foreground',
+      tone === 'warning' && 'bg-warning-soft text-warning-soft-foreground',
       props.class,
     )"
   >

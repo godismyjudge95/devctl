@@ -13,8 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import PageHeader from '@/components/layout/PageHeader.vue'
-import Surface from '@/components/layout/Surface.vue'
-import SectionHeader from '@/components/layout/SectionHeader.vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import SettingRow from '@/components/layout/SettingRow.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
 
@@ -125,25 +124,23 @@ async function save() {
       :description="site?.domain ?? 'Loading…'"
       back-to="/sites"
       back-label="Sites"
-    >
-      <template #actions>
-        <Button variant="outline" @click="router.push('/sites')" :disabled="saving">Cancel</Button>
-        <Button @click="save" :disabled="!site || !form.domain || !form.root_path || saving">
-          <Loader2 v-if="saving" class="w-4 h-4 animate-spin" />
-          {{ saving ? 'Saving…' : 'Save' }}
-        </Button>
-      </template>
-    </PageHeader>
+    />
 
-    <div v-if="store.loading && !site" class="text-sm text-muted-foreground py-8 text-center">Loading…</div>
+    <div v-if="store.loading && !site" class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+      <Loader2 class="size-4 animate-spin" />
+      Loading…
+    </div>
     <EmptyState v-else-if="!site" title="Site not found">
       This site is gone or the id is wrong.
     </EmptyState>
 
     <template v-else>
-      <Surface>
-        <SectionHeader title="Host" description="Domain, document root, and PHP version for this site." />
-        <div class="px-5 pb-2">
+      <Card>
+        <CardHeader class="border-b">
+          <CardTitle>Host</CardTitle>
+          <CardDescription>Domain, document root, and PHP version for this site.</CardDescription>
+        </CardHeader>
+        <CardContent class="pb-0 sm:pb-0">
           <SettingRow label="Domain" for="sd-domain">
             <Input id="sd-domain" v-model="form.domain" placeholder="myapp.test" />
           </SettingRow>
@@ -158,13 +155,13 @@ async function save() {
           </SettingRow>
           <SettingRow label="Public directory" hint="Optional web root inside the project." for="sd-public">
             <Input id="sd-public" v-model="form.public_dir" placeholder="public" class="font-mono" />
-            <p v-if="detectedFramework" class="text-xs text-muted-foreground mt-1.5">
+            <p v-if="detectedFramework" class="mt-2 text-xs text-muted-foreground">
               Detected: <span class="capitalize">{{ detectedFramework }}</span>
             </p>
           </SettingRow>
           <SettingRow label="PHP version" for="sd-php">
             <Select v-model="form.php_version">
-              <SelectTrigger id="sd-php">
+              <SelectTrigger id="sd-php" class="w-full sm:w-48">
                 <SelectValue placeholder="Select version" />
               </SelectTrigger>
               <SelectContent>
@@ -177,39 +174,53 @@ async function save() {
           <SettingRow label="Aliases" hint="Comma-separated extra hostnames." for="sd-aliases">
             <Input id="sd-aliases" v-model="form.aliases" placeholder="www.myapp.test" />
           </SettingRow>
-        </div>
-      </Surface>
+        </CardContent>
+      </Card>
 
-      <Surface>
-        <SectionHeader title="Options" description="TLS, profiler, and CORS for this host." />
-        <div class="px-5 pb-2">
+      <Card>
+        <CardHeader class="border-b">
+          <CardTitle>Options</CardTitle>
+          <CardDescription>TLS, profiler, and CORS for this host.</CardDescription>
+        </CardHeader>
+        <CardContent class="pb-0 sm:pb-0">
           <SettingRow label="Force HTTPS" hint="Redirect HTTP to HTTPS." for="sd-https">
-            <div class="flex items-center h-9">
+            <div class="flex h-9 items-center">
               <Checkbox id="sd-https" v-model:checked="form.https" />
             </div>
           </SettingRow>
           <SettingRow label="SPX profiler" hint="Activates via cookie or query param." for="sd-spx">
-            <div class="flex items-center h-9">
+            <div class="flex h-9 items-center">
               <Checkbox id="sd-spx" v-model:checked="form.spx_enabled" />
             </div>
           </SettingRow>
           <SettingRow label="Inject CORS headers" hint="Disable when the app manages its own CORS." for="sd-cors">
-            <div class="flex items-center h-9">
+            <div class="flex h-9 items-center">
               <Checkbox id="sd-cors" v-model:checked="form.cors" />
             </div>
           </SettingRow>
-        </div>
-      </Surface>
+        </CardContent>
+      </Card>
 
-      <Surface v-if="!site.parent_site_id && site.is_git_repo">
-        <SectionHeader title="Worktrees" description="Check out another branch as its own .test host." />
-        <div class="px-5 pb-5">
-          <Button variant="outline" @click="router.push(`/sites/${site.id}/worktree`)">
-            <GitFork class="w-4 h-4" />
-            Add Git Worktree
+      <Card v-if="!site.parent_site_id && site.is_git_repo">
+        <CardHeader>
+          <CardTitle>Worktrees</CardTitle>
+          <CardDescription>Check out another branch as its own .test host.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" size="sm" @click="router.push(`/sites/${site.id}/worktree`)">
+            <GitFork class="size-3.5" />
+            Add git worktree
           </Button>
-        </div>
-      </Surface>
+        </CardContent>
+      </Card>
+
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="outline" :disabled="saving" @click="router.push('/sites')">Cancel</Button>
+        <Button :disabled="!form.domain || !form.root_path || saving" @click="save">
+          <Loader2 v-if="saving" class="size-4 animate-spin" />
+          {{ saving ? 'Saving…' : 'Save' }}
+        </Button>
+      </div>
     </template>
   </div>
 </template>

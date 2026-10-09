@@ -2,11 +2,11 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
-import { StreamLanguage } from '@codemirror/language'
+import { StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { properties } from '@codemirror/legacy-modes/mode/properties'
 import { toml } from '@codemirror/legacy-modes/mode/toml'
 import { standardSQL } from '@codemirror/legacy-modes/mode/sql'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 import { useDarkMode } from '@/composables/useDarkMode'
 
 const props = defineProps<{
@@ -34,20 +34,23 @@ function buildExtensions() {
     exts.push(StreamLanguage.define(standardSQL))
   }
 
-  if (isDark.value) {
-    exts.push(oneDark)
-  } else {
-    // Light mode: minimal base theme for a clean look
-    exts.push(
-      EditorView.theme({
-        '&': { background: 'transparent' },
-        '.cm-scroller': { fontFamily: 'ui-monospace, monospace', fontSize: '13px' },
-        '.cm-gutters': { background: 'hsl(var(--muted))', borderRight: '1px solid hsl(var(--border))' },
-        '.cm-activeLineGutter': { background: 'hsl(var(--accent))' },
-        '.cm-activeLine': { background: 'hsl(var(--accent) / 0.4)' },
-      })
-    )
-  }
+  // Chrome colours come from the app theme tokens so the editor matches the
+  // surrounding surface; only syntax colours differ between light and dark.
+  exts.push(
+    EditorView.theme({
+      '&': { background: 'var(--card)', color: 'var(--foreground)' },
+      '.cm-scroller': { fontFamily: "'Geist Mono', ui-monospace, monospace", fontSize: '13px', lineHeight: '1.6' },
+      '.cm-gutters': { background: 'var(--card)', color: 'var(--muted-foreground)', borderRight: '1px solid var(--border)' },
+      '.cm-activeLineGutter': { background: 'var(--muted)', color: 'var(--foreground)' },
+      '.cm-activeLine': { background: 'color-mix(in oklch, var(--muted) 60%, transparent)' },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--foreground)' },
+      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+        background: 'color-mix(in oklch, var(--ring) 30%, transparent)',
+      },
+      '&.cm-focused': { outline: 'none' },
+    }, { dark: isDark.value }),
+  )
+  if (isDark.value) exts.push(syntaxHighlighting(oneDarkHighlightStyle))
 
   if (props.readonly) {
     exts.push(EditorState.readOnly.of(true))

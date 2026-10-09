@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.18.0 — 2026-10-09
+
+- PHP now trusts Caddy's local CA. `{serverRoot}/php/ca-bundle.crt` combines the OS CA bundle with Caddy's root so `file_get_contents`, Guzzle, Meilisearch, and S3 clients can call `https://*.test` hosts (`meilisearch.test`, `s3.maxio.test`, …) without TLS errors. `openssl.cafile` and `curl.cainfo` are set in php.ini; PHP-FPM also receives `SSL_CERT_FILE` / `CURL_CA_BUNDLE`.
+- Refreshed the dashboard layout: shared nav, split views, pane primitives, and responsive pages (phone and tablet).
+
 ## v0.17.0 — 2026-10-07
 
 - Split privileged bind into `devctl elevate daemon`. The dashboard unit has no `CAP_NET_BIND_SERVICE`. Caddy (and later FTP-style services) run under the elevate supervisor and bind `:80`/`:443` on Linux and macOS, including HTTP/3. Guest NAT no longer matches a host-wide pf `rdr`.
