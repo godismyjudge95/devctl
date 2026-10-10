@@ -107,30 +107,27 @@ func InstalledVersions(serverRoot string) ([]Version, error) {
 	return versions, nil
 }
 
-// UpdateGlobalSymlink points {serverRoot}/bin/php at the CLI binary for the
+// UpdateGlobalSymlink points {serverRoot}/bin/php at a wrapper for the
 // highest installed PHP version that has a CLI binary present. If no versions
-// have a CLI binary the symlink is removed. Errors are non-fatal — callers
+// have a CLI binary the wrapper is removed. Errors are non-fatal — callers
 // should log but continue.
 func UpdateGlobalSymlink(serverRoot string) error {
 	globalLink := filepath.Join(paths.BinDir(serverRoot), "php")
 
 	versions, err := InstalledVersions(serverRoot)
 	if err != nil {
-		return fmt.Errorf("update global php symlink: %w", err)
+		return fmt.Errorf("update global php wrapper: %w", err)
 	}
 
-	// Remove any existing symlink or file.
 	_ = os.Remove(globalLink)
 
-	// Find the highest version that also has a CLI binary.
 	for _, v := range versions {
 		cliBin := filepath.Join(PHPDir(v.Version, serverRoot), "php")
 		if _, statErr := os.Stat(cliBin); statErr != nil {
-			// CLI binary missing for this version — skip it.
 			continue
 		}
-		if err := os.Symlink(cliBin, globalLink); err != nil {
-			return fmt.Errorf("update global php symlink: %w", err)
+		if err := writeCLIWrapper(globalLink, cliBin, serverRoot); err != nil {
+			return fmt.Errorf("update global php wrapper: %w", err)
 		}
 		return nil
 	}

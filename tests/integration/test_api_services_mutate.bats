@@ -413,6 +413,12 @@ load setup
   [ "$status" -eq 0 ]
 }
 
+@test "maxio: s3.maxio.test vhost also matches bucket virtual-host names" {
+  run container_exec bash -lc 'curl -sf http://127.0.0.1:2019/id/vhost-s3-maxio-test'
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -Fq '*.s3.maxio.test'
+}
+
 @test "maxio: stop returns 200" {
   status=$(api_post_status /api/services/maxio/stop "")
   [ "$status" -eq 200 ]

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.18.1 — 2026-10-09
+
+- Caddy now starts with `--resume` so a crash or `make install` restart loads the last Admin API config. Without that, `caddy run` came up empty (`:80`/`:443` dead) while the dashboard still reported it running. The health check now requires the `devctl` HTTP server, not a `null` `/config/`. The dashboard also restores that server when Caddy is up with empty config (macOS `make install` does not restart the elevate daemon).
+- Fixed PHP HTTPS to `s3.maxio.test`: Caddy now issues internal certs for `*.s3.maxio.test` (AWS virtual-hosted bucket URLs), the PHP CA bundle includes Caddy's intermediate, FPM/CLI set `AWS_CA_BUNDLE`, and `bin/php` is a wrapper that loads php.ini plus the CA env.
+
 ## v0.18.0 — 2026-10-09
 
 - PHP now trusts Caddy's local CA. `{serverRoot}/php/ca-bundle.crt` combines the OS CA bundle with Caddy's root so `file_get_contents`, Guzzle, Meilisearch, and S3 clients can call `https://*.test` hosts (`meilisearch.test`, `s3.maxio.test`, …) without TLS errors. `openssl.cafile` and `curl.cainfo` are set in php.ini; PHP-FPM also receives `SSL_CERT_FILE` / `CURL_CA_BUNDLE`.

@@ -136,6 +136,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	fmt.Fprintln(w, "maxio: creating s3.maxio.test Caddy vhost (S3 API)...")
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "s3.maxio.test",
+		Aliases:      []string{"*.s3.maxio.test"},
 		SiteType:     "ws",
 		WSUpstream:   "127.0.0.1:9900",
 		HTTPS:        true,

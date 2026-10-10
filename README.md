@@ -288,12 +288,16 @@ The layout follows TablePlus: engines and databases on the left, tables in the m
 
 ![MaxIO file browser showing bucket contents](docs/screenshot-maxio.png)
 
-[MaxIO](https://github.com/coollabsio/maxio) is a high-performance S3-compatible object storage server (single binary from coollabsio/maxio). Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/maxio/config.env` to change them. Data is stored at `{serverRoot}/maxio/data`. The S3 API listens on loopback port `9900` and is reached via the `s3.maxio.test` / `maxio.test` Caddy vhosts (and the dashboard Storage UI). Browser uploads (e.g. Livewire direct-to-S3) work cross-origin because Caddy injects CORS headers on `s3.maxio.test` (and every new bucket also gets a permissive S3 CORS policy).
+[MaxIO](https://github.com/coollabsio/maxio) is a high-performance S3-compatible object storage server (single binary from coollabsio/maxio). Install it from the Services tab. Default credentials are `devctl` / `devctlsecret` — edit `{serverRoot}/maxio/config.env` to change them. Data is stored at `{serverRoot}/maxio/data`. The S3 API listens on loopback port `9900` and is reached via the `s3.maxio.test` / `maxio.test` Caddy vhosts (and the dashboard Storage UI). Caddy also serves `*.s3.maxio.test` so the AWS SDK's default virtual-hosted style (`https://{bucket}.s3.maxio.test`) gets a matching TLS certificate. Browser uploads (e.g. Livewire direct-to-S3) work cross-origin because Caddy injects CORS headers on `s3.maxio.test` (and every new bucket also gets a permissive S3 CORS policy).
 
 For Laravel, copy the generated `connection.env` values into your `.env`:
 
 ```env
+AWS_ACCESS_KEY_ID=DEVCTL
+AWS_SECRET_ACCESS_KEY=DEVCTL
+AWS_DEFAULT_REGION=us-east-1
 AWS_ENDPOINT=https://s3.maxio.test
+AWS_USE_PATH_STYLE_ENDPOINT=true
 ```
 
 ---
@@ -365,12 +369,14 @@ The **Global PHP Settings** panel in the dashboard patches `memory_limit`, `uplo
 
 Click the file icon on any PHP-FPM row in the Services tab to open the full-screen config editor. PHP-FPM shows two tabs — `php.ini` and `php-fpm.conf` — switchable without leaving the editor.
 
-### CLI symlinks
+### CLI wrappers
 
 On each PHP version install, devctl creates:
 
-- `{serverRoot}/bin/php{version}` — version-specific CLI symlink (e.g. `php8.4`)
-- `{serverRoot}/bin/php` — always points to the highest installed version
+- `{serverRoot}/bin/php{version}` — version-specific CLI wrapper (e.g. `php8.4`)
+- `{serverRoot}/bin/php` — always wraps the highest installed version
+
+The wrappers load that version's `php.ini` and set `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, and `AWS_CA_BUNDLE` so Artisan and the AWS SDK trust `https://*.test`.
 
 ### Laravel and Statamic CLIs
 
@@ -455,7 +461,7 @@ sudo devctl elevate trust
 
 (Requires the daemon + Caddy to be running so the CA can be read.)
 
-PHP does not use the OS trust store (the static OpenSSL build looks at `openssl.cafile` / `curl.cainfo`). On startup — and after Caddy starts — devctl writes `{serverRoot}/php/ca-bundle.crt` (OS CAs plus Caddy's local root) and points every PHP version at it. That is what lets `file_get_contents`, Guzzle, Meilisearch, and the AWS SDK call `https://meilisearch.test`, `https://s3.maxio.test`, and other `*.test` hosts without TLS errors. PHP-FPM also gets `SSL_CERT_FILE` and `CURL_CA_BUNDLE` in its process environment. You do not need `elevate trust` for PHP; that command is for browsers.
+PHP does not use the OS trust store (the static OpenSSL build looks at `openssl.cafile` / `curl.cainfo`). On startup — and after Caddy starts — devctl writes `{serverRoot}/php/ca-bundle.crt` (OS CAs plus Caddy's local root and intermediate) and points every PHP version at it. `{serverRoot}/bin/php` is a wrapper that loads that php.ini and sets `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, and `AWS_CA_BUNDLE`. That is what lets `file_get_contents`, Guzzle, Meilisearch, and the AWS SDK call `https://meilisearch.test`, `https://s3.maxio.test`, and other `*.test` hosts without TLS errors. PHP-FPM gets the same environment variables. You do not need `elevate trust` for PHP; that command is for browsers.
 
 **Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress (classic and Bedrock), Drupal, Craft CMS, Symfony, and generic PHP projects.
 

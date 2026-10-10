@@ -292,6 +292,16 @@ php_admin_value[auto_prepend_file] = %s
 	chown(fpmConfPath)
 	chown(PHPDir(ver, serverRoot))
 
+	cliBin := filepath.Join(PHPDir(ver, serverRoot), "php")
+	if _, err := os.Stat(cliBin); err == nil {
+		if err := writeCLIWrapper(filepath.Join(paths.BinDir(serverRoot), "php"+ver), cliBin, serverRoot); err != nil {
+			log.Printf("php: write cli wrapper for %s: %v", ver, err)
+		}
+		if err := UpdateGlobalSymlink(serverRoot); err != nil {
+			log.Printf("php: %v", err)
+		}
+	}
+
 	return nil
 }
 

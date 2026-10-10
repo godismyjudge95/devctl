@@ -382,6 +382,57 @@ func (m *Manager) RemoveWorktree(ctx context.Context, worktreeID string) error {
 	return m.Delete(ctx, worktreeID)
 }
 
+// EnsureAlias adds alias to domain's Caddy hosts when the site exists.
+// No-op when the site is missing (service not installed). Idempotent.
+func (m *Manager) EnsureAlias(ctx context.Context, domain, alias string) error {
+	site, err := m.db.GetSiteByDomain(ctx, domain)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("ensure alias %s on %s: %w", alias, domain, err)
+	}
+	var aliases []string
+	if site.Aliases != "" && site.Aliases != "null" {
+		_ = json.Unmarshal([]byte(site.Aliases), &aliases)
+	}
+	for _, a := range aliases {
+		if a == alias {
+			if err := m.syncCaddy(site); err != nil {
+				fmt.Printf("sites: caddy sync error for %s: %v\n", site.Domain, err)
+			}
+			return nil
+		}
+	}
+	aliases = append(aliases, alias)
+	encoded, err := json.Marshal(aliases)
+	if err != nil {
+		return err
+	}
+	updated, err := m.db.UpdateSite(ctx, dbq.UpdateSiteParams{
+		Domain:       site.Domain,
+		RootPath:     site.RootPath,
+		PhpVersion:   site.PhpVersion,
+		Aliases:      string(encoded),
+		SpxEnabled:   site.SpxEnabled,
+		Https:        site.Https,
+		Cors:         site.Cors,
+		Settings:     site.Settings,
+		PublicDir:    site.PublicDir,
+		IsGitRepo:    site.IsGitRepo,
+		GitRemoteUrl: site.GitRemoteUrl,
+		Framework:    site.Framework,
+		ID:           site.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("ensure alias %s on %s: %w", alias, domain, err)
+	}
+	if err := m.syncCaddy(updated); err != nil {
+		fmt.Printf("sites: caddy sync error for %s: %v\n", updated.Domain, err)
+	}
+	return nil
+}
+
 func (m *Manager) syncCaddy(site dbq.Site) error {
 	var aliases []string
 	if err := json.Unmarshal([]byte(site.Aliases), &aliases); err != nil {

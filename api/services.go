@@ -71,19 +71,7 @@ func (s *Server) runServiceAction(w http.ResponseWriter, r *http.Request, action
 	// When Caddy is started or restarted, wait for the Admin API then push
 	// the HTTP server config and sync all vhosts — same as after install.
 	if id == "caddy" && (action == "start" || action == "restart") {
-		go func() {
-			if err := s.caddy.WaitForAdmin(10 * time.Second); err != nil {
-				log.Printf("caddy start: admin not ready: %v", err)
-				return
-			}
-			if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
-				log.Printf("caddy start: ensure http server: %v", err)
-			}
-			s.refreshPHPCABundle()
-			if err := s.siteManager.SyncAll(context.Background()); err != nil {
-				log.Printf("caddy start: sync sites: %v", err)
-			}
-		}()
+		go s.pushCaddyConfig("caddy start")
 	}
 
 	// Immediately re-poll so subscribers see the new state without waiting
@@ -308,19 +296,7 @@ func (s *Server) handleServiceInstall(w http.ResponseWriter, r *http.Request) {
 		// For Caddy, wait for the Admin API then push the HTTP server config
 		// and sync all vhosts — otherwise sites won't be routed until restart.
 		if id == "caddy" {
-			go func() {
-				if err := s.caddy.WaitForAdmin(10 * time.Second); err != nil {
-					log.Printf("install: caddy admin not ready: %v", err)
-					return
-				}
-				if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
-					log.Printf("install: caddy ensure http server: %v", err)
-				}
-				s.refreshPHPCABundle()
-				if err := s.siteManager.SyncAll(context.Background()); err != nil {
-					log.Printf("install: caddy sync sites: %v", err)
-				}
-			}()
+			go s.pushCaddyConfig("install: caddy")
 		}
 		if id == "maxio" {
 			go func() {
@@ -748,19 +724,7 @@ func (s *Server) handleServiceUpdate(w http.ResponseWriter, r *http.Request) {
 			log.Printf("update: restart %s: %v", id, err)
 		}
 		if id == "caddy" {
-			go func() {
-				if err := s.caddy.WaitForAdmin(10 * time.Second); err != nil {
-					log.Printf("update: caddy admin not ready: %v", err)
-					return
-				}
-				if err := s.caddy.EnsureHTTPServer(s.devctlAddr); err != nil {
-					log.Printf("update: caddy ensure http server: %v", err)
-				}
-				s.refreshPHPCABundle()
-				if err := s.siteManager.SyncAll(context.Background()); err != nil {
-					log.Printf("update: caddy sync sites: %v", err)
-				}
-			}()
+			go s.pushCaddyConfig("update: caddy")
 		}
 		if id == "postgres" {
 			go func() {

@@ -309,13 +309,13 @@ func run() error {
 	// Refresh the PHP CA bundle now that Caddy can issue its local root.
 	// Static PHP OpenSSL does not use the OS trust store; the bundle is what
 	// lets file_get_contents / curl / Guzzle call https://*.test.
-	var caddyRootPEM []byte
-	if cert, err := caddyClient.RootCert(); err != nil {
-		log.Printf("php: caddy root cert: %v", err)
+	var caddyCAPEM []byte
+	if cert, err := caddyClient.CAChain(); err != nil {
+		log.Printf("php: caddy ca chain: %v", err)
 	} else {
-		caddyRootPEM = cert
+		caddyCAPEM = cert
 	}
-	if err := php.ApplyCABundle(cfg.ServerRoot, caddyRootPEM); err != nil {
+	if err := php.ApplyCABundle(cfg.ServerRoot, caddyCAPEM); err != nil {
 		log.Printf("php: apply ca bundle: %v", err)
 	}
 	done()
@@ -325,6 +325,10 @@ func run() error {
 		log.Printf("sites: startup sync: %v", err)
 	}
 	siteManager.RemoveServerSite(ctx)
+	// AWS SDK default is virtual-hosted style: https://{bucket}.s3.maxio.test
+	if err := siteManager.EnsureAlias(ctx, "s3.maxio.test", "*.s3.maxio.test"); err != nil {
+		log.Printf("sites: ensure s3.maxio.test wildcard: %v", err)
+	}
 	done()
 
 	done = step("watcher")
@@ -390,6 +394,7 @@ func run() error {
 	defer cancel()
 
 	go poller.Run(runCtx)
+	go srv.WatchCaddyConfig(runCtx)
 	supDone := make(chan struct{})
 	go func() {
 		supervisor.Run(runCtx)

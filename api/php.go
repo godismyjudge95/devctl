@@ -175,13 +175,13 @@ func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
 // refreshPHPCABundle writes the combined CA bundle (OS CAs + Caddy local
 // root) so PHP HTTPS to *.test succeeds. Safe to call whenever Caddy is up.
 func (s *Server) refreshPHPCABundle() {
-	var rootPEM []byte
-	if cert, err := s.caddy.RootCert(); err != nil {
-		log.Printf("php: caddy root cert: %v", err)
+	var chain []byte
+	if cert, err := s.caddy.CAChain(); err != nil {
+		log.Printf("php: caddy ca chain: %v", err)
 	} else {
-		rootPEM = cert
+		chain = cert
 	}
-	if err := php.ApplyCABundle(s.serverRoot, rootPEM); err != nil {
+	if err := php.ApplyCABundle(s.serverRoot, chain); err != nil {
 		log.Printf("php: apply ca bundle: %v", err)
 	}
 }

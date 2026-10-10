@@ -135,8 +135,23 @@ func TestWriteCABundle_UsesOnDiskCaddyRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(data), "BEGIN CERTIFICATE") != 1 {
-		t.Fatalf("want disk caddy cert in bundle, got:\n%s", data)
+	if n := strings.Count(string(data), "BEGIN CERTIFICATE"); n != 1 {
+		t.Fatalf("want disk caddy root in bundle, got %d:\n%s", n, data)
+	}
+	interPEM := testCACertPEM(t, "caddy-intermediate")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(rootPath), "intermediate.crt"), interPEM, 0644); err != nil {
+		t.Fatal(err)
+	}
+	path, err = WriteCABundle(serverRoot, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(data), "BEGIN CERTIFICATE"); n != 2 {
+		t.Fatalf("want root+intermediate in bundle, got %d:\n%s", n, data)
 	}
 }
 
@@ -246,10 +261,10 @@ func TestApplyCABundle_PatchesInstalledPHPIni(t *testing.T) {
 func TestCertEnv(t *testing.T) {
 	env := CertEnv("/srv")
 	want := paths.CABundlePath("/srv")
-	if len(env) != 2 {
-		t.Fatalf("len=%d", len(env))
+	if len(env) != 3 {
+		t.Fatalf("len=%d %v", len(env), env)
 	}
-	if env[0] != "SSL_CERT_FILE="+want || env[1] != "CURL_CA_BUNDLE="+want {
+	if env[0] != "SSL_CERT_FILE="+want || env[1] != "CURL_CA_BUNDLE="+want || env[2] != "AWS_CA_BUNDLE="+want {
 		t.Fatalf("env=%v", env)
 	}
 }

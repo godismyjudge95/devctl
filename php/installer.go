@@ -75,10 +75,9 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return fmt.Errorf("php %s: create bin dir: %w", ver, err)
 	}
-	symlinkPath := filepath.Join(binDir, "php"+ver)
-	_ = os.Remove(symlinkPath) // remove stale symlink if any
-	if err := os.Symlink(cliBin, symlinkPath); err != nil {
-		return fmt.Errorf("php %s: symlink cli: %w", ver, err)
+	wrapperPath := filepath.Join(binDir, "php"+ver)
+	if err := writeCLIWrapper(wrapperPath, cliBin, serverRoot); err != nil {
+		return fmt.Errorf("php %s: write cli wrapper: %w", ver, err)
 	}
 
 	// 6. Write php-fpm.conf and php.ini.

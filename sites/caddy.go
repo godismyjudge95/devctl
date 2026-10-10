@@ -47,6 +47,19 @@ func (c *CaddyClient) WaitForAdmin(timeout time.Duration) error {
 	return fmt.Errorf("timed out after %s", timeout)
 }
 
+// HasHTTPServer reports whether the Admin API has the named "devctl" HTTP
+// server. A running Caddy with empty config (caddy run without --resume)
+// answers /config/ with null and this returns false.
+func (c *CaddyClient) HasHTTPServer() bool {
+	resp, err := c.http.Get(c.adminURL + "/config/apps/http/servers/devctl")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode == http.StatusOK
+}
+
 // vhostRoute is the JSON structure Caddy expects for a single vhost route.
 type vhostRoute struct {
 	ID       string        `json:"@id"`
@@ -254,6 +267,40 @@ func (c *CaddyClient) RootCert() ([]byte, error) {
 	return []byte(result.RootCertificate), nil
 }
 
+// CAChain returns the Caddy local CA root plus intermediate (PEM).
+// PHP OpenSSL does not fetch AIA intermediates; the bundle must contain both
+// so HTTPS to *.test verifies when the handshake omits the intermediate.
+func (c *CaddyClient) CAChain() ([]byte, error) {
+	resp, err := c.http.Get(c.adminURL + "/pki/ca/local")
+	if err != nil {
+		return nil, fmt.Errorf("caddy pki: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		RootCertificate         string `json:"root_certificate"`
+		IntermediateCertificate string `json:"intermediate_certificate"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("caddy pki decode: %w", err)
+	}
+	if result.RootCertificate == "" {
+		return nil, fmt.Errorf("caddy pki: root_certificate field is empty")
+	}
+	var b strings.Builder
+	b.WriteString(result.RootCertificate)
+	if !strings.HasSuffix(result.RootCertificate, "\n") {
+		b.WriteByte('\n')
+	}
+	if result.IntermediateCertificate != "" {
+		b.WriteString(result.IntermediateCertificate)
+		if !strings.HasSuffix(result.IntermediateCertificate, "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return []byte(b.String()), nil
+}
+
 // EnsureHTTPServer ensures the Caddy config has an HTTP server named "devctl"
 // listening on dist.ListenHTTP() (:80/:443),
 // the TLS automation policy uses Caddy's internal CA for *.test domains, and
@@ -346,7 +393,7 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 		"automation": map[string]interface{}{
 			"policies": []map[string]interface{}{
 				{
-					"subjects": []string{"*.test", "*.*.test", "devctl.test"},
+					"subjects": []string{"*.test", "*.*.test", "*.*.*.test", "devctl.test"},
 					"issuers": []map[string]interface{}{
 						{"module": "internal"},
 					},

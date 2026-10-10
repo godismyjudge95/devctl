@@ -36,6 +36,7 @@ func CertEnv(serverRoot string) []string {
 	return []string{
 		"SSL_CERT_FILE=" + p,
 		"CURL_CA_BUNDLE=" + p,
+		"AWS_CA_BUNDLE=" + p,
 	}
 }
 
@@ -74,7 +75,7 @@ func WriteCABundle(serverRoot string, extraPEM []byte) (string, error) {
 	if len(bytes.TrimSpace(extraPEM)) > 0 {
 		chunks = append(chunks, extraPEM)
 	}
-	for _, p := range caddyRootCertPaths(serverRoot) {
+	for _, p := range caddyCACertPaths(serverRoot) {
 		if data, err := os.ReadFile(p); err == nil && len(bytes.TrimSpace(data)) > 0 {
 			chunks = append(chunks, data)
 		}
@@ -96,13 +97,18 @@ func WriteCABundle(serverRoot string, extraPEM []byte) (string, error) {
 	return bundlePath, nil
 }
 
-func caddyRootCertPaths(serverRoot string) []string {
+func caddyCACertPaths(serverRoot string) []string {
 	caddyDir := paths.ServiceDir(serverRoot, "caddy")
-	return []string{
-		filepath.Join(caddyDir, ".local", "share", "caddy", "pki", "authorities", "local", "root.crt"),
-		filepath.Join(caddyDir, "Library", "Application Support", "Caddy", "pki", "authorities", "local", "root.crt"),
-		filepath.Join(caddyDir, "pki", "authorities", "local", "root.crt"),
+	dirs := []string{
+		filepath.Join(caddyDir, ".local", "share", "caddy", "pki", "authorities", "local"),
+		filepath.Join(caddyDir, "Library", "Application Support", "Caddy", "pki", "authorities", "local"),
+		filepath.Join(caddyDir, "pki", "authorities", "local"),
 	}
+	var out []string
+	for _, dir := range dirs {
+		out = append(out, filepath.Join(dir, "root.crt"), filepath.Join(dir, "intermediate.crt"))
+	}
+	return out
 }
 
 func readFirstFile(candidates []string) []byte {
