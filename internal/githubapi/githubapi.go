@@ -75,7 +75,15 @@ func LatestTag(ctx context.Context, ownerRepo string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", HTTPStatusError("github version check "+ownerRepo, resp)
+		apiErr := HTTPStatusError("github version check "+ownerRepo, resp)
+		// The API allows 60 unauthenticated calls an hour for each IP. The
+		// releases/latest web page is not counted, and redirects to the tag.
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			if tag, err := latestTagFromRedirect(ctx, ownerRepo); err == nil {
+				return tag, nil
+			}
+		}
+		return "", apiErr
 	}
 
 	var payload struct {
@@ -88,4 +96,28 @@ func LatestTag(ctx context.Context, ownerRepo string) (string, error) {
 		return "", fmt.Errorf("github version check %s: empty tag_name", ownerRepo)
 	}
 	return payload.TagName, nil
+}
+
+// latestTagFromRedirect reads the tag from the Location header of
+// https://github.com/{ownerRepo}/releases/latest (".../releases/tag/{tag}").
+func latestTagFromRedirect(ctx context.Context, ownerRepo string) (string, error) {
+	url := "https://github.com/" + ownerRepo + "/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "devctl/1")
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	done := httplog.LogGitHubRequestStart(req.Method, url)
+	resp, err := client.Do(req)
+	done(resp, err)
+	if err != nil {
+		return "", err
+	}
+	resp.Body.Close()
+	_, tag, ok := strings.Cut(resp.Header.Get("Location"), "/releases/tag/")
+	if !ok || tag == "" || strings.Contains(tag, "/") {
+		return "", fmt.Errorf("github latest release redirect %s: HTTP %d, no tag", ownerRepo, resp.StatusCode)
+	}
+	return tag, nil
 }

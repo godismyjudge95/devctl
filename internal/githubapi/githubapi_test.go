@@ -51,6 +51,30 @@ func TestLatestTag_HTTPError(t *testing.T) {
 	}
 }
 
+func TestLatestTag_RateLimitedFallsBackToReleaseRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/repos/") {
+			http.Error(w, `{"message":"API rate limit exceeded"}`, http.StatusForbidden)
+			return
+		}
+		if r.Method != "HEAD" || r.URL.Path != "/acme/tool/releases/latest" {
+			t.Errorf("fallback request = %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Location", "https://github.com/acme/tool/releases/tag/v1.2.3")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer srv.Close()
+
+	orig := http.DefaultTransport
+	http.DefaultTransport = rewire(srv.URL)
+	defer func() { http.DefaultTransport = orig }()
+
+	tag, err := LatestTag(context.Background(), "acme/tool")
+	if err != nil || tag != "v1.2.3" {
+		t.Fatalf("LatestTag = %q, %v; want v1.2.3 from the redirect", tag, err)
+	}
+}
+
 func TestLatestTag_EmptyTag(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
