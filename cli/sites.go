@@ -44,7 +44,9 @@ func init() {
 					spx = styleWarn.Render("on")
 				}
 				framework := s.Framework
-				if framework == "" {
+				if s.Proxy != nil {
+					framework = "proxy → " + s.Proxy.Upstream
+				} else if framework == "" {
 					framework = styleDim.Render("—")
 				}
 				worktree := styleDim.Render("—")
@@ -106,11 +108,20 @@ func init() {
 			Header("Site: " + found.Domain)
 			KV("URL", scheme+"://"+found.Domain)
 			KV("ID", found.ID)
-			KV("Root path", found.RootPath)
-			KV("Public dir", orDash(found.PublicDir))
-			KV("PHP version", orDash(found.PHPVersion))
-			KV("Framework", orDash(found.Framework))
-			KV("SPX profiler", spx)
+			if p := found.Proxy; p != nil {
+				KV("Proxy to", p.Upstream)
+				host := "upstream host:port"
+				if p.PreserveHost {
+					host = found.Domain
+				}
+				KV("Host header", host)
+			} else {
+				KV("Root path", found.RootPath)
+				KV("Public dir", orDash(found.PublicDir))
+				KV("PHP version", orDash(found.PHPVersion))
+				KV("Framework", orDash(found.Framework))
+				KV("SPX profiler", spx)
+			}
 			KV("HTTPS", fmt.Sprintf("%v", found.HTTPS == 1))
 			KV("CORS", fmt.Sprintf("%v", found.CORS == 1))
 			if found.IsGitRepo == 1 {
@@ -1018,4 +1029,127 @@ func shareStatusStyle(status string) string {
 	default:
 		return styleErr.Render("○ " + status)
 	}
+}
+
+func init() {
+	Register(&Cmd{
+		Name:        "sites:proxy",
+		Description: "Create or update a proxy site: a .test domain with HTTPS that forwards every request (WebSockets too) to a local port or URL",
+		Usage:       "<domain> <url> [--preserve-host]",
+		Args: []ArgDef{
+			{Name: "domain", Description: "Proxy site domain, ending in .test (e.g. vite.test)"},
+			{Name: "url", Description: "Upstream: 127.0.0.1:5173, http://localhost:3000, or https://host:port"},
+		},
+		Flags: []FlagDef{
+			{Name: "preserve-host", Default: "false", Description: "Send the site's own Host header upstream instead of the upstream host:port (Vite then needs server.allowedHosts)"},
+		},
+		Examples: []string{
+			"devctl sites:proxy vite.test http://localhost:5173",
+			"devctl sites:proxy myapi.test 127.0.0.1:3000 --preserve-host",
+			"devctl sites:proxy vite.test http://localhost:5174 --json",
+		},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			const usage = "usage: devctl sites:proxy <domain> <url> [--preserve-host]"
+			var preserveHost bool
+			var pos []string
+			for _, a := range args {
+				switch {
+				case a == "--preserve-host" || a == "--preserve-host=true":
+					preserveHost = true
+				case a == "--preserve-host=false":
+					preserveHost = false
+				case strings.HasPrefix(a, "-"):
+					return fmt.Errorf("unknown flag %s\n%s", a, usage)
+				default:
+					pos = append(pos, a)
+				}
+			}
+			if len(pos) != 2 {
+				return errors.New(usage)
+			}
+			domain := strings.ToLower(pos[0])
+			proxy := map[string]any{"upstream": pos[1], "preserve_host": preserveHost}
+
+			all, err := c.ListSites()
+			if err != nil {
+				return err
+			}
+			var site Site
+			verb := "Created"
+			if existing := siteByDomain(all, domain); existing == nil {
+				site, err = c.CreateSite(map[string]any{"domain": domain, "https": 1, "proxy": proxy})
+			} else {
+				if existing.Proxy == nil {
+					return fmt.Errorf("%s is a PHP site. Delete it first, or pick another domain", domain)
+				}
+				var aliases []string
+				_ = json.Unmarshal([]byte(existing.Aliases), &aliases)
+				verb = "Updated"
+				site, err = c.UpdateSite(existing.ID, map[string]any{
+					"domain":  existing.Domain,
+					"aliases": aliases,
+					"https":   existing.HTTPS,
+					"cors":    existing.CORS,
+					"proxy":   proxy,
+				})
+			}
+			if err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(site)
+				return nil
+			}
+			PrintOK(fmt.Sprintf("%s %s → %s", verb, site.Domain, site.Proxy.Upstream))
+			KV("URL", siteURL(site))
+			return nil
+		},
+	})
+
+	Register(&Cmd{
+		Name:        "sites:proxy:rm",
+		MCP:         MCPConfirm,
+		Description: "Delete a proxy site and its Caddy vhost (PHP sites are not touched)",
+		Usage:       "<domain>",
+		Args:        []ArgDef{{Name: "domain", Description: "Proxy site domain (e.g. vite.test)"}},
+		Examples:    []string{"devctl sites:proxy:rm vite.test", "devctl sites:proxy:rm vite.test --json"},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			if len(args) != 1 {
+				return errors.New("usage: devctl sites:proxy:rm <domain>")
+			}
+			all, err := c.ListSites()
+			if err != nil {
+				return err
+			}
+			site := siteByDomain(all, strings.ToLower(args[0]))
+			if site == nil || site.Proxy == nil {
+				return fmt.Errorf("no proxy site with domain %q — run `devctl sites:list`", args[0])
+			}
+			if err := c.DeleteSite(site.ID); err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(map[string]string{"status": "removed", "domain": site.Domain})
+				return nil
+			}
+			PrintOK("Removed proxy site " + site.Domain)
+			return nil
+		},
+	})
+}
+
+func siteByDomain(all []Site, domain string) *Site {
+	for i := range all {
+		if all[i].Domain == domain {
+			return &all[i]
+		}
+	}
+	return nil
+}
+
+func siteURL(s Site) string {
+	if s.HTTPS == 1 {
+		return "https://" + s.Domain
+	}
+	return "http://" + s.Domain
 }

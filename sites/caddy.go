@@ -90,10 +90,8 @@ type VhostConfig struct {
 	PublicDir  string // subdirectory within RootPath to use as document root (e.g. "public")
 	PHPVersion string // e.g. "8.3"
 	HTTPS      bool
-	// SiteType is "php" (default) or "ws" for a WebSocket reverse proxy.
-	SiteType string
-	// WSUpstream is the dial address for WS sites, e.g. "127.0.0.1:7383".
-	WSUpstream string
+	// Proxy, when set, makes the vhost a reverse proxy instead of a PHP site.
+	Proxy *Proxy
 	// ServerRoot is the devctl server root directory, used to locate the PHP-FPM socket.
 	ServerRoot string
 	// EnableCORS injects permissive Access-Control-* headers on every response.
@@ -418,11 +416,10 @@ func (c *CaddyClient) EnsureHTTPServer(devctlAddr string) error {
 
 	// Ensure the devctl.test reverse-proxy route is present.
 	if err := c.UpsertVhost(VhostConfig{
-		ID:         "vhost-devctl-test",
-		Hosts:      []string{"devctl.test"},
-		HTTPS:      true,
-		SiteType:   "ws",
-		WSUpstream: devctlAddr,
+		ID:    "vhost-devctl-test",
+		Hosts: []string{"devctl.test"},
+		HTTPS: true,
+		Proxy: ServiceProxy(devctlAddr),
 	}); err != nil {
 		return fmt.Errorf("caddy devctl.test vhost: %w", err)
 	}
@@ -503,19 +500,42 @@ func buildHTTPSRedirectRoute(hosts []string, id string) map[string]interface{} {
 	}
 }
 
-// buildRoute constructs the Caddy route JSON for a PHP site or WS proxy.
-func buildRoute(cfg VhostConfig) map[string]interface{} {
-	if cfg.SiteType == "ws" {
-		proxyHandler := map[string]interface{}{
-			"handler":   "reverse_proxy",
-			"upstreams": []map[string]interface{}{{"dial": cfg.WSUpstream}},
+// proxyHandler is the reverse_proxy handler of a proxy site. Caddy passes
+// WebSocket upgrades through it and sets X-Forwarded-For, -Proto, and -Host.
+func proxyHandler(p Proxy) map[string]interface{} {
+	host := "{http.reverse_proxy.upstream.hostport}"
+	if p.PreserveHost {
+		host = "{http.request.hostport}"
+	}
+	h := map[string]interface{}{
+		"handler":   "reverse_proxy",
+		"upstreams": []map[string]interface{}{{"dial": p.Upstream.Dial()}},
+		"headers": map[string]interface{}{
+			"request": map[string]interface{}{
+				"set": map[string][]string{"Host": {host}},
+			},
+		},
+	}
+	if p.Upstream.https {
+		tlsCfg := map[string]interface{}{}
+		if p.Upstream.loopback() {
+			tlsCfg["insecure_skip_verify"] = true
 		}
+		h["transport"] = map[string]interface{}{"protocol": "http", "tls": tlsCfg}
+	}
+	return h
+}
+
+// buildRoute constructs the Caddy route JSON for a PHP site or a proxy site.
+func buildRoute(cfg VhostConfig) map[string]interface{} {
+	if cfg.Proxy != nil {
+		handler := proxyHandler(*cfg.Proxy)
 		if !cfg.EnableCORS {
 			return map[string]interface{}{
 				"@id":      cfg.ID,
 				"match":    []map[string]interface{}{{"host": cfg.Hosts}},
 				"terminal": true,
-				"handle":   []map[string]interface{}{proxyHandler},
+				"handle":   []map[string]interface{}{handler},
 			}
 		}
 		// OPTIONS preflight is terminal; everything else is headers→proxy in one
@@ -532,7 +552,7 @@ func buildRoute(cfg VhostConfig) map[string]interface{} {
 						{
 							"handle": []map[string]interface{}{
 								corsHeadersHandler(),
-								proxyHandler,
+								handler,
 							},
 						},
 					},

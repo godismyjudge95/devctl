@@ -95,6 +95,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | SPX profiler | ✅ (macOS) | ✅ | ❌ | ✅ |
 | Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
 | Share a site publicly | ✅ | ✅ | ✅ | ✅ |
+| Proxy a `.test` domain to a local port | ✅ (`herd proxy`) | ✅ | ✅ | ✅ |
 | Health checks (`doctor`) | ❌ | ✅ | ✅ | ✅ |
 | AI integration | MCP | MCP | MCP | CLI + skill + MCP |
 | Per-project Node isolation | ❌ | ✅ | tools install | ✅ (fnm) |
@@ -518,6 +519,25 @@ devctl sites:new shop --template=laravel --starter-kit=react --database=mysql
 devctl sites:new blog --template=wordpress --admin-user=daniel --json
 ```
 
+### Proxy sites
+
+A proxy site is a `.test` domain that sends every request to a dev server on a local port or URL. Caddy gives it HTTPS like any other site. WebSocket upgrades pass through, so Vite HMR works. A proxy site has no root directory and no PHP.
+
+Create one with **Add proxy** on the Sites page, or with the CLI:
+
+```sh
+devctl sites:proxy vite.test http://localhost:5173
+devctl sites:proxy myapi.test 127.0.0.1:3000 --preserve-host
+devctl sites:proxy:rm vite.test
+```
+
+Run `sites:proxy` again with a new URL to change the upstream, or change it in site settings.
+
+- **Upstream.** `host:port` (plain http), `http://host:port`, or `https://host:port`. No path. Caddy does not verify the certificate of an https upstream on `localhost` or a loopback IP, because dev servers use self-signed certificates. It verifies all other https upstreams.
+- **Host header.** By default the upstream gets its own `host:port` in `Host` (for example `localhost:5173`). Dev servers that check `Host`, such as Vite (`server.allowedHosts`), accept this with their default config. `X-Forwarded-Host` has the `.test` name and `X-Forwarded-Proto` is `https`. Turn on **Preserve Host header** (`--preserve-host`) when the app must see the `.test` name in `Host`. Vite then needs `server.allowedHosts: ['vite.test']`.
+- **Sharing.** `devctl sites:share` works for proxy sites.
+- **Not available.** Workers, worktrees, `.devctl.yaml`, Node pinning, and SPX need a project directory. Proxy sites do not have them.
+
 ---
 
 ## Git Worktrees
@@ -647,7 +667,23 @@ devctl workers:logs myapp.test vite --follow
 - Browsers treat `localhost`, `127.0.0.1`, and `[::1]` as potentially trustworthy (Secure Contexts spec), so an https page may load scripts and open the HMR WebSocket over plain http on loopback. Chrome and Firefox follow this. Safari is not verified.
 - Current `laravel-vite-plugin` releases (checked in 3.2.1) allow CORS from `APP_URL` and any `*.test` origin by default. If the browser console shows a CORS error on an older plugin, set `server: { cors: true }` in `vite.config.js`.
 
-From another computer (the router sends `*.test` to this machine) the browser cannot reach `localhost:5173`. Vite would need TLS on a `*.test` name that Caddy proxies to the dev server. devctl does not add that route yet; it is the "user proxy sites" item that waits for an owner decision. Until then, build the assets (`npm run build`) for remote testing.
+From another computer (the router sends `*.test` to this machine) the browser cannot reach `localhost:5173`. Put the dev server behind a [proxy site](#proxy-sites) and point the HMR client at it:
+
+```sh
+devctl sites:proxy vite.myapp.test http://localhost:5173
+```
+
+```js
+// vite.config.js
+export default defineConfig({
+  server: {
+    hmr: { host: 'vite.myapp.test', protocol: 'wss', clientPort: 443 },
+  },
+  plugins: [laravel({ input: ['resources/css/app.css', 'resources/js/app.js'], refresh: true })],
+})
+```
+
+`laravel-vite-plugin` then writes `https://vite.myapp.test:443` to `public/hot`. The page loads its scripts from that URL and opens the HMR WebSocket to `wss://vite.myapp.test`. Caddy sends both to port 5173. Use `localhost` in the upstream: Vite listens on `localhost` by default, which can be `::1` only, and Caddy tries every address of `localhost`. The same setup works on this machine.
 
 ---
 
@@ -981,6 +1017,8 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `sites:unshare <domain>` | Stop sharing a site and close its tunnel |
 | | `sites:shares` | List shared sites and their public URLs |
 | | `sites:config:init <domain> [--force]` | Write `.devctl.yaml` from the current site settings |
+| | `sites:proxy <domain> <url> [--preserve-host]` | Create or update a proxy site that forwards to a local port or URL (WebSockets too) |
+| | `sites:proxy:rm <domain>` | Delete a proxy site |
 | `helpers` | `helpers:list` | List installed CLI helpers and versions |
 | | `helpers:available` | List helpers that can be installed |
 | | `helpers:install <id>` | Download and install a helper |
@@ -1057,7 +1095,7 @@ Run `devctl devctl:skill` once to write an OpenCode skill file to `~/.agents/ski
 
 ### MCP server
 
-`devctl mcp` is an MCP server on stdio. Like the CLI, it is a client of the daemon API, so it needs no root. It has ten tools (`sites`, `services`, `php`, `db`, `mail`, `logs`, `dumps`, `requests`, `doctor`, `settings`). Each tool takes an `action` (the CLI command name after the namespace, for example `worktree:add`) and `args` (the CLI arguments). The tool list costs about 1.4k tokens; `action=help` returns the full usage of a tool when the agent needs it. Lists are paged (`offset`, `limit`, 50 items by default) and a response stops at 16 KB. Actions that delete data (`db:drop`, `db:import`, `mail:delete`, `mail:clear`, `logs:clear`, `dumps:clear`, `helpers:uninstall`, `sites:worktree:rm`) need `confirm: true`. Commands that need root or replace the binary (`elevate`, `tls:trust`, `dns:setup`, `devctl:update`) and the streaming `requests:watch` are not in MCP.
+`devctl mcp` is an MCP server on stdio. Like the CLI, it is a client of the daemon API, so it needs no root. It has ten tools (`sites`, `services`, `php`, `db`, `mail`, `logs`, `dumps`, `requests`, `doctor`, `settings`). Each tool takes an `action` (the CLI command name after the namespace, for example `worktree:add`) and `args` (the CLI arguments). The tool list costs about 1.4k tokens; `action=help` returns the full usage of a tool when the agent needs it. Lists are paged (`offset`, `limit`, 50 items by default) and a response stops at 16 KB. Actions that delete data (`db:drop`, `db:import`, `mail:delete`, `mail:clear`, `logs:clear`, `dumps:clear`, `helpers:uninstall`, `sites:worktree:rm`, `sites:proxy:rm`) need `confirm: true`. Commands that need root or replace the binary (`elevate`, `tls:trust`, `dns:setup`, `devctl:update`) and the streaming `requests:watch` are not in MCP.
 
 ```sh
 devctl mcp:install                          # print the config for each client

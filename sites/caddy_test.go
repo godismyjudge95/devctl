@@ -168,8 +168,7 @@ func TestBuildRoute_CORSDisabled_WS(t *testing.T) {
 	cfg := VhostConfig{
 		ID:         "vhost-ws",
 		Hosts:      []string{"reverb.test"},
-		SiteType:   "ws",
-		WSUpstream: "127.0.0.1:8080",
+		Proxy:      ServiceProxy("127.0.0.1:8080"),
 		EnableCORS: false,
 	}
 
@@ -184,8 +183,7 @@ func TestBuildRoute_WSRoute(t *testing.T) {
 	cfg := VhostConfig{
 		ID:         "vhost-ws",
 		Hosts:      []string{"reverb.test"},
-		SiteType:   "ws",
-		WSUpstream: "127.0.0.1:8080",
+		Proxy:      ServiceProxy("127.0.0.1:8080"),
 		EnableCORS: true,
 	}
 	route := buildRoute(cfg)

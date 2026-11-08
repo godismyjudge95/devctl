@@ -7,7 +7,7 @@ import { toast } from 'vue-sonner'
 import {
   Plus, Sparkles, ExternalLink, Trash2, Zap, Loader2,
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
-  Lock, Unlock, Settings, Globe, Share2, FileCog,
+  Lock, Unlock, Settings, Globe, Share2, FileCog, ArrowRightLeft,
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,7 @@ const filteredSites = computed(() => {
   return store.sites.filter((s) =>
     s.domain.toLowerCase().includes(q) ||
     s.root_path.toLowerCase().includes(q) ||
+    (s.proxy?.upstream ?? '').toLowerCase().includes(q) ||
     (s.framework ?? '').toLowerCase().includes(q),
   )
 })
@@ -49,7 +50,7 @@ const filteredSites = computed(() => {
 // only shows the differentiating tail (e.g. "portraitsinc/public" instead
 // of the full absolute path).
 const sitePathPrefix = computed(() => {
-  const paths = store.sites.map(s => s.root_path)
+  const paths = store.sites.map(s => s.root_path).filter(Boolean)
   if (paths.length < 2) return ''
   let prefix = paths[0]
   for (const p of paths.slice(1)) {
@@ -61,7 +62,8 @@ const sitePathPrefix = computed(() => {
   return prefix ? prefix + '/' : ''
 })
 
-function shortPath(site: { root_path: string; public_dir?: string }): string {
+function shortPath(site: Site): string {
+  if (site.proxy) return `→ ${site.proxy.upstream}`
   const tail = sitePathPrefix.value
     ? site.root_path.slice(sitePathPrefix.value.length)
     : site.root_path
@@ -136,6 +138,7 @@ function repoUrl(site: Site): string {
 }
 
 function fullPath(site: Site): string {
+  if (site.proxy) return `Proxy to ${site.proxy.upstream}`
   return site.root_path + (site.public_dir ? '/' + site.public_dir : '')
 }
 
@@ -185,6 +188,10 @@ function frameworkLabel(fw: string): string {
         <Button variant="outline" size="sm" @click="router.push('/sites/new-project')">
           <Sparkles class="size-3.5" />
           New site
+        </Button>
+        <Button variant="outline" size="sm" @click="router.push('/sites/new?type=proxy')">
+          <ArrowRightLeft class="size-3.5" />
+          Add proxy
         </Button>
         <Button size="sm" @click="router.push('/sites/new')">
           <Plus class="size-3.5" />
@@ -285,7 +292,8 @@ function frameworkLabel(fw: string): string {
 
               <!-- Framework -->
               <TableCell class="hidden xl:table-cell">
-                <MetaChip v-if="site.framework">{{ frameworkLabel(site.framework) }}</MetaChip>
+                <MetaChip v-if="site.proxy" data-testid="site-proxy">Proxy</MetaChip>
+                <MetaChip v-else-if="site.framework">{{ frameworkLabel(site.framework) }}</MetaChip>
                 <span v-else class="text-muted-foreground">—</span>
               </TableCell>
 
@@ -299,7 +307,7 @@ function frameworkLabel(fw: string): string {
               <!-- PHP + HTTPS -->
               <TableCell>
                 <div class="flex flex-wrap items-center gap-1.5">
-                  <MetaChip>PHP {{ site.php_version || "—" }}</MetaChip>
+                  <MetaChip v-if="!site.proxy">PHP {{ site.php_version || "—" }}</MetaChip>
                   <MetaChip
                     v-if="site.node?.version"
                     data-testid="site-node"
@@ -417,7 +425,7 @@ function frameworkLabel(fw: string): string {
             </div>
 
             <div class="flex flex-wrap items-center gap-1.5">
-              <MetaChip>PHP {{ site.php_version || "—" }}</MetaChip>
+              <MetaChip v-if="!site.proxy">PHP {{ site.php_version || "—" }}</MetaChip>
               <MetaChip
                 v-if="site.node?.version"
                 data-testid="site-node"
@@ -440,6 +448,7 @@ function frameworkLabel(fw: string): string {
               >
                 <FileCog />.devctl.yaml
               </MetaChip>
+              <MetaChip v-if="site.proxy" data-testid="site-proxy">Proxy</MetaChip>
               <MetaChip v-if="site.framework">{{ frameworkLabel(site.framework) }}</MetaChip>
               <MetaChip v-if="site.spx_enabled" tone="warning"><Zap />SPX</MetaChip>
               <MetaChip v-if="site.worktree_branch" class="max-w-full">

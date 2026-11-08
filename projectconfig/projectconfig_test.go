@@ -111,6 +111,20 @@ func TestLoad_NoFiles(t *testing.T) {
 	}
 }
 
+// A proxy site has no root path. Its config must not come from the daemon's
+// working directory.
+func TestLoad_EmptyRootReadsNothing(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, FileName, "php: \"8.4\"\n")
+	t.Chdir(dir)
+	if _, files, err := Load(""); files != nil || err != nil {
+		t.Errorf("Load(\"\") = %v, %v; want nothing", files, err)
+	}
+	if fp := Fingerprint(""); fp != "" {
+		t.Errorf("Fingerprint(\"\") = %q, want empty", fp)
+	}
+}
+
 func TestLoad_LocalFileOverridesKeyByKey(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, FileName, string(readTestdata(t, "full.devctl.yaml")))

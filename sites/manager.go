@@ -49,11 +49,8 @@ type CreateSiteInput struct {
 	AutoDiscovered bool
 	// PublicDir is the subdirectory within RootPath to use as document root (e.g. "public").
 	PublicDir string
-	// SiteType is "php" (default) or "ws" for a WebSocket reverse-proxy site.
-	SiteType string
-	// WSUpstream is the dial address used when SiteType == "ws",
-	// e.g. "127.0.0.1:7383".
-	WSUpstream string
+	// Proxy makes the site a reverse proxy with no root path and no PHP.
+	Proxy *Proxy
 	// ParentSiteID links this site to its parent when it is a git worktree.
 	ParentSiteID string
 	// WorktreeBranch is the branch this worktree is on.
@@ -71,11 +68,8 @@ type CreateSiteInput struct {
 
 // Create inserts a site into the DB and provisions its Caddy vhost.
 func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, error) {
-	if input.PHPVersion == "" {
+	if input.PHPVersion == "" && input.Proxy == nil {
 		input.PHPVersion = m.latestPHPVersion()
-	}
-	if input.SiteType == "" {
-		input.SiteType = "php"
 	}
 
 	aliases, _ := json.Marshal(input.Aliases)
@@ -103,12 +97,10 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		serviceVhostVal = 1
 	}
 
-	// Build settings JSON.
-	settingsMap := map[string]string{"site_type": input.SiteType}
-	if input.WSUpstream != "" {
-		settingsMap["ws_upstream"] = input.WSUpstream
+	settingsJSON, err := SettingsWithProxy("{}", input.Proxy)
+	if err != nil {
+		return dbq.Site{}, err
 	}
-	settingsJSON, _ := json.Marshal(settingsMap)
 
 	var parentID *string
 	if input.ParentSiteID != "" {
@@ -134,7 +126,7 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 		Https:          httpsVal,
 		Cors:           corsVal,
 		AutoDiscovered: autoVal,
-		Settings:       string(settingsJSON),
+		Settings:       settingsJSON,
 		ParentSiteID:   parentID,
 		WorktreeBranch: worktreeBranch,
 		PublicDir:      input.PublicDir,
@@ -279,8 +271,8 @@ func (m *Manager) CreateWorktree(ctx context.Context, parentID, branch string, c
 		return dbq.Site{}, fmt.Errorf("parent site not found: %w", err)
 	}
 
-	// Find the git root for the parent site.
-	if !IsGitRepo(parent.RootPath) {
+	// Find the git root for the parent site. A proxy site has no root path.
+	if parent.RootPath == "" || !IsGitRepo(parent.RootPath) {
 		return dbq.Site{}, fmt.Errorf("site %q is not a git repository", parent.Domain)
 	}
 	gitRoot, err := GetGitRoot(parent.RootPath)
@@ -445,34 +437,7 @@ func (m *Manager) EnsureAlias(ctx context.Context, domain, alias string) error {
 }
 
 func (m *Manager) syncCaddy(site dbq.Site) error {
-	var aliases []string
-	if err := json.Unmarshal([]byte(site.Aliases), &aliases); err != nil {
-		aliases = nil
-	}
-
-	hosts := []string{site.Domain}
-	hosts = append(hosts, aliases...)
-
-	// Parse settings to determine site type.
-	var settings map[string]string
-	if err := json.Unmarshal([]byte(site.Settings), &settings); err != nil {
-		settings = map[string]string{}
-	}
-	siteType := settings["site_type"]
-	wsUpstream := settings["ws_upstream"]
-
-	return m.caddy.UpsertVhost(VhostConfig{
-		ID:         "vhost-" + site.ID,
-		Hosts:      hosts,
-		RootPath:   site.RootPath,
-		PublicDir:  site.PublicDir,
-		PHPVersion: site.PhpVersion,
-		HTTPS:      site.Https == 1,
-		SiteType:   siteType,
-		WSUpstream: wsUpstream,
-		ServerRoot: m.serverRoot,
-		EnableCORS: site.Cors == 1,
-	})
+	return m.caddy.UpsertVhost(VhostFromSite(site, m.serverRoot))
 }
 
 // RemoveServerSite deletes the auto-discovered "server.test" site if it exists.

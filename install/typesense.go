@@ -109,8 +109,7 @@ func (t *TypesenseInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	fmt.Fprintln(w, "typesense: creating typesense.test Caddy vhost...")
 	_, err = t.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "typesense.test",
-		SiteType:     "ws", // reverse_proxy handler — works for plain HTTP too
-		WSUpstream:   "127.0.0.1:8108",
+		Proxy:        sites.ServiceProxy("127.0.0.1:8108"),
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,

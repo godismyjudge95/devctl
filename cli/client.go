@@ -170,6 +170,14 @@ type Site struct {
 	// ProjectConfig is nil while project config is off or the site has no
 	// .devctl.yaml.
 	ProjectConfig *SiteProjectConfig `json:"project_config"`
+	// Proxy is nil for a PHP site.
+	Proxy *SiteProxy `json:"proxy"`
+}
+
+// SiteProxy is where a proxy site sends its requests.
+type SiteProxy struct {
+	Upstream     string `json:"upstream"`
+	PreserveHost bool   `json:"preserve_host"`
 }
 
 // SiteProjectConfig is what a site's .devctl.yaml controls.
@@ -452,6 +460,15 @@ func (c *Client) ListShares() ([]Share, error) {
 func (c *Client) InitProjectConfig(id string, force bool) (ProjectConfigInit, error) {
 	var out ProjectConfigInit
 	return out, c.post("/api/sites/"+id+"/config/init?force="+strconv.FormatBool(force), nil, &out)
+}
+
+func (c *Client) CreateSite(body map[string]any) (Site, error) {
+	var out Site
+	return out, c.post("/api/sites", body, &out)
+}
+
+func (c *Client) DeleteSite(id string) error {
+	return c.delete("/api/sites/" + id)
 }
 
 func (c *Client) UpdateSite(id string, body map[string]any) (Site, error) {

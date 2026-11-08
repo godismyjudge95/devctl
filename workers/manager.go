@@ -174,11 +174,15 @@ func (m *Manager) Add(ctx context.Context, siteID string, t Type, command string
 	if err := Validate(t, command); err != nil {
 		return State{}, err
 	}
-	if _, err := m.q.GetSite(ctx, siteID); err != nil {
+	site, err := m.q.GetSite(ctx, siteID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return State{}, fmt.Errorf("site %q: %w", siteID, ErrNotFound)
 		}
 		return State{}, err
+	}
+	if site.RootPath == "" {
+		return State{}, fmt.Errorf("%w: %s is a proxy site with no project directory to run a worker in", ErrInvalid, site.Domain)
 	}
 	if !t.Multiple() {
 		existing, err := m.List(ctx, siteID)

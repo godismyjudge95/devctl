@@ -37,6 +37,16 @@ export interface Site {
   node?: SiteNode
   /** null while project config is off or the site has no .devctl.yaml. */
   project_config?: SiteProjectConfig | null
+  /** Set for a proxy site, which has no root path and no PHP. */
+  proxy?: SiteProxy | null
+}
+
+/** Where a proxy site sends its requests. */
+export interface SiteProxy {
+  /** http(s)://host:port; the API also accepts host:port. */
+  upstream: string
+  /** Send the site's own Host header instead of the upstream host:port. */
+  preserve_host: boolean
 }
 
 /** Site fields a .devctl.yaml can set, by their API names. */
@@ -311,6 +321,7 @@ export interface SiteInput {
   cors?: number
   auto_discovered?: number
   public_dir?: string
+  proxy?: SiteProxy
 }
 
 // --- Sites ---

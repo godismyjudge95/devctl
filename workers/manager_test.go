@@ -179,6 +179,15 @@ func TestManager_AddRejectsBadInput(t *testing.T) {
 	if _, err := f.m.Add(ctx, "no-such-site", "custom", "sleep 1"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown site: err = %v, want ErrNotFound", err)
 	}
+
+	sm := sites.NewManager(f.db, sites.NewCaddyClient("http://127.0.0.1:1"), f.serverRoot)
+	proxy, err := sm.Create(ctx, sites.CreateSiteInput{Domain: "vite.test", Proxy: sites.ServiceProxy("127.0.0.1:5173")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.m.Add(ctx, proxy.ID, "custom", "sleep 1"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("proxy site: err = %v, want ErrInvalid", err)
+	}
 }
 
 func TestManager_FailedStartIsReportedAndBuiltinTypesAreUnique(t *testing.T) {

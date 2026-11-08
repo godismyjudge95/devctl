@@ -122,8 +122,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	fmt.Fprintln(w, "maxio: creating maxio.test Caddy vhost...")
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "maxio.test",
-		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:9900",
+		Proxy:        sites.ServiceProxy("127.0.0.1:9900"),
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,
@@ -137,8 +136,7 @@ func (m *MaxIOInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "s3.maxio.test",
 		Aliases:      []string{"*.s3.maxio.test"},
-		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:9900",
+		Proxy:        sites.ServiceProxy("127.0.0.1:9900"),
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,

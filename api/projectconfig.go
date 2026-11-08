@@ -226,6 +226,10 @@ func (s *Server) handleInitProjectConfig(w http.ResponseWriter, r *http.Request)
 		writeError(w, "site not found", http.StatusNotFound)
 		return
 	}
+	if site.RootPath == "" {
+		writeError(w, site.Domain+" is a proxy site with no project directory", http.StatusBadRequest)
+		return
+	}
 	path := filepath.Join(site.RootPath, projectconfig.FileName)
 	force, _ := strconv.ParseBool(r.URL.Query().Get("force"))
 	if _, err := os.Stat(path); err == nil && !force {

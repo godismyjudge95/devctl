@@ -23,8 +23,7 @@ func TestCreate_ServiceVhostEnablesCORS(t *testing.T) {
 
 	site, err := m.Create(context.Background(), CreateSiteInput{
 		Domain:       "s3.maxio.test",
-		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:9900",
+		Proxy:        ServiceProxy("127.0.0.1:9900"),
 		HTTPS:        true,
 		CORS:         false, // deliberately off — ServiceVhost must still enable it
 		ServiceVhost: true,
@@ -76,8 +75,7 @@ func TestEnsureAlias_AddsS3WildcardAndIsIdempotent(t *testing.T) {
 
 	_, err = m.Create(ctx, CreateSiteInput{
 		Domain:       "s3.maxio.test",
-		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:9900",
+		Proxy:        ServiceProxy("127.0.0.1:9900"),
 		HTTPS:        true,
 		ServiceVhost: true,
 	})

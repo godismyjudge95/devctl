@@ -18,6 +18,10 @@ func (s *Server) handleGetSiteBranches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if site.RootPath == "" {
+		writeError(w, site.Domain+" is a proxy site with no git repository", http.StatusUnprocessableEntity)
+		return
+	}
 	branches, err := sites.ListBranches(site.RootPath)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusUnprocessableEntity)

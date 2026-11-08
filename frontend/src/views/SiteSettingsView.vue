@@ -41,10 +41,13 @@ const form = reactive({
   https: true,
   cors: false,
   node_version: '',
+  upstream: '',
+  preserve_host: false,
 })
 
 const siteId = computed(() => route.params.id as string)
 const site = computed<Site | undefined>(() => store.sites.find(s => s.id === siteId.value))
+const isProxy = computed(() => !!site.value?.proxy)
 
 const configFiles = computed(() => site.value?.project_config?.files ?? [])
 const managed = computed(() => new Set<ProjectConfigField>(site.value?.project_config?.managed ?? []))
@@ -79,6 +82,8 @@ function hydrate(s: Site) {
     https: s.https === 1,
     cors: s.cors === 1,
     node_version: s.node?.version ?? '',
+    upstream: s.proxy?.upstream ?? '',
+    preserve_host: s.proxy?.preserve_host ?? false,
   })
   detectedFramework.value = s.framework ?? ''
 }
@@ -125,6 +130,18 @@ async function save() {
     const nodeChanged = !isManaged('node') && nodeVersion !== '' && nodeVersion !== (site.value.node?.version ?? '')
     const siteId = site.value.id
     const domain = form.domain
+    if (isProxy.value) {
+      await store.update(siteId, {
+        domain: form.domain,
+        aliases: aliasList,
+        https: form.https ? 1 : 0,
+        cors: form.cors ? 1 : 0,
+        proxy: { upstream: form.upstream, preserve_host: form.preserve_host },
+      })
+      toast.success(`${domain} settings saved`)
+      router.push('/sites')
+      return
+    }
     await store.update(site.value.id, {
       domain: form.domain,
       root_path: form.root_path,
@@ -172,56 +189,76 @@ async function save() {
       <Card>
         <CardHeader class="border-b">
           <CardTitle>Host</CardTitle>
-          <CardDescription>Domain, document root, and PHP and Node versions for this site.</CardDescription>
+          <CardDescription>
+            {{ isProxy
+              ? 'Domain and the URL that receives its requests, WebSockets included.'
+              : 'Domain, document root, and PHP and Node versions for this site.' }}
+          </CardDescription>
         </CardHeader>
         <CardContent class="pb-0 sm:pb-0">
           <SettingRow label="Domain" for="sd-domain">
             <Input id="sd-domain" v-model="form.domain" placeholder="myapp.test" />
           </SettingRow>
-          <SettingRow label="Root path" hint="Absolute path to the project on disk." for="sd-root">
-            <Input
-              id="sd-root"
-              v-model="form.root_path"
-              placeholder="/home/user/sites/myapp"
-              class="font-mono"
-              @blur="onRootPathBlur"
-            />
-          </SettingRow>
-          <SettingRow label="Public directory" hint="Optional web root inside the project." for="sd-public">
-            <Input id="sd-public" v-model="form.public_dir" placeholder="public" class="font-mono" :disabled="isManaged('public_dir')" />
-            <ManagedByConfig v-if="isManaged('public_dir')" field="public_dir" :files="configFiles" />
-            <p v-if="detectedFramework" class="mt-2 text-xs text-muted-foreground">
-              Detected: <span class="capitalize">{{ detectedFramework }}</span>
-            </p>
-          </SettingRow>
-          <SettingRow label="PHP version" for="sd-php">
-            <Select v-model="form.php_version" :disabled="isManaged('php_version')">
-              <SelectTrigger id="sd-php" class="w-full sm:w-48">
-                <SelectValue placeholder="Select version" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="ver in phpVersions" :key="ver" :value="ver">
-                  PHP {{ ver }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <ManagedByConfig v-if="isManaged('php_version')" field="php_version" :files="configFiles" />
-          </SettingRow>
-          <SettingRow
-            label="Node version"
-            hint="Saving writes .nvmrc. Use 22, 20.11.1, lts/*, or a range like >=20."
-            for="sd-node"
-          >
-            <Input
-              id="sd-node"
-              v-model="form.node_version"
-              :placeholder="defaultNode ? `Default (${defaultNode})` : 'Default'"
-              class="font-mono sm:w-48"
-              :disabled="isManaged('node')"
-            />
-            <p data-testid="site-node-status" class="mt-2 text-xs text-muted-foreground">{{ nodeStatus }}</p>
-            <ManagedByConfig v-if="isManaged('node')" field="node" :files="configFiles" />
-          </SettingRow>
+          <template v-if="isProxy">
+            <SettingRow label="Upstream URL" hint="For example http://localhost:5173 or 127.0.0.1:3000." for="sd-upstream">
+              <Input id="sd-upstream" v-model="form.upstream" placeholder="http://localhost:5173" class="font-mono" />
+            </SettingRow>
+            <SettingRow
+              label="Preserve Host header"
+              hint="Send the .test hostname upstream. Off, the upstream sees its own host:port, which Vite accepts without allowedHosts."
+              for="sd-preserve-host"
+            >
+              <div class="flex h-9 items-center">
+                <Checkbox id="sd-preserve-host" v-model:checked="form.preserve_host" />
+              </div>
+            </SettingRow>
+          </template>
+          <template v-else>
+            <SettingRow label="Root path" hint="Absolute path to the project on disk." for="sd-root">
+              <Input
+                id="sd-root"
+                v-model="form.root_path"
+                placeholder="/home/user/sites/myapp"
+                class="font-mono"
+                @blur="onRootPathBlur"
+              />
+            </SettingRow>
+            <SettingRow label="Public directory" hint="Optional web root inside the project." for="sd-public">
+              <Input id="sd-public" v-model="form.public_dir" placeholder="public" class="font-mono" :disabled="isManaged('public_dir')" />
+              <ManagedByConfig v-if="isManaged('public_dir')" field="public_dir" :files="configFiles" />
+              <p v-if="detectedFramework" class="mt-2 text-xs text-muted-foreground">
+                Detected: <span class="capitalize">{{ detectedFramework }}</span>
+              </p>
+            </SettingRow>
+            <SettingRow label="PHP version" for="sd-php">
+              <Select v-model="form.php_version" :disabled="isManaged('php_version')">
+                <SelectTrigger id="sd-php" class="w-full sm:w-48">
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="ver in phpVersions" :key="ver" :value="ver">
+                    PHP {{ ver }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <ManagedByConfig v-if="isManaged('php_version')" field="php_version" :files="configFiles" />
+            </SettingRow>
+            <SettingRow
+              label="Node version"
+              hint="Saving writes .nvmrc. Use 22, 20.11.1, lts/*, or a range like >=20."
+              for="sd-node"
+            >
+              <Input
+                id="sd-node"
+                v-model="form.node_version"
+                :placeholder="defaultNode ? `Default (${defaultNode})` : 'Default'"
+                class="font-mono sm:w-48"
+                :disabled="isManaged('node')"
+              />
+              <p data-testid="site-node-status" class="mt-2 text-xs text-muted-foreground">{{ nodeStatus }}</p>
+              <ManagedByConfig v-if="isManaged('node')" field="node" :files="configFiles" />
+            </SettingRow>
+          </template>
           <SettingRow label="Aliases" hint="Comma-separated extra hostnames." for="sd-aliases">
             <Input id="sd-aliases" v-model="form.aliases" placeholder="www.myapp.test" :disabled="isManaged('aliases')" />
             <ManagedByConfig v-if="isManaged('aliases')" field="aliases" :files="configFiles" />
@@ -241,7 +278,7 @@ async function save() {
             </div>
             <ManagedByConfig v-if="isManaged('https')" field="https" :files="configFiles" />
           </SettingRow>
-          <SettingRow label="SPX profiler" hint="Activates via cookie or query param." for="sd-spx">
+          <SettingRow v-if="!isProxy" label="SPX profiler" hint="Activates via cookie or query param." for="sd-spx">
             <div class="flex h-9 items-center">
               <Checkbox id="sd-spx" v-model:checked="form.spx_enabled" :disabled="isManaged('spx_enabled')" />
             </div>
@@ -258,7 +295,7 @@ async function save() {
 
       <SiteProjectConfig v-if="site.project_config" :config="site.project_config" />
 
-      <SiteWorkers :site-id="site.id" :managed-by="isManaged('workers') ? configFiles : undefined" />
+      <SiteWorkers v-if="!isProxy" :site-id="site.id" :managed-by="isManaged('workers') ? configFiles : undefined" />
 
       <Card v-if="!site.parent_site_id && site.is_git_repo">
         <CardHeader>
@@ -275,7 +312,7 @@ async function save() {
 
       <div class="flex flex-wrap items-center justify-end gap-2">
         <Button variant="outline" :disabled="saving" @click="router.push('/sites')">Cancel</Button>
-        <Button :disabled="!form.domain || !form.root_path || saving" @click="save">
+        <Button :disabled="!form.domain || !(isProxy ? form.upstream : form.root_path) || saving" @click="save">
           <Loader2 v-if="saving" class="size-4 animate-spin" />
           {{ saving ? 'Saving…' : 'Save' }}
         </Button>

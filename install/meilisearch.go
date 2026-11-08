@@ -108,8 +108,7 @@ func (m *MeilisearchInstaller) InstallW(ctx context.Context, w io.Writer) error 
 	fmt.Fprintln(w, "meilisearch: creating meilisearch.test Caddy vhost...")
 	_, err = m.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "meilisearch.test",
-		SiteType:     "ws", // reverse_proxy handler — works for plain HTTP too
-		WSUpstream:   "127.0.0.1:7700",
+		Proxy:        sites.ServiceProxy("127.0.0.1:7700"),
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,

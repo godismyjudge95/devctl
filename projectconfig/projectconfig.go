@@ -100,6 +100,9 @@ var ServiceIDs = []string{"redis", "mysql", "postgres", "mailpit", "meilisearch"
 // file wins key by key). files lists the files that exist. When neither exists
 // the Config is empty and files is nil.
 func Load(root string) (cfg Config, files []string, err error) {
+	if root == "" {
+		return Config{}, nil, nil
+	}
 	for _, name := range []string{FileName, LocalFileName} {
 		data, err := os.ReadFile(filepath.Join(root, name))
 		if errors.Is(err, fs.ErrNotExist) {
@@ -418,6 +421,9 @@ func Encode(s Site) ([]byte, error) {
 // Fingerprint changes whenever either file in root is created, changed, or
 // removed. It is "" when neither file exists.
 func Fingerprint(root string) string {
+	if root == "" {
+		return ""
+	}
 	var b strings.Builder
 	for _, name := range []string{FileName, LocalFileName} {
 		if fi, err := os.Stat(filepath.Join(root, name)); err == nil {

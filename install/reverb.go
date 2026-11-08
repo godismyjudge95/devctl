@@ -143,8 +143,7 @@ func (r *ReverbInstaller) InstallW(ctx context.Context, w io.Writer) error {
 	_, err = r.siteManager.Create(ctx, sites.CreateSiteInput{
 		Domain:       "reverb.test",
 		RootPath:     reverbDir,
-		SiteType:     "ws",
-		WSUpstream:   "127.0.0.1:7383",
+		Proxy:        sites.ServiceProxy("127.0.0.1:7383"),
 		HTTPS:        true,
 		CORS:         true,
 		ServiceVhost: true,

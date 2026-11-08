@@ -23,6 +23,7 @@ import (
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/selfinstall"
+	"github.com/danielgormly/devctl/sites"
 )
 
 const lowDiskBytes = 2 << 30
@@ -310,9 +311,7 @@ func (s *Server) phpSites(ctx context.Context) ([]dbq.Site, error) {
 	}
 	var out []dbq.Site
 	for _, site := range all {
-		var settings map[string]string
-		_ = json.Unmarshal([]byte(site.Settings), &settings)
-		if site.ServiceVhost == 1 || settings["site_type"] == "ws" {
+		if site.ServiceVhost == 1 || sites.ProxyFromSettings(site.Settings) != nil {
 			continue
 		}
 		out = append(out, site)

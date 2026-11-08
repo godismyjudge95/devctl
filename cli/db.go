@@ -151,6 +151,9 @@ func cwdConnection(c *Client) (dbConnection, error) {
 }
 
 func siteConnection(site *Site) (dbConnection, error) {
+	if site.RootPath == "" {
+		return dbConnection{}, fmt.Errorf("%s is a proxy site with no .env", site.Domain)
+	}
 	data, err := os.ReadFile(filepath.Join(site.RootPath, ".env"))
 	if err != nil {
 		return dbConnection{}, fmt.Errorf("%s: %w", site.Domain, err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/php"
@@ -21,6 +22,16 @@ type siteRequest struct {
 	HTTPS      *int64   `json:"https"`
 	CORS       *int64   `json:"cors"`
 	PublicDir  string   `json:"public_dir"`
+	// Proxy creates or updates a proxy site. Its upstream is validated while
+	// the body is decoded.
+	Proxy *sites.Proxy `json:"proxy"`
+}
+
+// errProxyFields is returned when a proxy site request sets a PHP site field.
+const errProxyFields = "a proxy site has no root_path, php_version, or public_dir"
+
+func (req siteRequest) hasPHPFields() bool {
+	return req.RootPath != "" || req.PHPVersion != "" || req.PublicDir != ""
 }
 
 func (s *Server) handleGetSites(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +46,12 @@ func (s *Server) handleGetSites(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 	var req siteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Proxy != nil {
+		s.createProxySite(w, r, req)
 		return
 	}
 
@@ -83,6 +99,35 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.siteView(site))
 }
 
+func (s *Server) createProxySite(w http.ResponseWriter, r *http.Request, req siteRequest) {
+	domain := strings.ToLower(strings.TrimSpace(req.Domain))
+	if err := sites.ValidateProxyDomain(domain); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.hasPHPFields() {
+		writeError(w, errProxyFields, http.StatusBadRequest)
+		return
+	}
+	if _, err := s.queries.GetSiteByDomain(r.Context(), domain); err == nil {
+		writeError(w, "a site with domain "+domain+" already exists", http.StatusConflict)
+		return
+	}
+	site, err := s.siteManager.Create(r.Context(), sites.CreateSiteInput{
+		Domain:  domain,
+		Aliases: req.Aliases,
+		HTTPS:   req.HTTPS == nil || *req.HTTPS == 1,
+		CORS:    req.CORS != nil && *req.CORS == 1,
+		Proxy:   req.Proxy,
+	})
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, s.siteView(site))
+}
+
 func (s *Server) handleGetSite(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	site, err := s.queries.GetSite(context.Background(), id)
@@ -98,7 +143,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 
 	var req siteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -106,6 +151,30 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	existing, err := s.queries.GetSite(context.Background(), id)
 	if err != nil {
 		writeError(w, "site not found", http.StatusNotFound)
+		return
+	}
+
+	// A site keeps its type. Without a proxy in the body, a proxy site keeps
+	// its upstream, so the PHP site edits of the CLI (CORS, SPX) work on it.
+	settings := existing.Settings
+	if sites.ProxyFromSettings(existing.Settings) != nil {
+		if req.hasPHPFields() {
+			writeError(w, existing.Domain+" is a proxy site: "+errProxyFields, http.StatusBadRequest)
+			return
+		}
+		req.Domain = strings.ToLower(strings.TrimSpace(req.Domain))
+		if err := sites.ValidateProxyDomain(req.Domain); err != nil {
+			writeError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Proxy != nil {
+			if settings, err = sites.SettingsWithProxy(settings, req.Proxy); err != nil {
+				writeError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	} else if req.Proxy != nil {
+		writeError(w, existing.Domain+" is a PHP site. Delete it first to use its domain for a proxy site", http.StatusBadRequest)
 		return
 	}
 
@@ -142,7 +211,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		SpxEnabled:   spx,
 		Https:        httpsVal,
 		Cors:         corsVal,
-		Settings:     existing.Settings,
+		Settings:     settings,
 		PublicDir:    req.PublicDir,
 		IsGitRepo:    isGitRepo,
 		GitRemoteUrl: gitRemoteURL,
@@ -165,27 +234,11 @@ func (s *Server) saveSite(ctx context.Context, p dbq.UpdateSiteParams) (dbq.Site
 		return dbq.Site{}, err
 	}
 
-	// Sync updated site to Caddy (preserving site type from settings).
-	var aliasList []string
-	_ = json.Unmarshal([]byte(site.Aliases), &aliasList)
-	var settings map[string]string
-	_ = json.Unmarshal([]byte(site.Settings), &settings)
-	hosts := append([]string{site.Domain}, aliasList...)
-	_ = s.caddy.UpsertVhost(sites.VhostConfig{
-		ID:         "vhost-" + site.ID,
-		Hosts:      hosts,
-		RootPath:   site.RootPath,
-		PublicDir:  site.PublicDir,
-		PHPVersion: site.PhpVersion,
-		HTTPS:      site.Https == 1,
-		EnableCORS: site.Cors == 1,
-		SiteType:   settings["site_type"],
-		WSUpstream: settings["ws_upstream"],
-		ServerRoot: s.serverRoot,
-	})
+	vhost := sites.VhostFromSite(site, s.serverRoot)
+	_ = s.caddy.UpsertVhost(vhost)
 
 	// Ensure the PHP-FPM process for the selected version is running.
-	if site.PhpVersion != "" && settings["site_type"] != "ws" {
+	if site.PhpVersion != "" && vhost.Proxy == nil {
 		fpmID := php.FPMServiceID(site.PhpVersion)
 		if !s.supervisor.IsRunning(fpmID) {
 			def := s.phpFPMServiceDef(site.PhpVersion)
@@ -217,6 +270,9 @@ func (s *Server) handleRefreshSiteMetadata(w http.ResponseWriter, r *http.Reques
 
 	updated := 0
 	for _, site := range all {
+		if site.RootPath == "" {
+			continue
+		}
 		info := InspectSitePath(site.RootPath)
 		isGitRepo := int64(0)
 		if info.IsGitRepo {

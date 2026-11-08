@@ -14,6 +14,7 @@ import (
 	"github.com/danielgormly/devctl/node"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/services"
+	"github.com/danielgormly/devctl/sites"
 	"github.com/danielgormly/devctl/tools"
 )
 
@@ -31,9 +32,14 @@ type siteView struct {
 	// ProjectConfig is null while project config is off or the site has no
 	// config file.
 	ProjectConfig *projectConfigView `json:"project_config"`
+	// Proxy is null for a PHP site.
+	Proxy *sites.Proxy `json:"proxy"`
 }
 
 func nodeFor(rootPath string, installed []node.Version) siteNode {
+	if rootPath == "" {
+		return siteNode{}
+	}
 	spec := node.Find(rootPath)
 	out := siteNode{Spec: spec}
 	if v, ok := node.Resolve(spec.Version, installed); ok {
@@ -50,7 +56,7 @@ func (s *Server) siteViews(all []dbq.Site) []siteView {
 	}
 	out := make([]siteView, 0, len(all))
 	for _, site := range all {
-		v := siteView{Site: site, Node: nodeFor(site.RootPath, installed)}
+		v := siteView{Site: site, Node: nodeFor(site.RootPath, installed), Proxy: sites.ProxyFromSettings(site.Settings)}
 		if states != nil {
 			v.ProjectConfig = projectConfigFor(site.RootPath, states)
 		}
@@ -168,6 +174,10 @@ func (s *Server) handleSetSiteNode(w http.ResponseWriter, r *http.Request) {
 	site, err := s.queries.GetSite(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeError(w, "site not found", http.StatusNotFound)
+		return
+	}
+	if site.RootPath == "" {
+		writeError(w, site.Domain+" is a proxy site with no project directory", http.StatusBadRequest)
 		return
 	}
 	if err := node.WriteNvmrc(site.RootPath, req.Version); err != nil {
