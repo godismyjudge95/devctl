@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/danielgormly/devctl/dumps"
 )
 
 // wsUpgrader keeps gorilla's default origin check: an upgrade whose Origin
@@ -33,6 +35,11 @@ func (s *Server) handleClearDumps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDumpsWS(w http.ResponseWriter, r *http.Request) {
+	serveHub(w, r, s.dumps.Hub)
+}
+
+// serveHub upgrades to a WebSocket that receives every hub broadcast.
+func serveHub(w http.ResponseWriter, r *http.Request, hub *dumps.Hub) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade: %v", err)
@@ -40,8 +47,8 @@ func (s *Server) handleDumpsWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	s.dumps.Hub.Register(conn)
-	defer s.dumps.Hub.Unregister(conn)
+	hub.Register(conn)
+	defer hub.Unregister(conn)
 
 	// Read loop — discard incoming messages, detect disconnect.
 	for {

@@ -352,6 +352,91 @@ export const getDumps = (params?: { page?: number; limit?: number; site?: string
 }
 export const clearDumps = () => request<void>('DELETE', '/api/dumps')
 
+// --- Request inspector ---
+export type RequestKind = 'http' | 'command' | 'job'
+export type RequestProblemKind = 'n_plus_one' | 'duplicate' | 'slow_query' | 'slow_request'
+
+export interface RequestCaller {
+  file: string
+  line: number
+}
+
+export interface RequestMeta {
+  kind: RequestKind
+  method?: string
+  url?: string
+  host?: string
+  route?: string
+  action?: string
+  status?: number
+  command?: string
+  artisan?: string
+  job?: string
+  queue?: string
+  connection?: string
+  job_id?: string | number
+  attempt?: number
+  job_status?: string
+  parent?: string
+  pid?: number
+  php?: string
+  sapi?: string
+  started_at?: number
+  duration_ms?: number
+  memory_peak?: number
+  dropped?: number
+}
+
+export interface RequestProblem {
+  kind: RequestProblemKind
+  sql?: string
+  caller?: RequestCaller
+  count?: number
+  ms: number
+  event?: number
+}
+
+export interface RequestSummary {
+  id: string
+  meta: RequestMeta
+  final: boolean
+  updated_at: string
+  counts: Record<string, number>
+  query_ms: number
+  problems: RequestProblem[]
+}
+
+interface EventBase {
+  t: number
+  caller?: RequestCaller
+}
+
+export type RequestEvent = EventBase & (
+  | { kind: 'query'; sql: string; bindings: unknown; ms: number | null; conn?: string; driver?: string | null; error?: string }
+  | { kind: 'log'; level: string; message: string }
+  | { kind: 'exception'; class: string; message: string; file: string; line: number; trace?: { file: string | null; line: number | null; fn: string }[] }
+  | { kind: 'job'; phase: string; name: string; connection?: string; id?: string | number | null }
+  | { kind: 'cache'; op: string; key: string; store?: string | null }
+  | { kind: 'http'; method?: string | null; url: string; status?: number; ms?: number | null; error?: string }
+  | { kind: 'view'; name: string; path?: string | null }
+)
+
+export interface RequestDetail extends RequestSummary {
+  events: RequestEvent[]
+  dumps: Dump[]
+}
+
+export const getRequests = (params?: { site?: string; kind?: RequestKind; problems?: boolean; limit?: number }) => {
+  const q = new URLSearchParams()
+  if (params?.site) q.set('site', params.site)
+  if (params?.kind) q.set('kind', params.kind)
+  if (params?.problems) q.set('problems', 'true')
+  if (params?.limit) q.set('limit', String(params.limit))
+  return request<RequestSummary[]>('GET', `/api/requests?${q}`)
+}
+export const getRequest = (id: string) => request<RequestDetail>('GET', `/api/requests/${encodeURIComponent(id)}`)
+export const clearRequests = () => request<void>('DELETE', '/api/requests')
+
 // --- Settings ---
 export const getSettings = () => request<Settings>('GET', '/api/settings')
 export const getResolvedSettings = () => request<Settings>('GET', '/api/settings/resolved')

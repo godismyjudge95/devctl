@@ -8,6 +8,8 @@ import SiteNewProjectView from '@/views/SiteNewProjectView.vue'
 import SiteSettingsView from '@/views/SiteSettingsView.vue'
 import SiteWorktreeView from '@/views/SiteWorktreeView.vue'
 import DumpsView from '@/views/DumpsView.vue'
+import RequestsView from '@/views/RequestsView.vue'
+import RequestDetailView from '@/views/RequestDetailView.vue'
 import MailView from '@/views/MailView.vue'
 import SpxView from '@/views/SpxView.vue'
 import SettingsView from '@/views/SettingsView.vue'
@@ -33,6 +35,8 @@ const router = createRouter({
     { path: '/sites/:id/worktree', component: SiteWorktreeView },
     { path: '/sites/:id', component: SiteSettingsView },
     { path: '/dumps',     component: DumpsView },
+    { path: '/requests',  component: RequestsView },
+    { path: '/requests/:id', component: RequestDetailView },
     { path: '/mail',      component: MailView,    meta: { fullWidth: true } },
     { path: '/spx',       component: SpxView,     meta: { fullWidth: true } },
     { path: '/databases', component: DatabasesView, meta: { fullWidth: true } },

@@ -1,6 +1,7 @@
 package php
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/user"
@@ -351,7 +352,7 @@ func TestInstallPrepend_DumpToPage(t *testing.T) {
 		{true, "return true; // devctl:dump_to_page"},
 		{false, "return false; // devctl:dump_to_page"},
 	} {
-		if err := InstallPrepend(serverRoot, tc.toPage); err != nil {
+		if err := InstallPrepend(serverRoot, PrependConfig{ToPage: tc.toPage, DumpAddr: "127.0.0.1:9912"}); err != nil {
 			t.Fatalf("InstallPrepend(%v): %v", tc.toPage, err)
 		}
 		got, err := os.ReadFile(p)
@@ -368,5 +369,50 @@ func TestInstallPrepend_DumpToPage(t *testing.T) {
 		if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {
 			t.Errorf("toPage=%v: temp file left behind", tc.toPage)
 		}
+	}
+}
+
+// TestInstallPrepend_DumpAddrAndInspector verifies that the dump_tcp_port
+// address reaches the prepend, and that inspector_enabled writes or deletes
+// the agent that prepend.php loads.
+func TestInstallPrepend_DumpAddrAndInspector(t *testing.T) {
+	serverRoot := t.TempDir()
+	agent := paths.InspectorPath(serverRoot)
+
+	if err := InstallPrepend(serverRoot, PrependConfig{DumpAddr: "127.0.0.1:9999", Inspector: true}); err != nil {
+		t.Fatal(err)
+	}
+	prepend, err := os.ReadFile(paths.PrependPath(serverRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prepend), "return 'tcp://127.0.0.1:9999'; // devctl:dump_addr") {
+		t.Error("prepend does not send to the configured dump address")
+	}
+	if strings.Contains(string(prepend), "9912") {
+		t.Error("prepend still contains the default port 9912")
+	}
+	if !strings.Contains(string(prepend), "require __DIR__ . '/inspector.php'") {
+		t.Error("prepend does not load the inspector agent")
+	}
+	got, err := os.ReadFile(agent)
+	if err != nil {
+		t.Fatalf("inspector on: %v", err)
+	}
+	if !bytes.Equal(got, inspectorPHP) {
+		t.Error("inspector.php on disk differs from the embedded agent")
+	}
+
+	if err := InstallPrepend(serverRoot, PrependConfig{DumpAddr: "127.0.0.1:9999"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(agent); !os.IsNotExist(err) {
+		t.Errorf("inspector off: %s still exists (%v)", agent, err)
+	}
+	if err := InstallPrepend(serverRoot, PrependConfig{DumpAddr: "127.0.0.1:9999"}); err != nil {
+		t.Errorf("inspector off twice: %v", err)
+	}
+	if _, err := os.Stat(agent + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file left behind")
 	}
 }

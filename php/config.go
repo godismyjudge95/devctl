@@ -17,30 +17,55 @@ import (
 //go:embed prepend.php
 var prependPHP []byte
 
+//go:embed inspector.php
+var inspectorPHP []byte
+
 //go:embed php.ini-development
 var phpIniDevelopment []byte
 
-const dumpToPageOff = "return false; // devctl:dump_to_page"
+const (
+	dumpToPageOff = "return false; // devctl:dump_to_page"
+	dumpAddrLine  = "return 'tcp://127.0.0.1:9912'; // devctl:dump_addr"
+)
 
-// InstallPrepend writes the embedded prepend.php to paths.PrependPath(serverRoot).
-// toPage is the dump_to_page setting: dumps also print in the page or terminal.
+// PrependConfig is what the PHP side reads from the devctl settings.
+type PrependConfig struct {
+	ToPage    bool   // dump_to_page: dumps also print in the page or terminal
+	DumpAddr  string // host:port of the dump TCP listener
+	Inspector bool   // inspector_enabled: install the request inspector agent
+}
+
+// InstallPrepend writes the embedded prepend.php to paths.PrependPath(serverRoot)
+// and writes or deletes the inspector agent next to it.
 // Safe to call on every startup — it is idempotent.
-func InstallPrepend(serverRoot string, toPage bool) error {
+func InstallPrepend(serverRoot string, cfg PrependConfig) error {
 	p := paths.PrependPath(serverRoot)
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return fmt.Errorf("create %s dir: %w", filepath.Dir(p), err)
 	}
-	content := prependPHP
-	if toPage {
-		content = bytes.Replace(prependPHP, []byte(dumpToPageOff), []byte("return true; // devctl:dump_to_page"), 1)
+	content := bytes.Replace(prependPHP, []byte(dumpAddrLine), []byte("return 'tcp://"+cfg.DumpAddr+"'; // devctl:dump_addr"), 1)
+	if cfg.ToPage {
+		content = bytes.Replace(content, []byte(dumpToPageOff), []byte("return true; // devctl:dump_to_page"), 1)
 	}
-	// Running PHP processes read this file on every request: a rename never
-	// shows them a half-written file.
-	tmp := p + ".tmp"
+	inspector := paths.InspectorPath(serverRoot)
+	if cfg.Inspector {
+		if err := writeAtomic(inspector, inspectorPHP); err != nil {
+			return err
+		}
+	} else if err := os.Remove(inspector); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return writeAtomic(p, content)
+}
+
+// writeAtomic replaces path through a rename: running PHP processes read the
+// prepend files on every request and must never see a half-written file.
+func writeAtomic(path string, content []byte) error {
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, content, 0644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	return os.Rename(tmp, path)
 }
 
 // GlobalSettings are the php.ini keys the PHP settings panel and php:set edit.

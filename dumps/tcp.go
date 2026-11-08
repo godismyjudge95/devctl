@@ -8,30 +8,28 @@ import (
 	"fmt"
 	"log"
 	"net"
+
+	"github.com/danielgormly/devctl/inspector"
 )
 
-// TCPServer listens for PHP dump payloads sent as base64-encoded JSON lines.
+// maxLine is the longest line the receiver reads. An inspector frame
+// carries up to 200 events of up to 10 KB of SQL each.
+const maxLine = 4 << 20
+
+// TCPServer receives one message per line. A line that starts with { is a
+// request inspector frame (base64 has no {). Any other line is a dump:
+// base64-encoded JSON.
 type TCPServer struct {
-	store *Store
-	hub   *Hub
+	store       *Store
+	hub         *Hub
+	ring        *inspector.Ring
+	requestsHub *Hub
 }
 
-// NewTCPServer creates a TCPServer.
-func NewTCPServer(store *Store, hub *Hub) *TCPServer {
-	return &TCPServer{store: store, hub: hub}
-}
+// Serve accepts connections on ln until ctx is cancelled.
+func (t *TCPServer) Serve(ctx context.Context, ln net.Listener) {
+	log.Printf("dumps: TCP listening on %s", ln.Addr())
 
-// ListenAndServe starts listening on addr (e.g. ":9912") and blocks
-// until ctx is cancelled.
-func (t *TCPServer) ListenAndServe(ctx context.Context, addr string) error {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("dumps tcp listen: %w", err)
-	}
-
-	log.Printf("dumps: TCP listening on %s", addr)
-
-	// Close listener when context is done.
 	go func() {
 		<-ctx.Done()
 		ln.Close()
@@ -42,7 +40,7 @@ func (t *TCPServer) ListenAndServe(ctx context.Context, addr string) error {
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				return nil
+				return
 			default:
 				log.Printf("dumps: accept error: %v", err)
 				continue
@@ -55,16 +53,24 @@ func (t *TCPServer) ListenAndServe(ctx context.Context, addr string) error {
 func (t *TCPServer) handleConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	scanner := bufio.NewScanner(conn)
-	// Allow large lines (e.g. big objects)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), maxLine)
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		if line[0] == '{' {
+			unit, err := t.ring.Ingest(line)
+			if err != nil {
+				log.Printf("dumps: %v", err)
+				continue
+			}
+			t.requestsHub.Broadcast(unit)
 			continue
 		}
 
-		dump, err := decodeLine(line)
+		dump, err := decodeLine(string(line))
 		if err != nil {
 			log.Printf("dumps: decode error: %v", err)
 			continue
@@ -75,9 +81,20 @@ func (t *TCPServer) handleConn(ctx context.Context, conn net.Conn) {
 			log.Printf("dumps: store error: %v", err)
 			continue
 		}
-
-		// Broadcast to WebSocket clients.
 		t.hub.Broadcast(row)
+
+		if dump.RID != "" {
+			raw, _ := json.Marshal(row)
+			unit, err := t.ring.LinkDump(dump.RID, raw)
+			if err != nil {
+				log.Printf("dumps: link dump %d: %v", row.ID, err)
+				continue
+			}
+			t.requestsHub.Broadcast(unit)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("dumps: read: %v", err)
 	}
 }
 

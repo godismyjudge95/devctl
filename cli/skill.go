@@ -302,7 +302,7 @@ func generateCommandCatalog() string {
 	}
 
 	nsOrder := []string{
-		"services", "sites", "php", "logs", "dumps", "spx", "mail",
+		"services", "sites", "php", "logs", "dumps", "requests", "spx", "mail",
 		"dns", "tls", "settings", "helpers", "postgres", "db", "elevate", "doctor", "mcp", "devctl",
 	}
 	seen := map[string]bool{}

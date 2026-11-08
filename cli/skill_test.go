@@ -91,6 +91,7 @@ func TestWriteSkill_ContentContainsAllNamespaces(t *testing.T) {
 		"## php: commands",
 		"## logs: commands",
 		"## dumps: commands",
+		"## requests: commands",
 		"## spx: commands",
 		"## mail: commands",
 		"## dns: commands",

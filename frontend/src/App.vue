@@ -12,7 +12,7 @@ import { usePwaInstall } from '@/composables/usePwaInstall'
 import { useUpdateStore } from '@/stores/update'
 import { useHelpersStore } from '@/stores/helpers'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Wrench, Stethoscope } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Wrench, Stethoscope, Gauge } from 'lucide-vue-next'
 import AppNav from '@/components/layout/AppNav.vue'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -154,6 +154,7 @@ const allNavItems = [
   { path: '/services',  label: 'Services',  icon: Server,     group: 'Environment' },
   { path: '/sites',     label: 'Sites',     icon: Globe,      group: 'Environment' },
   { path: '/dumps',     label: 'Dumps',     icon: Bug,        group: 'Developer' },
+  { path: '/requests',  label: 'Requests',  icon: Gauge,      group: 'Developer' },
   { path: '/mail',      label: 'Mail',      icon: Mail,       group: 'Developer', requiresMailpit: true },
   { path: '/spx',       label: 'Profiler',  icon: Activity,   group: 'Developer', requiresSPX: true },
   { path: '/logs',      label: 'Logs',      icon: ScrollText, group: 'Developer' },

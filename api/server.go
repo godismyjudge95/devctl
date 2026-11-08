@@ -197,6 +197,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/dumps", s.handleClearDumps)
 	s.mux.HandleFunc("GET /ws/dumps", s.handleDumpsWS)
 
+	// Request inspector
+	s.mux.HandleFunc("GET /api/requests", s.handleListRequests)
+	s.mux.HandleFunc("DELETE /api/requests", s.handleClearRequests)
+	s.mux.HandleFunc("GET /api/requests/{id}", s.handleGetRequest)
+	s.mux.HandleFunc("GET /ws/requests", s.handleRequestsWS)
+
 	// SPX profiler
 	s.mux.HandleFunc("GET /api/spx/profiles", s.handleGetSpxProfiles)
 	s.mux.HandleFunc("DELETE /api/spx/profiles", s.handleClearSpxProfiles)

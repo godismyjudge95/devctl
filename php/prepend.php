@@ -6,12 +6,17 @@
  *   auto_prepend_file = /path/to/prepend.php
  *
  * dump(), dd(), php_dd() and every Symfony VarDumper::dump() call send a
- * base64-encoded JSON payload to the TCP server (default 127.0.0.1:9912).
+ * base64-encoded JSON payload to the TCP server (the dump_tcp_port setting).
  */
 
 function _devctl_dump_to_page(): bool
 {
     return false; // devctl:dump_to_page
+}
+
+function _devctl_dump_addr(): string
+{
+    return 'tcp://127.0.0.1:9912'; // devctl:dump_addr
 }
 
 if (!function_exists('dd')) {
@@ -37,6 +42,12 @@ if (!function_exists('php_dd')) {
 }
 
 _devctl_hook_var_dumper();
+
+// The request inspector agent. devctl deletes the file when the inspector is
+// off; PHP 7.x and 8.0 must not parse it.
+if (PHP_VERSION_ID >= 80100 && is_file(__DIR__ . '/inspector.php')) {
+    require __DIR__ . '/inspector.php';
+}
 
 /**
  * Makes VarDumper::dump() (Laravel Http::dump(), Saloon, direct calls) reach
@@ -153,31 +164,7 @@ function _devctl_send_dumps(array $vars): void
     }
 
     $line   = (int)($frame['line'] ?? 0);
-    $source = $frame['file'] ?? $file;
-
-    // If the source is a compiled Blade cache file, try to resolve it back to
-    // the original .blade.php. The compiled file often contains a reference to
-    // the original path (e.g. from Blade debug extensions or error templates).
-    // We scan the first 2 KB of the compiled file for a .blade.php path.
-    if (str_contains($source, '/framework/views/') && is_readable($source)) {
-        $head = file_get_contents($source, false, null, 0, 2048);
-        if ($head !== false && preg_match('#[\w./\-]+\.blade\.php#', $head, $m)) {
-            $rel = $m[0];
-            // Resolve relative path: walk up from the cache file's directory to
-            // find the app root (directory containing a composer.json).
-            $dir = dirname($source);
-            for ($up = 0; $up < 8; $up++) {
-                $dir = dirname($dir);
-                if (is_file($dir . '/composer.json')) {
-                    $candidate = $dir . '/' . $rel;
-                    if (is_file($candidate)) {
-                        $source = $candidate;
-                    }
-                    break;
-                }
-            }
-        }
-    }
+    $source = _devctl_blade_source($frame['file'] ?? $file);
 
     $payload = [
         'timestamp' => microtime(true),
@@ -188,13 +175,14 @@ function _devctl_send_dumps(array $vars): void
         ],
         'host'  => $host,
         'nodes' => array_map('_devctl_encode_value', array_values($vars)),
+        'rid'   => function_exists('devctl_request_id') ? devctl_request_id() : null,
     ];
 
     $json    = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $encoded = base64_encode($json) . "\n";
 
     $sock = @stream_socket_client(
-        'tcp://127.0.0.1:9912',
+        _devctl_dump_addr(),
         $errno,
         $errstr,
         1,  // 1 second timeout
@@ -207,6 +195,34 @@ function _devctl_send_dumps(array $vars): void
 
     @fwrite($sock, $encoded);
     @fclose($sock);
+}
+
+/**
+ * Resolves a compiled Blade cache file (storage/framework/views/...) back to
+ * its .blade.php source. The compiled file often contains a reference to the
+ * original path (e.g. from Blade debug extensions or error templates), so the
+ * first 2 KB are scanned for a .blade.php path. Other files return unchanged.
+ */
+function _devctl_blade_source(string $source): string
+{
+    if (!str_contains($source, '/framework/views/') || !is_readable($source)) {
+        return $source;
+    }
+    $head = file_get_contents($source, false, null, 0, 2048);
+    if ($head === false || !preg_match('#[\w./\-]+\.blade\.php#', $head, $m)) {
+        return $source;
+    }
+    // Resolve the relative path: walk up from the cache file's directory to
+    // the app root (the directory containing a composer.json).
+    $dir = dirname($source);
+    for ($up = 0; $up < 8; $up++) {
+        $dir = dirname($dir);
+        if (is_file($dir . '/composer.json')) {
+            $candidate = $dir . '/' . $m[0];
+            return is_file($candidate) ? $candidate : $source;
+        }
+    }
+    return $source;
 }
 
 /**

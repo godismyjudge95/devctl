@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 )
@@ -24,6 +24,12 @@ var settingDefaults = map[string]string{
 	"dns_port":              "5354",
 	"dns_target_ip":         "",
 	"dns_tld":               ".test",
+
+	"inspector_enabled":         "true",
+	"inspector_n_plus_one_min":  "3",
+	"inspector_slow_query_ms":   "100",
+	"inspector_slow_request_ms": "1000",
+	"editor_url":                "vscode://file/{file}:{line}",
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -51,18 +57,23 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	toPage, setToPage := input["dump_to_page"]
-	if setToPage {
-		on, err := strconv.ParseBool(toPage)
-		if err != nil {
-			writeError(w, "dump_to_page must be true or false", http.StatusBadRequest)
-			return
+	for k, v := range input {
+		if check, ok := settingChecks[k]; ok {
+			norm, err := check(v)
+			if err != nil {
+				writeError(w, k+" "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			input[k] = norm
 		}
-		if err := php.InstallPrepend(s.serverRoot, on); err != nil {
+	}
+
+	get := SettingsLookup(r.Context(), s.queries, input)
+	if hasAnyKey(input, prependKeys) {
+		if err := php.InstallPrepend(s.serverRoot, PrependConfig(get, dumps.Addr(s.dumps.Port))); err != nil {
 			writeError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		input["dump_to_page"] = strconv.FormatBool(on)
 	}
 
 	for k, v := range input {
@@ -75,7 +86,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if hasAnyKey(input, inspectorRuleKeys) {
+		s.dumps.Requests.SetRules(InspectorRules(get))
+	}
+
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func hasAnyKey(m map[string]string, keys []string) bool {
+	for _, k := range keys {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // handleGetResolvedSettings returns all settings with runtime fallback defaults

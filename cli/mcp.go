@@ -33,6 +33,7 @@ var mcpTools = []mcpTool{
 	{"mail", "Emails caught by Mailpit: list, read, wait for new, links, attachments, delete.", []string{"mail"}},
 	{"logs", "Log files of services, PHP-FPM, and Caddy: list, tail, clear.", []string{"logs"}},
 	{"dumps", "PHP dump() / php_dd() captures.", []string{"dumps"}},
+	{"requests", "Request inspector: recent PHP requests, jobs, commands with SQL, logs, dumps, and N+1 / duplicate / slow flags.", []string{"requests"}},
 	{"doctor", "Health checks of the devctl environment and safe fixes. DNS and elevate status.", []string{"doctor", "elevate", "dns"}},
 	{"settings", "devctl settings.", []string{"settings"}},
 }

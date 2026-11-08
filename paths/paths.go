@@ -49,6 +49,14 @@ func PrependPath(serverRoot string) string {
 	return filepath.Join(DevctlDir(serverRoot), "prepend.php")
 }
 
+// InspectorPath returns the absolute path to the request inspector agent
+// that prepend.php loads.
+//
+//	{serverRoot}/devctl/inspector.php
+func InspectorPath(serverRoot string) string {
+	return filepath.Join(DevctlDir(serverRoot), "inspector.php")
+}
+
 // BinaryPath returns the absolute path to the installed devctl binary.
 //
 //	{serverRoot}/devctl/devctl

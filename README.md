@@ -28,6 +28,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [Sites](#sites)
 - [Git Worktrees](#git-worktrees)
 - [PHP Dumps](#php-dumps)
+- [Request Inspector](#request-inspector)
 - [SPX Profiler](#spx-profiler)
 - [Mail](#mail)
 - [Config Editor](#config-editor)
@@ -87,7 +88,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | WebSockets (Reverb) | ✅ (Pro) | ✅ | ✅ | ✅ |
 | Database GUI | ❌ | Partial (phpMyAdmin / pgAdmin presets) | ❌ | ✅ (built-in) |
 | Variable dump inspector | ✅ (Pro) | ✅ | ✅ | ✅ (`dump()` / `dd()`) |
-| Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ❌ |
+| Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ✅ (PHP 8.1+) |
 | SPX profiler | ✅ (macOS) | ✅ | ❌ | ✅ |
 | Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
 | Share a site publicly | ✅ | ✅ | ✅ | ❌ |
@@ -562,6 +563,32 @@ No browser extension, no Xdebug, no configuration required.
 
 ---
 
+## Request Inspector
+
+The **Requests** page shows each PHP request, `php artisan` command, and queued job as one unit: SQL queries (SQL, bindings, duration, and the app file and line that ran them), dumps, logs, exceptions, dispatched jobs, cache hits and misses, outgoing HTTP calls, and rendered views. You do not change app code. Click a `file:line` to open it in your editor.
+
+devctl flags these problems:
+
+| Problem | Rule | Setting (default) |
+|---|---|---|
+| N+1 | The same query shape from the same file and line, N or more times | `inspector_n_plus_one_min` (3) |
+| Duplicate | The same SQL with the same bindings, twice or more | |
+| Slow query | One query takes this long or longer | `inspector_slow_query_ms` (100) |
+| Slow request | The request, command, or job takes this long or longer | `inspector_slow_request_ms` (1000) |
+
+The prepend file loads a small PHP agent, `{serverRoot}/devctl/inspector.php`, that uses the `opentelemetry` extension in the devctl PHP builds. Laravel apps get every event kind on PHP 8.1+. Other apps (plain PDO, mysqli, curl) get queries, outgoing HTTP calls, and fatal errors on PHP 8.2+. PHP 8.0 and 7.x are not covered. In the CLI, the agent records `artisan` commands and the jobs of `queue:work` and Horizon; it skips Composer, PHPUnit, and Pest. HTTP responses get an `X-Devctl-Request-Id` header with the unit id.
+
+devctl keeps the newest 200 units (and at most 64 MB) in memory, so they are gone after a devctl restart. Turn the inspector off, change the thresholds, or set the editor link (`editor_url`, for example `vscode://file/{file}:{line}` or `phpstorm://open?file={file}&line={line}`) in **Settings → Request inspector**. Changes apply to the next request.
+
+```sh
+devctl requests:list --problems   # recent requests with problems
+devctl requests:show <id>         # one request with all its events
+devctl requests:problems          # every N+1, duplicate, and slow query in recent requests
+devctl requests:watch --json      # one JSON line per finished request
+```
+
+---
+
 ## SPX Profiler
 
 devctl includes native support for [SPX](https://github.com/NoiseByNorthwest/php-spx), a low-overhead PHP profiler. SPX is compiled directly into devctl's custom PHP binaries (available for PHP 8.1–8.5, x86_64). It has zero overhead when not actively profiling. Legacy PHP 7.x / 8.0 builds ship without SPX.
@@ -744,6 +771,7 @@ devctl php:ini:set 8.4 opcache.jit tracing  # set any php.ini directive for one 
 devctl php:xdebug 8.4 on           # Xdebug for PHP 8.4 (trigger mode, restarts that pool)
 devctl dns:status                 # check systemd-resolved DNS setup
 devctl dumps:list                 # list recent dumps
+devctl requests:problems          # N+1, duplicate, and slow queries in recent requests
 devctl spx:profiles               # list recent SPX profiler captures
 sudo devctl elevate trust         # trust Caddy's internal CA (privileged)
 devctl elevate:status             # show elevate targets
@@ -812,6 +840,10 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `logs:clear <id>` | Clear (truncate) a log file |
 | `dumps` | `dumps:list [--domain=]` | List recent variable dumps |
 | | `dumps:clear` | Delete all dumps |
+| `requests` | `requests:list [--site=] [--kind=] [--problems] [--limit=20]` | List recent requests, commands, and jobs from the request inspector |
+| | `requests:show <id>` | Show one request with its queries, dumps, logs, exceptions, jobs, cache, HTTP calls, views, and problems |
+| | `requests:problems [--site=] [--kind=] [--limit=50]` | List N+1, duplicate, and slow problems across recent requests |
+| | `requests:watch [--site=] [--kind=] [--problems]` | Print each request as it finishes (`--json`: NDJSON) |
 | `spx` | `spx:profiles [--domain=]` | List recent SPX profiler captures |
 | | `spx:profile <key>` | Show CPU hotspot functions for an SPX profile |
 | `mail` | `mail:list [--to=X] [--from=X] [--subject=X] [--since=15m] [--limit=N]` | List recent emails captured by Mailpit, optionally filtered |
@@ -847,7 +879,7 @@ Run `devctl devctl:skill` once to write an OpenCode skill file to `~/.agents/ski
 
 ### MCP server
 
-`devctl mcp` is an MCP server on stdio. Like the CLI, it is a client of the daemon API, so it needs no root. It has nine tools (`sites`, `services`, `php`, `db`, `mail`, `logs`, `dumps`, `doctor`, `settings`). Each tool takes an `action` (the CLI command name after the namespace, for example `worktree:add`) and `args` (the CLI arguments). The tool list costs about 1.4k tokens; `action=help` returns the full usage of a tool when the agent needs it. Lists are paged (`offset`, `limit`, 50 items by default) and a response stops at 16 KB. Actions that delete data (`db:drop`, `db:import`, `mail:delete`, `mail:clear`, `logs:clear`, `dumps:clear`, `helpers:uninstall`, `sites:worktree:rm`) need `confirm: true`. Commands that need root or replace the binary (`elevate`, `tls:trust`, `dns:setup`, `devctl:update`) are not in MCP.
+`devctl mcp` is an MCP server on stdio. Like the CLI, it is a client of the daemon API, so it needs no root. It has ten tools (`sites`, `services`, `php`, `db`, `mail`, `logs`, `dumps`, `requests`, `doctor`, `settings`). Each tool takes an `action` (the CLI command name after the namespace, for example `worktree:add`) and `args` (the CLI arguments). The tool list costs about 1.4k tokens; `action=help` returns the full usage of a tool when the agent needs it. Lists are paged (`offset`, `limit`, 50 items by default) and a response stops at 16 KB. Actions that delete data (`db:drop`, `db:import`, `mail:delete`, `mail:clear`, `logs:clear`, `dumps:clear`, `helpers:uninstall`, `sites:worktree:rm`) need `confirm: true`. Commands that need root or replace the binary (`elevate`, `tls:trust`, `dns:setup`, `devctl:update`) and the streaming `requests:watch` are not in MCP.
 
 ```sh
 devctl mcp:install                          # print the config for each client
@@ -869,7 +901,7 @@ All ports bind to `127.0.0.1` by default (loopback only). Ports marked configura
 | `:80` / `:443` | Caddy (both OS; elevate daemon) | No |
 | `127.0.0.1:2019` | Caddy Admin API | Yes — Settings |
 | `127.0.0.1:5354` | DNS server (UDP+TCP) | Yes — Services → DNS → Settings |
-| `127.0.0.1:9912` | PHP dump receiver (TCP) | Yes — Settings → PHP Dump Server |
+| `127.0.0.1:9912` | PHP dump receiver and request inspector (TCP) | Yes — Settings → PHP Dump Server |
 | `127.0.0.1:6379` | Valkey | No |
 | `127.0.0.1:5432` | PostgreSQL | No |
 | `127.0.0.1:3306` | MySQL | No |
@@ -894,6 +926,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 |---|---|
 | `{serverRoot}/devctl/devctl.db` | SQLite database (sites, settings, dumps) |
 | `{serverRoot}/devctl/prepend.php` | PHP auto-prepend for dumps |
+| `{serverRoot}/devctl/inspector.php` | Request inspector agent that the prepend loads (absent when the inspector is off) |
 | `{serverRoot}/devctl/devctl` | devctl binary (default install location) |
 | `{serverRoot}/bin/` | Shared bin dir on `PATH` — devctl symlinks and auto-downloaded tools (sqlite3, …) |
 | `{serverRoot}/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, …) |

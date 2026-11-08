@@ -11,6 +11,7 @@ type Dump struct {
 	Source    DumpSource `json:"source"`
 	Host      string     `json:"host"`
 	Nodes     []Node     `json:"nodes"`
+	RID       string     `json:"rid"` // request inspector unit id, empty outside a unit
 }
 
 // DumpSource is the file/line context for a dump.

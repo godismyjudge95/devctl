@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -162,7 +161,7 @@ func run() error {
 	ctx := context.Background()
 
 	caddyAdminURL := "http://localhost:2019"
-	dumpTCPPort := ":" + getSetting(ctx, queries, database, "dump_tcp_port", "9912")
+	dumpTCPPort := getSetting(ctx, queries, database, "dump_tcp_port", "9912")
 	rawWatch := getSetting(ctx, queries, database, "sites_watch_dir", "")
 	sitesWatchDir := paths.ExpandHome(rawWatch)
 	if sitesWatchDir == "" {
@@ -182,8 +181,8 @@ func run() error {
 	// Write prepend.php to disk on every startup — idempotent and harmless.
 	// Must run before WriteConfigs so the file exists when FPM starts.
 	done = step("php prepend")
-	dumpToPage, _ := strconv.ParseBool(getSetting(ctx, queries, database, "dump_to_page", "false"))
-	if err := php.InstallPrepend(cfg.ServerRoot, dumpToPage); err != nil {
+	settings := api.SettingsLookup(ctx, queries, nil)
+	if err := php.InstallPrepend(cfg.ServerRoot, api.PrependConfig(settings, dumps.Addr(dumpTCPPort))); err != nil {
 		log.Printf("php: install prepend: %v", err)
 	}
 	done()
@@ -350,7 +349,8 @@ func run() error {
 	done()
 
 	// --- Dumps ---
-	dumpsServer := dumps.NewServer(database, 500)
+	dumpsServer := dumps.NewServer(database, 500, dumpTCPPort)
+	dumpsServer.Requests.SetRules(api.InspectorRules(settings))
 
 	// --- Install registry ---
 	// Build after siteManager and supervisor are ready so ReverbInstaller
@@ -419,7 +419,7 @@ func run() error {
 	}()
 
 	go func() {
-		if err := dumpsServer.Run(runCtx, dumpTCPPort); err != nil {
+		if err := dumpsServer.Run(runCtx); err != nil {
 			log.Printf("dumps: %v", err)
 		}
 	}()

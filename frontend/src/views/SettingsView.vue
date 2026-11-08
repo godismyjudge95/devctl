@@ -12,6 +12,13 @@ import { restartDevctl, trustTLS } from '@/lib/api'
 import { toast } from 'vue-sonner'
 
 const store = useSettingsStore()
+
+const editorPresets = [
+  { label: 'VS Code', url: 'vscode://file/{file}:{line}' },
+  { label: 'Cursor', url: 'cursor://file/{file}:{line}' },
+  { label: 'PhpStorm', url: 'phpstorm://open?file={file}&line={line}' },
+]
+
 onMounted(() => {
   store.load()
 })
@@ -204,6 +211,79 @@ async function trustCert() {
               <Label for="dump_to_page">Also dump to the page</Label>
             </div>
             <p class="text-sm text-muted-foreground">Dumps also print in the browser or terminal. Applies to the next request.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- Request inspector -->
+      <Card>
+        <CardHeader>
+          <CardTitle>Request inspector</CardTitle>
+          <CardDescription>Records SQL, logs, exceptions, jobs, cache, HTTP calls, and views for each PHP 8.1+ request and artisan command. Applies to the next request.</CardDescription>
+        </CardHeader>
+        <CardContent class="grid gap-4">
+          <div class="flex items-center gap-2">
+            <Checkbox
+              id="inspector_enabled"
+              :checked="store.settings['inspector_enabled'] === 'true'"
+              @update:checked="(v) => save('inspector_enabled', v === true ? 'true' : 'false')"
+            />
+            <Label for="inspector_enabled">Record requests</Label>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div class="grid gap-2">
+              <Label for="inspector_n_plus_one_min">N+1 after (same query, same line)</Label>
+              <Input
+                id="inspector_n_plus_one_min"
+                v-model="store.settings['inspector_n_plus_one_min']"
+                inputmode="numeric"
+                class="font-mono"
+                @change="save('inspector_n_plus_one_min', store.settings['inspector_n_plus_one_min'] ?? '')"
+              />
+            </div>
+            <div class="grid gap-2">
+              <Label for="inspector_slow_query_ms">Slow query (ms)</Label>
+              <Input
+                id="inspector_slow_query_ms"
+                v-model="store.settings['inspector_slow_query_ms']"
+                inputmode="decimal"
+                class="font-mono"
+                @change="save('inspector_slow_query_ms', store.settings['inspector_slow_query_ms'] ?? '')"
+              />
+            </div>
+            <div class="grid gap-2">
+              <Label for="inspector_slow_request_ms">Slow request (ms)</Label>
+              <Input
+                id="inspector_slow_request_ms"
+                v-model="store.settings['inspector_slow_request_ms']"
+                inputmode="decimal"
+                class="font-mono"
+                @change="save('inspector_slow_request_ms', store.settings['inspector_slow_request_ms'] ?? '')"
+              />
+            </div>
+          </div>
+          <div class="grid gap-2">
+            <Label for="editor_url">Editor link</Label>
+            <Input
+              id="editor_url"
+              v-model="store.settings['editor_url']"
+              class="font-mono"
+              @change="save('editor_url', store.settings['editor_url'] ?? '')"
+            />
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                v-for="p in editorPresets"
+                :key="p.label"
+                variant="outline"
+                size="sm"
+                @click="save('editor_url', p.url)"
+              >
+                {{ p.label }}
+              </Button>
+            </div>
+            <p class="text-sm text-muted-foreground">
+              Clicking a file:line opens this URL. <code class="font-mono">{file}</code> and <code class="font-mono">{line}</code> are replaced.
+            </p>
           </div>
         </CardContent>
       </Card>

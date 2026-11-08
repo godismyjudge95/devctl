@@ -6,11 +6,10 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
-
-	dbq "github.com/danielgormly/devctl/db/queries"
 )
 
-// Hub manages active WebSocket connections and broadcasts new dumps.
+// Hub manages active WebSocket connections and broadcasts JSON messages
+// (new dumps, or request inspector unit updates).
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[*websocket.Conn]struct{}
@@ -35,9 +34,9 @@ func (h *Hub) Unregister(conn *websocket.Conn) {
 	h.mu.Unlock()
 }
 
-// Broadcast sends a dump to all connected WebSocket clients.
-func (h *Hub) Broadcast(dump dbq.Dump) {
-	msg, err := json.Marshal(dump)
+// Broadcast sends v as JSON to all connected WebSocket clients.
+func (h *Hub) Broadcast(v any) {
+	msg, err := json.Marshal(v)
 	if err != nil {
 		log.Printf("hub: marshal: %v", err)
 		return
