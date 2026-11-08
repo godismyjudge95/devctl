@@ -473,6 +473,27 @@ PHP does not use the OS trust store (the static OpenSSL build looks at `openssl.
 
 **Framework detection:** devctl inspects `composer.json` and common project files to detect Laravel, Statamic, WordPress (classic and Bedrock), Drupal, Craft CMS, Symfony, and generic PHP projects.
 
+### New site wizard
+
+**New site** on the Sites page (or `devctl sites:new`) creates a project in the sites directory and serves it at `https://<name>.test` in one step. Progress streams to the page or the terminal.
+
+| Template | Options | What runs |
+|---|---|---|
+| Laravel | Starter kit (none, React, Vue, Svelte, Livewire), Pest or PHPUnit, SQLite, MySQL, or PostgreSQL | `laravel new` (with `npm` for a starter kit), then `artisan migrate` for MySQL and PostgreSQL |
+| Statamic | | `statamic new --blank` |
+| WordPress | Admin user, password, and email | `wp core download`, `wp config create`, `wp core install` |
+| Plain PHP | | Writes an `index.php` |
+
+The Laravel installer and the Statamic CLI are the ones devctl installs with PHP. They run as the site user through the devctl `php` wrapper. For MySQL and PostgreSQL, devctl creates a database named after the project (hyphens become underscores). The `.env` gets `APP_URL=https://<name>.test`, the database credentials from the service, Mailpit for mail, and Valkey for Redis (when those services are installed). WordPress keeps its settings in `wp-config.php`.
+
+devctl refuses a name when the directory, the site, or the database already exists. If a step fails, devctl removes the site, the directory, and the database it created. Closing the page or pressing Ctrl+C does not stop a creation that has started.
+
+```sh
+devctl sites:new hello --template=php
+devctl sites:new shop --template=laravel --starter-kit=react --database=mysql
+devctl sites:new blog --template=wordpress --admin-user=daniel --json
+```
+
 ---
 
 ## Git Worktrees
@@ -706,6 +727,7 @@ devctl services:install mailpit   # install an available service
 devctl services:restart caddy     # restart a service
 devctl sites:list                 # list all sites
 devctl sites:php myapp.test 8.4   # switch PHP version for a site
+devctl sites:new shop --template=laravel --starter-kit=react  # new project + vhost
 devctl sites:worktree:add myapp.test feature/auth  # new worktree + vhost
 devctl logs:tail caddy --follow   # stream the tail of a log live
 devctl mail:list                  # list captured emails
@@ -754,6 +776,7 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `services:credentials <id>` | Show connection credentials for a service |
 | `sites` | `sites:list` | List all managed sites |
 | | `sites:get <domain>` | Show full details for a site |
+| | `sites:new <name> --template=<laravel\|statamic\|wordpress\|php>` | Create a project from a template, its database and `.env`, and its site |
 | | `sites:php <domain> <version>` | Switch the PHP version for a site |
 | | `sites:spx <domain> enable\|disable` | Enable or disable the SPX profiler for a site |
 | | `sites:cors <domain> enable\|disable` | Enable or disable Caddy CORS header injection for a site |

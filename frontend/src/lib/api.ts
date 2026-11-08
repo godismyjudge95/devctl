@@ -141,8 +141,10 @@ export const getServiceDetails = (id: string) =>
 
 export interface StreamCallbacks {
   onOutput: (chunk: string) => void
-  onDone: () => void
+  onDone: (data?: unknown) => void
   onError: (message: string) => void
+  /** Events other than output, done, and error (for example "step"). */
+  onEvent?: (type: string, data: unknown) => void
 }
 
 /**
@@ -171,13 +173,18 @@ export function updateServiceStream(id: string, callbacks: StreamCallbacks): Abo
   return runServiceStream('POST', `/api/services/${id}/update`, callbacks)
 }
 
-function runServiceStream(method: string, path: string, callbacks: StreamCallbacks): AbortController {
+function runServiceStream(method: string, path: string, callbacks: StreamCallbacks, body?: unknown): AbortController {
   const ctrl = new AbortController()
 
   ;(async () => {
     let res: Response
     try {
-      res = await fetch(path, { method, signal: ctrl.signal })
+      res = await fetch(path, {
+        method,
+        signal: ctrl.signal,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      })
     } catch (e: any) {
       if (e?.name !== 'AbortError') callbacks.onError(e?.message ?? 'Network error')
       return
@@ -220,9 +227,11 @@ function runServiceStream(method: string, path: string, callbacks: StreamCallbac
           if (eventType === 'output') {
             callbacks.onOutput(typeof parsed === 'string' ? parsed : JSON.stringify(parsed))
           } else if (eventType === 'done') {
-            callbacks.onDone()
+            callbacks.onDone(parsed)
           } else if (eventType === 'error') {
             callbacks.onError(parsed.error ?? 'Unknown error')
+          } else {
+            callbacks.onEvent?.(eventType, parsed)
           }
         } catch {
           // ignore malformed SSE data
@@ -248,6 +257,64 @@ export interface SiteInput {
 
 // --- Sites ---
 export const getSites = () => request<Site[]>('GET', '/api/sites')
+
+export interface SiteTemplateOption {
+  id: string
+  label: string
+  default: string
+  /** Absent for a free-text option. */
+  choices?: { value: string; label: string }[]
+}
+
+export interface SiteTemplate {
+  id: string
+  label: string
+  description: string
+  options: SiteTemplateOption[]
+}
+
+export interface NewSiteRequest {
+  name: string
+  template: string
+  php_version?: string
+  options: Record<string, string>
+}
+
+export interface NewSiteStep {
+  index: number
+  total: number
+  label: string
+}
+
+export interface NewSiteDone {
+  site: Site
+  url: string
+}
+
+export const getSiteTemplates = () =>
+  request<{ templates: SiteTemplate[] }>('GET', '/api/sites/templates').then(r => r.templates)
+
+export interface NewSiteCallbacks {
+  onOutput: (chunk: string) => void
+  onStep: (step: NewSiteStep) => void
+  onDone: (result: NewSiteDone) => void
+  onError: (message: string) => void
+}
+
+/**
+ * Creates a project from a template, streaming progress via SSE-over-fetch.
+ * Validation errors (400, 409) arrive through onError before any step.
+ */
+export function newSiteStream(req: NewSiteRequest, callbacks: NewSiteCallbacks): AbortController {
+  return runServiceStream('POST', '/api/sites/new', {
+    onOutput: callbacks.onOutput,
+    onDone: (data) => callbacks.onDone(data as NewSiteDone),
+    onError: callbacks.onError,
+    onEvent: (type, data) => {
+      if (type === 'step') callbacks.onStep(data as NewSiteStep)
+    },
+  }, req)
+}
 export const createSite = (data: SiteInput) =>
   request<Site>('POST', '/api/sites', data)
 export const getSite = (id: string) => request<Site>('GET', `/api/sites/${id}`)

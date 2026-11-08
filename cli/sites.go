@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/danielgormly/devctl/newsite"
 )
 
 func init() {
@@ -733,4 +735,122 @@ func orDash(s string) string {
 		return styleDim.Render("—")
 	}
 	return s
+}
+
+func init() {
+	Register(&Cmd{
+		Name:        "sites:new",
+		Description: "Create a new project from a template in the sites directory, set up its database and .env, and register https://<name>.test",
+		Usage:       "<name> --template=<laravel|statamic|wordpress|php> [--php=<version>] [--<option>=<value>]...",
+		Args: []ArgDef{
+			{Name: "name", Description: "Directory and domain name: lowercase letters, digits, hyphens. Must not exist"},
+		},
+		Flags: newSiteFlags(),
+		Examples: []string{
+			"devctl sites:new hello --template=php",
+			"devctl sites:new shop --template=laravel --starter-kit=react --testing=pest --database=mysql",
+			"devctl sites:new docs --template=statamic --php=8.4",
+			"devctl sites:new blog --template=wordpress --admin-user=daniel --json",
+		},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			req, err := parseNewSiteArgs(args)
+			if err != nil {
+				return err
+			}
+			if jsonMode {
+				type outputEvent struct {
+					Type string `json:"type"`
+					Line string `json:"line,omitempty"`
+				}
+				res, err := c.NewSiteSSE(req, func(line string) {
+					PrintJSON(outputEvent{Type: "output", Line: line})
+				})
+				if err != nil {
+					PrintJSON(map[string]string{"type": "error", "error": err.Error()})
+					return err
+				}
+				PrintJSON(map[string]any{"type": "done", "site": res.Site, "url": res.URL})
+				return nil
+			}
+			res, err := c.NewSiteSSE(req, func(line string) { fmt.Print(line) })
+			if err != nil {
+				return err
+			}
+			PrintOK("Created " + res.Site.Domain)
+			KV("URL", res.URL)
+			KV("Path", res.Site.RootPath)
+			KV("PHP", res.Site.PHPVersion)
+			return nil
+		},
+	})
+}
+
+// parseNewSiteArgs reads sites:new arguments. Flags may come before or after
+// the name. An option flag is the option ID with hyphens (--starter-kit).
+func parseNewSiteArgs(args []string) (newsite.Request, error) {
+	usage := fmt.Errorf("usage: devctl sites:new <name> --template=<laravel|statamic|wordpress|php> [--php=<version>] [--<option>=<value>]...")
+	req := newsite.Request{Options: map[string]string{}}
+	var pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "--") {
+			pos = append(pos, a)
+			continue
+		}
+		key, val, ok := strings.Cut(strings.TrimPrefix(a, "--"), "=")
+		if !ok {
+			if i+1 >= len(args) {
+				return req, fmt.Errorf("flag --%s needs a value", key)
+			}
+			i++
+			val = args[i]
+		}
+		switch key {
+		case "template":
+			req.Template = val
+		case "php":
+			req.PHPVersion = val
+		default:
+			req.Options[strings.ReplaceAll(key, "-", "_")] = val
+		}
+	}
+	if len(pos) != 1 || req.Template == "" {
+		return req, usage
+	}
+	req.Name = pos[0]
+	return req, nil
+}
+
+// newSiteFlags documents every template option as a flag, from the template table.
+func newSiteFlags() []FlagDef {
+	ids := make([]string, len(newsite.Templates))
+	for i, t := range newsite.Templates {
+		ids[i] = t.ID
+	}
+	flags := []FlagDef{
+		{Name: "template", Description: "Project template: " + strings.Join(ids, ", ")},
+		{Name: "php", Description: "PHP version for the site (default: newest installed)"},
+	}
+	index := map[string]int{}
+	for _, t := range newsite.Templates {
+		for _, o := range t.Options {
+			desc := t.Label + ": "
+			if len(o.Choices) > 0 {
+				vals := make([]string, len(o.Choices))
+				for i, ch := range o.Choices {
+					vals[i] = ch.Value
+				}
+				desc += strings.Join(vals, ", ") + " "
+			}
+			desc += "(default " + o.Default + ")"
+			name := strings.ReplaceAll(o.ID, "_", "-")
+			if i, ok := index[name]; ok {
+				flags[i].Description += "; " + desc
+				continue
+			}
+			index[name] = len(flags)
+			flags = append(flags, FlagDef{Name: name, Description: o.Label + ". " + desc})
+		}
+	}
+	return flags
 }

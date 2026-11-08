@@ -5,7 +5,7 @@ import { useSitesStore } from '@/stores/sites'
 import type { Site } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import {
-  Plus, ExternalLink, Trash2, Zap, Loader2,
+  Plus, Sparkles, ExternalLink, Trash2, Zap, Loader2,
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
   Lock, Unlock, Settings, Globe,
 } from 'lucide-vue-next'
@@ -160,6 +160,10 @@ function frameworkLabel(fw: string): string {
           <Loader2 v-if="refreshingMetadata" class="size-3.5 animate-spin" />
           <RefreshCw v-else class="size-3.5" />
           Refresh
+        </Button>
+        <Button variant="outline" size="sm" @click="router.push('/sites/new-project')">
+          <Sparkles class="size-3.5" />
+          New site
         </Button>
         <Button size="sm" @click="router.push('/sites/new')">
           <Plus class="size-3.5" />

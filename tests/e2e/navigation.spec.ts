@@ -16,6 +16,7 @@ const routes = [
   '/services/install',
   '/sites',
   '/sites/new',
+  '/sites/new-project',
   '/dumps',
   '/logs',
   '/helpers',

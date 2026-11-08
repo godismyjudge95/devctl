@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/danielgormly/devctl/newsite"
 )
 
 // Client is a thin HTTP client that talks to the devctl daemon API.
@@ -427,22 +429,40 @@ func (c *Client) InstallServiceSSE(id string, onOutput func(line string)) error 
 }
 
 func (c *Client) postSSE(path, action string, onOutput func(line string)) error {
-	longClient := &http.Client{Timeout: 10 * time.Minute}
+	_, err := c.streamSSE(path, action, nil, 10*time.Minute, onOutput)
+	return err
+}
 
-	req, err := http.NewRequest(http.MethodPost, c.base+path, nil)
+// streamSSE POSTs body (JSON, when not nil) and reads the SSE response until a
+// "done" event, whose data it returns, or an "error" event.
+func (c *Client) streamSSE(path, action string, body any, timeout time.Duration, onOutput func(line string)) (json.RawMessage, error) {
+	longClient := &http.Client{Timeout: timeout}
+
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reqBody = strings.NewReader(string(b))
+	}
+	req, err := http.NewRequest(http.MethodPost, c.base+path, reqBody)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 
 	resp, err := longClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST %s: %w", path, err)
+		return nil, fmt.Errorf("POST %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s", strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("%s", strings.TrimSpace(string(b)))
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -465,15 +485,15 @@ func (c *Client) postSSE(path, action string, onOutput func(line string)) error 
 					onOutput(text)
 				}
 			case "done":
-				return nil
+				return json.RawMessage(currentData), nil
 			case "error":
 				var payload struct {
 					Error string `json:"error"`
 				}
 				if err := json.Unmarshal([]byte(currentData), &payload); err != nil {
-					return fmt.Errorf("%s failed: %s", action, currentData)
+					return nil, fmt.Errorf("%s failed: %s", action, currentData)
 				}
-				return fmt.Errorf("%s failed: %s", action, payload.Error)
+				return nil, fmt.Errorf("%s failed: %s", action, payload.Error)
 			}
 			currentEvent = ""
 			currentData = ""
@@ -481,9 +501,26 @@ func (c *Client) postSSE(path, action string, onOutput func(line string)) error 
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("reading SSE stream: %w", err)
+		return nil, fmt.Errorf("reading SSE stream: %w", err)
 	}
-	return fmt.Errorf("%s: stream ended without a done or error event", action)
+	return nil, fmt.Errorf("%s: stream ended without a done or error event", action)
+}
+
+// NewSiteResult is the "done" payload of POST /api/sites/new.
+type NewSiteResult struct {
+	Site Site   `json:"site"`
+	URL  string `json:"url"`
+}
+
+// NewSiteSSE creates a project from a template, streaming installer output to
+// onOutput. Laravel starter kits run npm, so the timeout is long.
+func (c *Client) NewSiteSSE(req newsite.Request, onOutput func(line string)) (NewSiteResult, error) {
+	var out NewSiteResult
+	data, err := c.streamSSE("/api/sites/new", "create "+req.Name, req, 30*time.Minute, onOutput)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(data, &out)
 }
 
 // UpdateServiceSSE POSTs to /api/services/{id}/update and streams the SSE

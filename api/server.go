@@ -161,6 +161,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/sites/refresh-metadata", s.handleRefreshSiteMetadata)
 	s.mux.HandleFunc("GET /api/sites", s.handleGetSites)
 	s.mux.HandleFunc("POST /api/sites", s.handleCreateSite)
+	s.mux.HandleFunc("GET /api/sites/templates", s.handleGetSiteTemplates)
+	s.mux.HandleFunc("POST /api/sites/new", s.handleNewSite)
 	s.mux.HandleFunc("GET /api/sites/{id}", s.handleGetSite)
 	s.mux.HandleFunc("PUT /api/sites/{id}", s.handleUpdateSite)
 	s.mux.HandleFunc("DELETE /api/sites/{id}", s.handleDeleteSite)

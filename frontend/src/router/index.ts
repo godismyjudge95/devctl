@@ -4,6 +4,7 @@ import ServiceSettingsView from '@/views/ServiceSettingsView.vue'
 import ServiceInstallView from '@/views/ServiceInstallView.vue'
 import SitesView from '@/views/SitesView.vue'
 import SiteCreateView from '@/views/SiteCreateView.vue'
+import SiteNewProjectView from '@/views/SiteNewProjectView.vue'
 import SiteSettingsView from '@/views/SiteSettingsView.vue'
 import SiteWorktreeView from '@/views/SiteWorktreeView.vue'
 import DumpsView from '@/views/DumpsView.vue'
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/services/:id/config/:file', component: ConfigEditorView, meta: { fullWidth: true } },
     { path: '/sites',     component: SitesView },
     { path: '/sites/new', component: SiteCreateView },
+    { path: '/sites/new-project', component: SiteNewProjectView },
     { path: '/sites/:id/worktree', component: SiteWorktreeView },
     { path: '/sites/:id', component: SiteSettingsView },
     { path: '/dumps',     component: DumpsView },

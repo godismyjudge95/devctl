@@ -198,6 +198,7 @@ func TestWriteSkill_FirstTryGuide(t *testing.T) {
 		"https://",
 		".test",
 		"sites:worktree:add",
+		"devctl sites:new <name> --template=",
 		"lockfile matches the parent",
 		"auth.json",
 		"Do not read the devctl source",

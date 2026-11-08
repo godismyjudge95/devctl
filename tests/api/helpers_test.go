@@ -215,11 +215,28 @@ type SSEResult struct {
 // timeout controls how long to wait for the stream to complete.
 func httpSSE(t *testing.T, method, path string, timeout time.Duration) SSEResult {
 	t.Helper()
+	return httpSSEBody(t, method, path, nil, timeout)
+}
+
+// httpSSEBody is httpSSE with a JSON request body (none when jsonBody is nil).
+func httpSSEBody(t *testing.T, method, path string, jsonBody any, timeout time.Duration) SSEResult {
+	t.Helper()
 	url := fmt.Sprintf("%s%s", baseURL(), path)
 
-	req, err := http.NewRequest(method, url, nil)
+	var body io.Reader
+	if jsonBody != nil {
+		b, err := json.Marshal(jsonBody)
+		if err != nil {
+			t.Fatalf("SSE %s %s: marshal body: %v", method, url, err)
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		t.Fatalf("SSE %s %s: build request: %v", method, url, err)
+	}
+	if jsonBody != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 
 	client := &http.Client{Timeout: timeout}
