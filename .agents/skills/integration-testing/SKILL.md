@@ -1,6 +1,6 @@
 ---
 name: integration-testing
-description: How to write and run devctl integration tests — where tests live, how to write failing tests first (TDD), and how to run them safely inside an Incus container or OrbStack Ubuntu VM without touching live host data.
+description: How to write and run devctl integration tests — where tests live, how to write failing tests first (TDD), and how to run them safely inside an Incus container or a VMPal Linux VM without touching live host data.
 ---
 
 # Skill: integration-testing
@@ -11,7 +11,7 @@ description: How to write and run devctl integration tests — where tests live,
 
 The tests in `tests/api/`, `tests/integration/`, and `tests/e2e/` run against a **live devctl instance**. They mutate real state: they send emails, create sites, install services, change settings. Running them against the host devctl corrupts live data.
 
-**All tests run INSIDE the Incus test container (Linux) or OrbStack Ubuntu VM (macOS).** The host devctl is never stopped and port 4000 on the host is never touched. Multiple machines can run in parallel without conflicts.
+**All tests run INSIDE the Incus test container (Linux) or an existing VMPal Linux VM that is snapshotted before and reverted after each run (macOS).** The host devctl is never stopped and port 4000 on the host is never touched. Multiple machines can run in parallel without conflicts.
 
 ## Test layers
 
@@ -87,7 +87,7 @@ make test-env
 ```
 
 `make test-env` will:
-- Launch a fresh `devctl-ubuntu-base` Incus container, **or** on macOS without Incus an OrbStack `ubuntu:24.04` VM (`scripts/test-env-orb.sh`)
+- Launch a fresh `devctl-ubuntu-base` Incus container, **or** on macOS without Incus the existing VMPal VM `DEVCTL_VMPAL_VM` (default `Linux`): snapshot `devctl-test-env` first, revert and suspend at cleanup (`scripts/test-env-vmpal.sh`; install the tooling once with `make test-env-setup`)
 - Push the `./devctl` binary (cross-compiled `linux/arm64` on Darwin), write the systemd unit, start the service
 - Wait for devctl to respond at `http://127.0.0.1:4000` **inside** the machine
 - Export `DEVCTL_CONTAINER=devctl-test-<timestamp>` and block until Ctrl+C or the machine is destroyed

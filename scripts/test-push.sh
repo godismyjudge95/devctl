@@ -17,12 +17,11 @@ if command -v incus >/dev/null 2>&1 && incus list --format csv -c n 2>/dev/null 
   exit 0
 fi
 
-if command -v orbctl >/dev/null 2>&1; then
-  # OrbStack machines see the Mac filesystem at the same path.
-  ABS="$(cd "$(dirname "$SRC")" && pwd)/$(basename "$SRC")"
-  orb run -m "$NAME" sudo cp "$ABS" "$DEST"
+source "$(dirname "$0")/vmpal-lib.sh"
+if vmpal_has_vm "$NAME"; then
+  vmpal cp --admin "$SRC" "$NAME:$DEST"
   exit 0
 fi
 
-echo "test-push: no Incus container or OrbStack machine named ${NAME}" >&2
+echo "test-push: no Incus container or VMPal VM named ${NAME}" >&2
 exit 1

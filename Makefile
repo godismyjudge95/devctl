@@ -24,7 +24,7 @@ endif
 TEST_ENV_SCRIPT := scripts/test-env.sh
 ifeq ($(UNAME_S),Darwin)
 ifeq ($(shell command -v incus 2>/dev/null),)
-TEST_ENV_SCRIPT := scripts/test-env-orb.sh
+TEST_ENV_SCRIPT := scripts/test-env-vmpal.sh
 endif
 endif
 # Resolve npx from the site user's nvm if present, fall back to PATH.
@@ -109,11 +109,15 @@ demo: build
 
 # ─── Test environment ──────────────────────────────────────────────────────────
 
-# One-time setup: pull the ubuntu base image for Incus and bake in prerequisites.
-# Re-run this whenever you want to refresh the cached image.
+# One-time setup: the Incus base image, or on macOS without Incus the test
+# tooling in the VMPal VM (DEVCTL_VMPAL_VM, default "Linux"). Re-run this whenever you want to refresh it.
 test-env-setup:
+ifeq ($(TEST_ENV_SCRIPT),scripts/test-env-vmpal.sh)
+	@bash scripts/test-env-setup-vmpal.sh
+else
 	@which incus > /dev/null 2>&1 || (echo "Incus is not installed. See: https://linuxcontainers.org/incus/docs/main/installing/" && exit 1)
 	@bash scripts/test-env-setup.sh
+endif
 	@echo "Setup complete. Run 'make build && make test-env' to launch a test container."
 
 # Download all service binaries/archives into the persistent Incus artifact cache.
@@ -136,13 +140,13 @@ test-artifacts-clean:
 # Tests run inside the container; the host devctl is never stopped.
 # Requires the binary to be pre-built: run 'make build' first.
 test-env:
-	@test -f ./devctl -o "$(TEST_ENV_SCRIPT)" = "scripts/test-env-orb.sh" || (echo "Binary not found — run 'make build' first." && exit 1)
+	@test -f ./devctl -o "$(TEST_ENV_SCRIPT)" = "scripts/test-env-vmpal.sh" || (echo "Binary not found — run 'make build' first." && exit 1)
 	@bash $(TEST_ENV_SCRIPT)
 
 # Launch container, run all tests, destroy when done.
 # Exit code mirrors the test result.
 test-run:
-	@test -f ./devctl -o "$(TEST_ENV_SCRIPT)" = "scripts/test-env-orb.sh" || (echo "Binary not found — run 'make build' first." && exit 1)
+	@test -f ./devctl -o "$(TEST_ENV_SCRIPT)" = "scripts/test-env-vmpal.sh" || (echo "Binary not found — run 'make build' first." && exit 1)
 	@bash $(TEST_ENV_SCRIPT) --run-tests
 
 # Destroy the test container named by DEVCTL_CONTAINER.
@@ -159,11 +163,8 @@ test-cleanup-all:
 	    incus delete --force "$$name" 2>/dev/null || true; \
 	  done; \
 	fi
-	@if command -v orbctl >/dev/null 2>&1; then \
-	  for name in $$(orbctl list -q 2>/dev/null | awk '{print $$1}' | grep '^devctl-test-' || true); do \
-	    echo "Destroying OrbStack $$name..."; \
-	    bash scripts/test-cleanup.sh "$$name"; \
-	  done; \
+	@if [ "$(TEST_ENV_SCRIPT)" = "scripts/test-env-vmpal.sh" ]; then \
+	  bash scripts/test-cleanup.sh "$${DEVCTL_VMPAL_VM:-Linux}"; \
 	fi
 
 # Run BATS integration tests inside the container (DEVCTL_CONTAINER must be set).
@@ -174,7 +175,7 @@ test-bats:
 _test-bats:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" -- mkdir -p /tmp/tests
-	tar -czf - -C tests integration/ | bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
+	COPYFILE_DISABLE=1 tar -czf - -C tests integration/ | bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" --stdin -- tar -xzf - -C /tmp/tests/
 	bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" -- bats /tmp/tests/integration/
 
 # Compile the Go API test binary on the host, push it into the container, run it.
@@ -201,7 +202,7 @@ test-e2e:
 _test-e2e:
 	@test -n "$$DEVCTL_CONTAINER" || (echo "DEVCTL_CONTAINER not set — start a test env first with 'make test-env'." && exit 1)
 	bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" -- mkdir -p /tmp/tests
-	tar -czf - -C tests e2e/ | bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" -- tar -xzf - -C /tmp/tests/
+	COPYFILE_DISABLE=1 tar -czf - -C tests e2e/ | bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" --stdin -- tar -xzf - -C /tmp/tests/
 	bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" -- rm -f /tmp/playwright.config.ts
 	bash scripts/test-push.sh "$$DEVCTL_CONTAINER" playwright.config.ts /tmp/playwright.config.ts
 	bash scripts/test-exec.sh "$$DEVCTL_CONTAINER" --cwd /tmp -- \

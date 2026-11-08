@@ -862,7 +862,7 @@ make db-migrate   # apply goose migrations to {serverRoot}/devctl/devctl.db
 Integration tests must not run against the host dashboard at `http://127.0.0.1:4000`. They run inside a Linux machine:
 
 - **Linux host:** Incus container (`scripts/test-env.sh`)
-- **macOS host:** OrbStack Ubuntu 24.04 VM (`scripts/test-env-orb.sh`) when Incus is not installed
+- **macOS host:** an existing VMPal Linux VM (`scripts/test-env-vmpal.sh`) when Incus is not installed. The VM is `DEVCTL_VMPAL_VM` (default `Linux`). Run `make test-env-setup` once to install the test tooling in it.
 
 ```sh
 make build
@@ -870,7 +870,7 @@ make test-env                    # one terminal — starts the machine, blocks u
 DEVCTL_CONTAINER=devctl-test-xxx make test-api   # other terminal
 ```
 
-On macOS, `make test-env` cross-compiles `linux/arm64` and creates an OrbStack machine named `devctl-test-<timestamp>`. `make test-cleanup` / `make test-cleanup-all` destroy Incus containers or OrbStack machines.
+On macOS, `make test-env` cross-compiles `linux/arm64`, starts the VM, and takes the VMPal snapshot `devctl-test-env` before it installs devctl. `make test-cleanup` / `make test-cleanup-all` destroy Incus containers, or revert the VMPal VM to that snapshot, delete the snapshot, and suspend the VM, so the VM ends as it was. Only one VMPal guest runs at a time on this Mac: other agents share the same VMs.
 
 ### Package layout
 

@@ -88,7 +88,7 @@ This includes:
 - Running a compiled `.test` binary directly: `/tmp/cli.test`, `./cli.test`, etc.
 - `go vet` with test files if it executes test code
 
-The **only** permitted local step on the Linux development host is compiling: `go test -c` (produces a binary but does not run it). Everything else runs inside the Incus container (Linux) or the OrbStack Ubuntu VM (macOS).
+The **only** permitted local step on the Linux development host is compiling: `go test -c` (produces a binary but does not run it). Everything else runs inside the Incus container (Linux) or a VMPal Linux VM (macOS).
 
 ```sh
 # Unit tests (e.g. cli/ package) — compile on host, run in the test machine
@@ -99,7 +99,7 @@ bash scripts/test-exec.sh $DEVCTL_CONTAINER -- /tmp/cli.test -test.v
 
 # Integration tests (tests/api/)
 make build
-make test-env          # in one terminal — starts Incus (Linux) or OrbStack (macOS)
+make test-env          # in one terminal — starts Incus (Linux) or VMPal (macOS)
 DEVCTL_CONTAINER=devctl-test-xxx make test-api        # in another terminal (destroys machine when done)
 
 # One-shot: launch machine, run all tests, destroy when done
@@ -108,11 +108,11 @@ make build && make test-run
 
 Load the `integration-testing` skill for the full workflow.
 
-## Integration tests — MUST run inside Incus or OrbStack
+## Integration tests — MUST run inside Incus or VMPal
 
 The integration tests in `tests/api/` are tagged `//go:build integration` and run against a **live devctl instance**. They mutate real state (emails, sites, services, settings). Running them against the host system devctl at `http://127.0.0.1:4000` will corrupt live data.
 
-**NEVER run integration tests on the host machine.** Always run them inside the dedicated Incus test container (Linux) or OrbStack Ubuntu VM (macOS). `make test-env` selects the backend: Incus when `incus` is on PATH, otherwise OrbStack on Darwin.
+**NEVER run integration tests on the host machine.** Always run them inside the dedicated Incus test container (Linux) or VMPal Linux VM (macOS). `make test-env` selects the backend: Incus when `incus` is on PATH, otherwise VMPal on Darwin (the existing VM `DEVCTL_VMPAL_VM`, default `Linux`; it is snapshotted before each run and reverted and suspended after; run `make test-env-setup` once for the tooling).
 
 ```sh
 # WRONG — runs against host devctl, mutates live data
@@ -152,7 +152,7 @@ Load the `integration-testing` skill for the full workflow: container setup, TDD
 
 After implementing any feature, add or update the relevant tests before considering the task done:
 
-- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c` on the host, push the binary into the Incus or OrbStack test machine, and run it there. **Do not run the binary on the Linux development host.**
+- **Go package changes** (e.g. `cli/`, `selfinstall/`, `php/`) → add or update unit tests in the same package (`*_test.go`). Compile with `go test -c` on the host, push the binary into the Incus or VMPal test machine, and run it there. **Do not run the binary on the Linux development host.**
 - **Backend API changes** → add or update Go API integration tests in `tests/api/`. Load the `integration-testing` skill for the full workflow.
 - **Frontend / UI changes** → add or update Playwright e2e tests in `tests/e2e/`. Load the `testing-dashboard` skill for conventions and tooling.
 

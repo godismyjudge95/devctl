@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/test-cleanup.sh — Stop and destroy a devctl test Incus container or OrbStack VM.
+# scripts/test-cleanup.sh — Stop and destroy a devctl test Incus container or VMPal VM.
 #
 # Usage:
 #   DEVCTL_CONTAINER=devctl-test-123 scripts/test-cleanup.sh
@@ -26,13 +26,17 @@ if command -v incus >/dev/null 2>&1 && incus list --format csv -c n 2>/dev/null 
   exit 0
 fi
 
-if command -v orbctl >/dev/null 2>&1 && orbctl list -q 2>/dev/null | awk '{print $1}' | grep -qx "$CONTAINER"; then
-  echo "Stopping and destroying OrbStack test machine ${CONTAINER}..."
-  orb run -m "$CONTAINER" sudo systemctl stop devctl 2>/dev/null || true
-  orbctl delete -f "$CONTAINER" 2>/dev/null || true
-  echo "Machine ${CONTAINER} destroyed."
+source "$(dirname "$0")/vmpal-lib.sh"
+if vmpal_has_vm "$CONTAINER"; then
+  if vmpal_has_test_snapshot "$CONTAINER"; then
+    echo "Reverting VMPal VM ${CONTAINER} to snapshot '${VMPAL_TEST_SNAPSHOT}'..."
+    vmpal revert "$CONTAINER" "$VMPAL_TEST_SNAPSHOT" >/dev/null
+    vmpal delete-snapshot "$CONTAINER" "$VMPAL_TEST_SNAPSHOT" >/dev/null
+    vmpal suspend "$CONTAINER" >/dev/null 2>&1 || true
+    echo "VM ${CONTAINER} reverted and suspended."
+  fi
   exit 0
 fi
 
-echo "No Incus or OrbStack backend to clean up ${CONTAINER}." >&2
+echo "No Incus or VMPal backend to clean up ${CONTAINER}." >&2
 exit 0
