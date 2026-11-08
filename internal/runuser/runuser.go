@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 )
 
 // RunAsUserW runs a shell command as the given OS user.
@@ -17,19 +16,12 @@ import (
 // (no sudo). Otherwise it uses `sudo -u <username>`.
 //
 // Streaming: combined stdout+stderr go to w; the full output string is returned.
-// home is set as HOME so tools like composer resolve ~ correctly. The Composer
-// global bin directory ({home}/.config/composer/vendor/bin) is prepended to PATH
-// inside the shell command so it survives sudo secure_path / env_reset.
+// home is set as HOME so tools like composer resolve ~ correctly.
 // dir, if non-empty, is used as the working directory (via `cd` in the shell).
 func RunAsUserW(ctx context.Context, w io.Writer, username, home, dir, command string) (string, error) {
-	composerBin := filepath.Join(home, ".config", "composer", "vendor", "bin")
-
-	var shellCmd string
-	pathPrefix := fmt.Sprintf("PATH='%s':\"$PATH\"", composerBin)
+	shellCmd := command
 	if dir != "" {
-		shellCmd = fmt.Sprintf("%s && cd '%s' && %s", pathPrefix, dir, command)
-	} else {
-		shellCmd = fmt.Sprintf("%s && %s", pathPrefix, command)
+		shellCmd = fmt.Sprintf("cd '%s' && %s", dir, command)
 	}
 
 	var cmd *exec.Cmd

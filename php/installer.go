@@ -118,8 +118,13 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		fmt.Printf("php: install wp-cli: %v\n", err)
 	}
 
-	// 10. Install the Laravel installer globally via Composer for the site user.
+	// 10. Link global Composer tools into the bin dir, then install the
+	//     Laravel installer globally for the site user.
 	composerBinPath := filepath.Join(binDir, "composer")
+	if err := LinkComposerGlobalBin(ctx, composerBinPath, siteUser, siteHome); err != nil {
+		// Non-fatal — log and continue.
+		fmt.Printf("php: link composer global bin: %v\n", err)
+	}
 	if err := InstallLaravelCLI(ctx, composerBinPath, siteUser, siteHome); err != nil {
 		// Non-fatal — log and continue.
 		fmt.Printf("php: install laravel cli: %v\n", err)
@@ -312,32 +317,36 @@ func composerCmd(composerBin, args string) string {
 	return "PATH='" + filepath.Dir(composerBin) + "':\"$PATH\" '" + composerBin + "' " + args
 }
 
-// ComposerGlobalBinDir returns the absolute path to the Composer global bin
-// directory for the given user. It runs `composer global config bin-dir
-// --absolute` as siteUser to discover the actual path. If that fails (e.g.
-// Composer is not yet installed), it falls back to the XDG default:
-//
-//	{siteHome}/.config/composer/vendor/bin
-func ComposerGlobalBinDir(ctx context.Context, composerBin, siteUser, siteHome string) string {
-	if siteUser == "" || siteHome == "" {
-		return filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
-	}
+// LinkComposerGlobalBin sets the site user's global Composer bin-dir to the
+// devctl bin dir, which is already on PATH. Tools from "composer global
+// require" then run by name with no other PATH entry. When the setting
+// changes, "composer global install" links the tools already installed.
+func LinkComposerGlobalBin(ctx context.Context, composerBin, siteUser, siteHome string) error {
+	binDir := filepath.Dir(composerBin)
 	out, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
 		composerCmd(composerBin, "global config bin-dir --absolute"))
-	if err == nil {
-		// "global" first prints "Changed current directory to ..." on stderr.
-		lines := strings.Split(strings.TrimSpace(out), "\n")
-		if dir := strings.TrimSpace(lines[len(lines)-1]); filepath.IsAbs(dir) {
-			return dir
-		}
+	if err != nil {
+		return fmt.Errorf("composer global config bin-dir: %w\n%s", err, out)
 	}
-	// Fall back to XDG default.
-	return filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
+	// "global" first prints "Changed current directory to ..." on stderr.
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if strings.TrimSpace(lines[len(lines)-1]) == binDir {
+		return nil
+	}
+	if out, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
+		composerCmd(composerBin, "global config bin-dir '"+binDir+"'")); err != nil {
+		return fmt.Errorf("composer global config bin-dir %s: %w\n%s", binDir, err, out)
+	}
+	if out, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
+		composerCmd(composerBin, "global install --no-interaction --quiet")); err != nil {
+		return fmt.Errorf("composer global install: %w\n%s", err, out)
+	}
+	return nil
 }
 
 // InstallLaravelCLI globally installs laravel/installer via Composer as siteUser.
-// The binary lands in the Composer global bin directory (typically
-// {siteHome}/.config/composer/vendor/bin/laravel).
+// The binary lands in the Composer global bin dir, {serverRoot}/bin after
+// LinkComposerGlobalBin.
 // composerBin is the absolute path to the Composer binary (e.g. {serverRoot}/bin/composer).
 // It is safe to call on every PHP install — Composer will upgrade if a newer
 // version is available.

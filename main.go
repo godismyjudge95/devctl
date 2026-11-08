@@ -415,6 +415,19 @@ func run() error {
 
 	workerManager.StartEnabled(ctx)
 
+	// Installs from before global Composer tools were linked into the bin dir.
+	go func() {
+		binDir := paths.BinDir(cfg.ServerRoot)
+		for _, name := range []string{"composer", "php"} {
+			if _, err := os.Stat(filepath.Join(binDir, name)); err != nil {
+				return
+			}
+		}
+		if err := php.LinkComposerGlobalBin(ctx, filepath.Join(binDir, "composer"), cfg.SiteUser, cfg.SiteHome); err != nil {
+			log.Printf("startup: link composer global bin: %v", err)
+		}
+	}()
+
 	// --- Start background goroutines ---
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()

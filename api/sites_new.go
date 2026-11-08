@@ -97,7 +97,7 @@ func (s *Server) prepareNewSite(ctx context.Context, req newsite.Request) (*news
 	}
 	p.Tools = map[string]string{newsite.ToolPHP: phpBin}
 	for _, tool := range p.Template.Tools {
-		path := s.newSiteToolPath(ctx, tool)
+		path := s.newSiteToolPath(tool)
 		if _, err := os.Stat(path); err != nil {
 			return nil, http.StatusBadRequest, fmt.Errorf("%s not found at %s. devctl installs it with PHP. Reinstall a PHP version", tool, path)
 		}
@@ -168,15 +168,10 @@ func (s *Server) newSitePHP(version string) (string, error) {
 	return path, nil
 }
 
-// newSiteToolPath is wp or composer in the devctl bin directory, or an
-// installer in the site user's Composer global bin directory.
-func (s *Server) newSiteToolPath(ctx context.Context, tool string) string {
-	binDir := paths.BinDir(s.serverRoot)
-	if tool == newsite.ToolWP || tool == newsite.ToolComposer {
-		return filepath.Join(binDir, tool)
-	}
-	composerBin := filepath.Join(binDir, "composer")
-	return filepath.Join(php.ComposerGlobalBinDir(ctx, composerBin, s.siteUser, s.siteHome), tool)
+// newSiteToolPath is the tool in the devctl bin dir. Global Composer tools
+// such as the Laravel installer are linked there too (LinkComposerGlobalBin).
+func (s *Server) newSiteToolPath(tool string) string {
+	return filepath.Join(paths.BinDir(s.serverRoot), tool)
 }
 
 // newSiteHost connects the wizard to the site manager and the database engines.

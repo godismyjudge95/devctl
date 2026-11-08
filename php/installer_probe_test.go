@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,5 +61,42 @@ func TestComposerCmd_FindsDevctlPHPWithoutSystemPHP(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "devctl php ran "+composer+" global config bin-dir --absolute") {
 		t.Fatalf("composer did not run under devctl php: %v\n%s", err, out)
+	}
+}
+
+func TestLinkComposerGlobalBin_SetsBinDirOnceAndRelinks(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	state := filepath.Join(t.TempDir(), "bin-dir")
+	calls := filepath.Join(t.TempDir(), "calls")
+	if err := os.WriteFile(state, []byte("/home/u/.config/composer/vendor/bin"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	composer := filepath.Join(bin, "composer")
+	script := "#!/bin/sh\necho \"$*\" >> " + calls + "\n" +
+		"echo 'Changed current directory to /home/u/.config/composer' >&2\n" +
+		"case \"$*\" in\n" +
+		"  'global config bin-dir --absolute') cat " + state + " ;;\n" +
+		"  'global config bin-dir '*) printf %s \"$4\" > " + state + " ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(composer, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		if err := LinkComposerGlobalBin(context.Background(), composer, u.Username, u.HomeDir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := os.ReadFile(calls)
+	want := "global config bin-dir --absolute\n" +
+		"global config bin-dir " + bin + "\n" +
+		"global install --no-interaction --quiet\n" +
+		"global config bin-dir --absolute\n"
+	if string(got) != want {
+		t.Fatalf("composer calls:\n%s\nwant:\n%s", got, want)
 	}
 }
