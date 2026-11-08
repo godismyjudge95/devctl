@@ -378,11 +378,13 @@ On each PHP version install, devctl creates:
 
 The wrappers load that version's `php.ini` and set `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, and `AWS_CA_BUNDLE` so Artisan and the AWS SDK trust `https://*.test`.
 
+MySQL install writes `{serverRoot}/bin/mysql`, `mysqldump`, and `mysqladmin` wrappers with `MYSQL_HOME` set so they read `{serverRoot}/mysql/my.cnf`. PostgreSQL writes `{serverRoot}/bin/psql`, `pg_dump`, `pg_restore`, `createdb`, and `dropdb` (the `psql` wrapper uses `psql.bin` on Linux and `psql` on macOS). Existing installs receive these wrappers on daemon restart.
+
 ### Laravel and Statamic CLIs
 
 When PHP is installed, devctl also runs `composer global require laravel/installer` and `composer global require statamic/cli` as the site user. The binaries land in the Composer global bin directory (`{siteHome}/.config/composer/vendor/bin/` by default).
 
-devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.bashrc`, `.zshenv`, and `.bash_profile` (whichever exist). This means `laravel new`, `statamic new`, and other globally-installed Composer tools are available immediately in a new terminal.
+devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.zshenv` (zsh) or `.bashrc` / `.bash_profile` / `.profile` (bash). A later install also rewrites leftover PATH blocks in other shell files, so an older sites directory in `~/.profile` is replaced. This means `laravel new`, `statamic new`, and other globally-installed Composer tools are available immediately in a new terminal.
 
 devctl also prepends the Composer global bin directory to PATH for every command it runs internally as the site user, so framework tools are accessible in the context of site commands regardless of the shell configuration.
 

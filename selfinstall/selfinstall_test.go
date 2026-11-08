@@ -375,6 +375,46 @@ func TestWritePATHSetup_FileOwnedByTargetUser(t *testing.T) {
 	}
 }
 
+// TestWritePATHSetup_UpdatesLeftoverProfileBlock verifies that a PATH block
+// left in ~/.profile from an earlier sites directory is rewritten to the new
+// binDir, even when the current login shell only writes ~/.zshenv.
+func TestWritePATHSetup_UpdatesLeftoverProfileBlock(t *testing.T) {
+	dir := t.TempDir()
+	oldBin := "/Users/alice/sites/server/bin"
+	newBin := "/Users/alice/Code/sites/server/bin"
+
+	profile := filepath.Join(dir, ".profile")
+	if err := os.WriteFile(profile, []byte("# cargo\n\n"+pathBlock(oldBin)), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cu, err := user.Current()
+	if err != nil {
+		t.Fatalf("user.Current: %v", err)
+	}
+	if err := WritePATHSetup(newBin, dir, cu.Username, os.Getuid(), os.Getgid()); err != nil {
+		t.Fatalf("WritePATHSetup: %v", err)
+	}
+
+	content, err := os.ReadFile(profile)
+	if err != nil {
+		t.Fatalf("read .profile: %v", err)
+	}
+	s := string(content)
+	if strings.Contains(s, oldBin) {
+		t.Errorf(".profile still has old bin dir:\n%s", s)
+	}
+	if !strings.Contains(s, newBin) {
+		t.Errorf(".profile missing new bin dir:\n%s", s)
+	}
+	if !strings.Contains(s, "# cargo") {
+		t.Error("original .profile content lost")
+	}
+	if got := strings.Count(s, pathBlockStart); got != 1 {
+		t.Errorf("expected one PATH block, got %d\n%s", got, s)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // detectServerRoot — reads from existing service file on reinstall
 // ---------------------------------------------------------------------------

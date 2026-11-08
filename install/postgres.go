@@ -564,6 +564,9 @@ func writePostgresClientWrappers(serverRoot string) error {
 	env := postgresClientEnv(pgDir)
 	for _, c := range postgresClientBins {
 		target := filepath.Join(pgDir, "bin", c.binary)
+		if c.binary == "psql.bin" {
+			target = postgresPSQLBin(pgDir)
+		}
 		if !fileExists(target) {
 			continue
 		}

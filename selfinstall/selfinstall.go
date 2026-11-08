@@ -632,6 +632,17 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+func hasPathBlock(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	s := string(data)
+	start := strings.Index(s, pathBlockStart)
+	end := strings.Index(s, pathBlockEnd)
+	return start != -1 && end != -1 && end > start
+}
+
 func confirm(r *bufio.Reader) bool {
 	line := strings.TrimSpace(readLine(r))
 	return strings.EqualFold(line, "y") || strings.EqualFold(line, "yes")
@@ -1126,8 +1137,22 @@ func WritePATHSetup(binDir, siteHome, username string, uid, gid int) error {
 	}
 
 	block := "\n" + pathBlock(binDir)
+	written := make(map[string]bool, len(targets))
 	for _, t := range targets {
 		if err := updateShellFile(t.path, block, t.mustCreate, uid, gid); err != nil {
+			return err
+		}
+		written[t.path] = true
+	}
+
+	// Refresh leftover PATH blocks in other shell files (e.g. ~/.profile from
+	// an earlier sites directory) without creating new files.
+	for _, f := range []string{".zshenv", ".bashrc", ".bash_profile", ".profile"} {
+		p := filepath.Join(siteHome, f)
+		if written[p] || !hasPathBlock(p) {
+			continue
+		}
+		if err := updateShellFile(p, block, false, uid, gid); err != nil {
 			return err
 		}
 	}

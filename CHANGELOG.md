@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: macOS MySQL install now puts `mysql`, `mysqldump`, and `mysqladmin` on PATH (same `MYSQL_HOME` wrappers as Linux). Existing installs pick this up on daemon restart.
+- Fixed: macOS PostgreSQL now puts `psql` on PATH. The wrapper looked only for Percona's `psql.bin`; EDB ships `psql`.
+- PATH setup now rewrites leftover `export PATH` blocks in other shell files (for example `~/.profile` from an older sites directory).
+
 ## v0.18.1 — 2026-10-09
 
 - Caddy now starts with `--resume` so a crash or `make install` restart loads the last Admin API config. Without that, `caddy run` came up empty (`:80`/`:443` dead) while the dashboard still reported it running. The health check now requires the `devctl` HTTP server, not a `null` `/config/`. The dashboard also restores that server when Caddy is up with empty config (macOS `make install` does not restart the elevate daemon).

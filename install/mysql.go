@@ -190,6 +190,16 @@ func (m *MySQLInstaller) installDarwinTarball(ctx context.Context, w io.Writer) 
 		return fmt.Errorf("mysql: initialize: %w\n%s", err, out)
 	}
 
+	fmt.Fprintln(w, "mysql: writing config.env...")
+	if err := writeMySQLConfigEnv(mysqlDir); err != nil {
+		return fmt.Errorf("mysql: write config.env: %w", err)
+	}
+
+	fmt.Fprintln(w, "mysql: writing client binary wrappers...")
+	if err := writeMySQLClientWrappers(m.serverRoot); err != nil {
+		return fmt.Errorf("mysql: write client wrappers: %w", err)
+	}
+
 	if m.siteUser != "" {
 		fmt.Fprintf(w, "mysql: chowning %s to %s...\n", mysqlDir, m.siteUser)
 		chownCmd := chownRecursiveCmd(m.siteUser, mysqlDir)
@@ -294,8 +304,7 @@ func (m *MySQLInstaller) installLinuxDebs(ctx context.Context, w io.Writer) erro
 
 	// 7. Write config.env for the credentials panel.
 	fmt.Fprintln(w, "mysql: writing config.env...")
-	credContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_USERNAME=root\nDB_PASSWORD=\n"
-	if err := os.WriteFile(filepath.Join(mysqlDir, "config.env"), []byte(credContent), 0600); err != nil {
+	if err := writeMySQLConfigEnv(mysqlDir); err != nil {
 		return fmt.Errorf("mysql: write config.env: %w", err)
 	}
 
@@ -305,12 +314,8 @@ func (m *MySQLInstaller) installLinuxDebs(ctx context.Context, w io.Writer) erro
 	//    MySQL client to read my.cnf from there and automatically use the
 	//    correct socket path without needing an explicit --socket flag.
 	fmt.Fprintln(w, "mysql: writing client binary wrappers...")
-	sharedBinDir := paths.BinDir(m.serverRoot)
-	mysqlEnv := map[string]string{"MYSQL_HOME": mysqlDir}
-	for _, bin := range []string{"mysql", "mysqldump", "mysqladmin"} {
-		if err := WrapperScriptIntoBinDir(sharedBinDir, bin, filepath.Join(binDir, bin), mysqlEnv); err != nil {
-			fmt.Fprintf(w, "mysql: warning: wrapper %s: %v\n", bin, err)
-		}
+	if err := writeMySQLClientWrappers(m.serverRoot); err != nil {
+		return fmt.Errorf("mysql: write client wrappers: %w", err)
 	}
 
 	// 9. Transfer ownership to the site user so the MySQL process (running
@@ -377,6 +382,11 @@ func (m *MySQLInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 		}
 	}
 
+	fmt.Fprintln(w, "mysql: writing client binary wrappers...")
+	if err := writeMySQLClientWrappers(m.serverRoot); err != nil {
+		fmt.Fprintf(w, "mysql: warning: wrappers: %v\n", err)
+	}
+
 	fmt.Fprintf(w, "mysql: binary replaced with %s\n", mysqlVersion)
 	return nil
 }
@@ -390,9 +400,9 @@ func (m *MySQLInstaller) PurgeW(ctx context.Context, w io.Writer, preserveData b
 		fmt.Fprintf(w, "mysql: warning: stop process: %v\n", err)
 	}
 
-	// Remove bin dir symlinks.
+	// Remove bin dir wrappers.
 	sharedBinDir := paths.BinDir(m.serverRoot)
-	for _, bin := range []string{"mysql", "mysqldump", "mysqladmin"} {
+	for _, bin := range mysqlClientBins {
 		UnlinkFromBinDir(sharedBinDir, bin)
 	}
 
@@ -493,6 +503,50 @@ func extractMySQLDeb(debPath, binDir, libDir, pluginDir string) error {
 		}
 	}
 
+	return nil
+}
+
+// mysqlClientBins are client tools exposed in the shared bin directory.
+var mysqlClientBins = []string{"mysql", "mysqldump", "mysqladmin"}
+
+func writeMySQLClientWrappers(serverRoot string) error {
+	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
+	binDir := paths.BinDir(serverRoot)
+	mysqlEnv := map[string]string{"MYSQL_HOME": mysqlDir}
+	for _, bin := range mysqlClientBins {
+		target := filepath.Join(mysqlDir, "bin", bin)
+		if !fileExists(target) {
+			continue
+		}
+		if err := WrapperScriptIntoBinDir(binDir, bin, target, mysqlEnv); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeMySQLConfigEnv(mysqlDir string) error {
+	path := filepath.Join(mysqlDir, "config.env")
+	if fileExists(path) {
+		return nil
+	}
+	credContent := "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_USERNAME=root\nDB_PASSWORD=\n"
+	return os.WriteFile(path, []byte(credContent), 0600)
+}
+
+// EnsureMySQLConfig writes client PATH wrappers and config.env for an existing
+// MySQL install. Safe to call on every startup. No-op when mysqld is absent.
+func EnsureMySQLConfig(serverRoot string) error {
+	mysqlDir := paths.ServiceDir(serverRoot, "mysql")
+	if !fileExists(filepath.Join(mysqlDir, "bin", "mysqld")) {
+		return nil
+	}
+	if err := writeMySQLConfigEnv(mysqlDir); err != nil {
+		return fmt.Errorf("mysql: write config.env: %w", err)
+	}
+	if err := writeMySQLClientWrappers(serverRoot); err != nil {
+		return fmt.Errorf("mysql: write client wrappers: %w", err)
+	}
 	return nil
 }
 
