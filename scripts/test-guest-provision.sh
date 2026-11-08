@@ -73,13 +73,35 @@ systemctl daemon-reload
 systemctl enable --now devctl-elevate
 systemctl enable --now devctl
 
-for _ in $(seq 1 45); do
-  if curl -sf http://127.0.0.1:4000/api/settings/resolved >/dev/null 2>&1; then
-    echo "devctl is responding."
-    exit 0
+api_up() {
+  for _ in $(seq 1 45); do
+    curl -sf http://127.0.0.1:4000/api/settings/resolved >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  echo "Timed out waiting for devctl HTTP API." >&2
+  journalctl -u devctl -n 30 --no-pager || true
+  return 1
+}
+api_up || exit 1
+echo "devctl is responding."
+
+# Caddy is a required service and the tests expect it running, as in the
+# Incus setup (scripts/test-env.sh step 10b).
+caddy_field() { curl -sf http://127.0.0.1:4000/api/services | jq -r ".[] | select(.id==\"caddy\") | .$1"; }
+URL="http://127.0.0.1:4000/api/services/caddy/install"
+VER=$(caddy_field install_version || true)
+[[ -n "$VER" && "$VER" != "null" ]] && URL="$URL?version=$VER"
+if [[ "$(caddy_field installed || true)" != "true" ]]; then
+  OUT=$(curl -sf -X POST --max-time 180 --no-buffer "$URL" || true)
+  if ! grep -q "^event: done" <<<"$OUT"; then
+    echo "Caddy install failed:" >&2
+    grep "^data:" <<<"$OUT" | tail -5 >&2
+    exit 1
   fi
+fi
+for _ in $(seq 1 60); do
+  [[ "$(caddy_field status || true)" == "running" ]] && { echo "Caddy is running."; exit 0; }
   sleep 1
 done
-echo "Timed out waiting for devctl HTTP API." >&2
-journalctl -u devctl -n 30 --no-pager || true
+echo "Timed out waiting for Caddy to run." >&2
 exit 1
