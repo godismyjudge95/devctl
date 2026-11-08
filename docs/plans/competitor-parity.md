@@ -1,6 +1,11 @@
 # Competitor parity plan
 
-Status: approved by the owner on 2026-11-06. Work has not started.
+Status: approved by the owner on 2026-11-06. Phases 0 to 3 are done on `main` (2026-11-08). Item 4.1 has a feasibility note (`service-instances-note.md`) that recommends to stop. D1 and D2 still wait for an owner decision.
+
+Open after the build:
+
+- 2.2 Xdebug works on macOS only, and only after the next PHP binaries release (`xdebug-spike.md`). Linux static musl builds cannot load it. A fix changes every Linux PHP binary.
+- 3.1 The request inspector covers PHP 8.1+ (8.2+ for apps without Laravel), with no C extension (`request-inspector-spike.md`).
 
 ## Goal
 
