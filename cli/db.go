@@ -419,6 +419,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "db:drop",
+		MCP:         MCPConfirm,
 		Description: "Drop a database (system databases are refused). Asks first unless --force",
 		Usage:       "[<engine> <name>] [--force]",
 		Args:        dbTargetArgs,
@@ -471,6 +472,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "db:import",
+		MCP:         MCPConfirm,
 		Description: "Import a .sql or .sql.gz dump into a MySQL or PostgreSQL database. Use - for stdin",
 		Usage:       "[<engine> <name>] <file|-> [--create]",
 		Args: append(append([]ArgDef{}, dbTargetArgs...),

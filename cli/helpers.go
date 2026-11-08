@@ -149,6 +149,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "helpers:uninstall",
+		MCP:         MCPConfirm,
 		Description: "Remove an installed CLI helper",
 		Usage:       "<helper-id>",
 		Args:        []ArgDef{{Name: "helper-id", Description: "Helper ID (e.g. mago, fnm)"}},

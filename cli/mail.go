@@ -528,6 +528,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "mail:delete",
+		MCP:         MCPConfirm,
 		Description: "Delete one or more emails by ID",
 		Usage:       "<id>[,<id>...]",
 		Args:        []ArgDef{{Name: "ids", Description: "Comma-separated email IDs to delete"}},
@@ -562,6 +563,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "mail:clear",
+		MCP:         MCPConfirm,
 		Description: "Delete all emails from Mailpit",
 		Examples:    []string{"devctl mail:clear"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {

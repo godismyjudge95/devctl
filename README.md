@@ -50,7 +50,7 @@ devctl is a self-contained development environment manager for PHP projects on L
 - **One dashboard** at `http://127.0.0.1:4000` to start/stop/install services, manage PHP versions, view logs, and inspect variable dumps.
 - **Automatic HTTPS** for all `*.test` sites via Caddy's internal CA — no browser warnings once you trust the certificate once.
 - **Zero config files to edit** — devctl writes sensible defaults on first install. Every config file is user-editable and never overwritten on restart.
-- **AI-friendly** — a CLI lets AI agents (OpenCode, Claude, Cursor) interact with your dev environment without root: `devctl services:list`, `devctl sites:list`, `devctl logs:tail caddy`, etc.
+- **AI-friendly** — a CLI lets AI agents (OpenCode, Claude, Cursor) interact with your dev environment without root: `devctl services:list`, `devctl sites:list`, `devctl logs:tail caddy`, etc. `devctl mcp` serves the same commands over MCP.
 
 All service binaries are downloaded directly from their upstream releases and stored under your sites directory (`~/ddev/sites/server/` on Linux, `~/Code/sites/server/` on macOS). Nothing is installed system-wide except the parent unit (systemd on Linux, LaunchAgent plus elevate LaunchDaemon on macOS).
 
@@ -92,7 +92,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
 | Share a site publicly | ✅ | ✅ | ✅ | ❌ |
 | Health checks (`doctor`) | ❌ | ✅ | ✅ | ✅ |
-| AI integration | MCP | MCP | MCP | CLI + skill |
+| AI integration | MCP | MCP | MCP | CLI + skill + MCP |
 | Per-project Node isolation | ❌ | ✅ | tools install | ❌ |
 | Rootless day-to-day | ✅ | ✅ | ✅ | ✅ |
 | Containers / VM | None | Podman | None | None [^no-containers] |
@@ -716,6 +716,7 @@ devctl doctor                     # check the environment (exit 1 on failure)
 devctl doctor:fix                 # apply the safe, unprivileged fixes
 devctl devctl:update              # check for devctl updates and apply
 devctl devctl:skill               # generate an OpenCode CLI skill file
+devctl mcp:install                # print the MCP config for Claude Code, Cursor, OpenCode, Zed, VS Code
 ```
 
 ### Global flags
@@ -796,6 +797,8 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `doctor:fix [check-id...]` | Apply the safe, unprivileged fixes, then re-check. Root fixes print the `sudo devctl elevate …` command |
 | `settings` | `settings:get` | Show all devctl settings |
 | | `settings:set <key=value>...` | Update devctl settings |
+| `mcp` | `mcp` | Run the MCP server on stdio (started by the agent app) |
+| | `mcp:install [--client=…] [--write]` | Print the MCP config for Claude Code, Cursor, OpenCode, Zed, and VS Code. `--write` adds it to their config files |
 | `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |
 | | `devctl:skill` | Generate the agent skill and refresh the `<devctl>` block in AGENTS.md |
 
@@ -804,6 +807,18 @@ In a site directory, `db:*` commands default `<engine>` and `<name>` to `DB_CONN
 ### OpenCode integration
 
 Run `devctl devctl:skill` once to write an OpenCode skill file to `~/.agents/skills/devctl-cli/SKILL.md`. The same command refreshes the `<devctl>` block in `~/.agents/AGENTS.md` (same pattern as Context7). The daemon silently regenerates both on every startup if they already exist.
+
+### MCP server
+
+`devctl mcp` is an MCP server on stdio. Like the CLI, it is a client of the daemon API, so it needs no root. It has nine tools (`sites`, `services`, `php`, `db`, `mail`, `logs`, `dumps`, `doctor`, `settings`). Each tool takes an `action` (the CLI command name after the namespace, for example `worktree:add`) and `args` (the CLI arguments). The tool list costs about 1.4k tokens; `action=help` returns the full usage of a tool when the agent needs it. Lists are paged (`offset`, `limit`, 50 items by default) and a response stops at 16 KB. Actions that delete data (`db:drop`, `db:import`, `mail:delete`, `mail:clear`, `logs:clear`, `dumps:clear`, `helpers:uninstall`, `sites:worktree:rm`) need `confirm: true`. Commands that need root or replace the binary (`elevate`, `tls:trust`, `dns:setup`, `devctl:update`) are not in MCP.
+
+```sh
+devctl mcp:install                          # print the config for each client
+devctl mcp:install --write                  # add it to every client that is set up
+devctl mcp:install --client=cursor --write  # add it to one client
+```
+
+`--write` keeps the other entries in the file. It refuses a file with comments (JSONC, common for Zed and VS Code); paste the printed config by hand there.
 
 ---
 

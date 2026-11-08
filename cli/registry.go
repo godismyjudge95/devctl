@@ -42,7 +42,23 @@ type Cmd struct {
 	// args contains everything after the command name (before any flags were
 	// stripped by the caller). jsonFlag indicates --json was set.
 	Handler func(c *Client, args []string, jsonMode bool) error
+	// MCP says how `devctl mcp` exposes the command.
+	MCP MCPPolicy
 }
+
+// MCPPolicy says how `devctl mcp` exposes a command as a tool action.
+type MCPPolicy int
+
+const (
+	// MCPAllow exposes the command.
+	MCPAllow MCPPolicy = iota
+	// MCPConfirm exposes the command, but it deletes or replaces data, so
+	// the call must pass confirm=true.
+	MCPConfirm
+	// MCPHidden keeps the command out of MCP: it needs root, replaces the
+	// binary, or edits this machine's agent config.
+	MCPHidden
+)
 
 // Registry holds all registered commands.
 type Registry struct {

@@ -73,6 +73,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "dumps:clear",
+		MCP:         MCPConfirm,
 		Description: "Delete all php_dd() dumps",
 		Examples:    []string{"devctl dumps:clear"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {

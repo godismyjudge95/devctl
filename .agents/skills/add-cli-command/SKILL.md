@@ -259,6 +259,7 @@ This updates the agent skill and the always-on AGENTS.md block. Do not hand-edit
 - [ ] Add any new API wrapper methods to `cli/client.go`
 - [ ] Support `--json` mode in the handler — emit `PrintJSON(...)` output and return early
 - [ ] Return a descriptive error (not `os.Exit`) on bad input; Dispatch handles printing it
+- [ ] Set `MCP: MCPConfirm` when the command deletes or replaces data, or `MCP: MCPHidden` when it needs root or must not run over MCP. A new namespace needs a tool in `mcpTools` (`cli/mcp.go`). `TestMCP_EveryExposedCommandHasExactlyOneTool` fails otherwise
 - [ ] Update the **quick-start snippet** in `README.md § CLI` if the command is notable
 - [ ] Update the **Available commands table** in `README.md § CLI › Available commands`
 - [ ] Run `devctl devctl:skill` to regenerate the agent skill file

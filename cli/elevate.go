@@ -12,6 +12,7 @@ import (
 func init() {
 	Register(&Cmd{
 		Name:        "elevate",
+		MCP:         MCPHidden,
 		Description: "Grant OS privileges (trust CA, DNS resolver, ports) — requires sudo",
 		Usage:       "[trust|resolver|ports|install|daemon]",
 		Args: []ArgDef{{
@@ -31,6 +32,7 @@ func init() {
 	})
 	Register(&Cmd{
 		Name:        "unelevate",
+		MCP:         MCPHidden,
 		Description: "Revert OS privileges granted by elevate — requires sudo",
 		Usage:       "[trust|resolver|ports]",
 		Args: []ArgDef{{

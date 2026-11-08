@@ -118,6 +118,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "logs:clear",
+		MCP:         MCPConfirm,
 		Description: "Clear (truncate) a log file",
 		Usage:       "<log-id>",
 		Args:        []ArgDef{{Name: "log-id", Description: "Log file ID (use logs:list to see IDs)"}},

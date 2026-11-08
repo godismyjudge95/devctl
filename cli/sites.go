@@ -523,6 +523,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "sites:worktree:rm",
+		MCP:         MCPConfirm,
 		Description: "Remove a git worktree site (directory, git entry, and Caddy vhost)",
 		Usage:       "<worktree-domain>",
 		Args:        []ArgDef{{Name: "worktree-domain", Description: "Worktree site domain, id, or path"}},

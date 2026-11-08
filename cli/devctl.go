@@ -5,6 +5,7 @@ import "fmt"
 func init() {
 	Register(&Cmd{
 		Name:        "devctl:update",
+		MCP:         MCPHidden,
 		Description: "Check for a newer devctl release and update if one is available",
 		Examples:    []string{"devctl devctl:update", "devctl devctl:update --json"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {

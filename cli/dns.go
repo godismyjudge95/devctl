@@ -32,6 +32,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "dns:setup",
+		MCP:         MCPHidden,
 		Description: "Configure systemd-resolved to route *.test queries to devctl",
 		Examples:    []string{"devctl dns:setup"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
@@ -52,6 +53,7 @@ func init() {
 
 	Register(&Cmd{
 		Name:        "dns:teardown",
+		MCP:         MCPHidden,
 		Description: "Remove the systemd-resolved *.test DNS configuration",
 		Examples:    []string{"devctl dns:teardown"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {

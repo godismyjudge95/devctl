@@ -8,6 +8,7 @@ import (
 func init() {
 	Register(&Cmd{
 		Name:        "tls:trust",
+		MCP:         MCPHidden,
 		Description: "Trust Caddy's internal CA in the system and browser certificate stores",
 		Examples:    []string{"devctl tls:trust"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
