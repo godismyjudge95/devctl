@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -126,6 +127,17 @@ func init() {
 				KV("Worktree of", parent)
 				if found.WorktreeBranch != nil {
 					KV("Branch", *found.WorktreeBranch)
+				}
+			}
+			if pc := found.ProjectConfig; pc != nil {
+				KV("Config", strings.Join(pc.Files, " + "))
+				if pc.Error != "" {
+					KV("Config error", styleErr.Render(pc.Error))
+				} else {
+					KV("Managed by config", orDash(strings.Join(pc.Managed, ", ")))
+				}
+				for _, svc := range pc.Services {
+					KV("Needs "+svc.Label, StatusStyle(svc.Status))
 				}
 			}
 			return nil
@@ -632,6 +644,51 @@ func init() {
 			PrintOK("Saved worktree defaults for " + site.Domain)
 			KV("Copies", strings.Join(saved.Copies, ", "))
 			KV("Symlinks", strings.Join(saved.Symlinks, ", "))
+			return nil
+		},
+	})
+
+	Register(&Cmd{
+		Name:        "sites:config:init",
+		MCP:         MCPConfirm,
+		Description: "Write .devctl.yaml in the site root from the current site settings",
+		Usage:       "<domain> [--force]",
+		Args:        []ArgDef{{Name: "domain", Description: "Site domain, id, or path (use . for cwd)"}},
+		Flags:       []FlagDef{{Name: "force", Default: "false", Description: "Replace an existing .devctl.yaml"}},
+		Examples:    []string{"devctl sites:config:init myapp.test", "devctl sites:config:init . --force --json"},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			const usage = "usage: devctl sites:config:init <domain> [--force]"
+			force := false
+			var pos []string
+			for _, a := range args {
+				switch {
+				case a == "--force" || a == "--force=true":
+					force = true
+				case strings.HasPrefix(a, "-"):
+					return fmt.Errorf("unknown flag %s\n%s", a, usage)
+				default:
+					pos = append(pos, a)
+				}
+			}
+			if len(pos) != 1 {
+				return errors.New(usage)
+			}
+			site, err := findSite(c, pos[0], nil)
+			if err != nil {
+				return err
+			}
+			out, err := c.InitProjectConfig(site.ID, force)
+			if err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(out)
+				return nil
+			}
+			PrintOK("Wrote " + out.Path)
+			fmt.Print(out.Content)
+			fmt.Println()
+			fmt.Println(styleDim.Render("devctl reads it only when project config is on: devctl settings:set project_config_enabled=true"))
 			return nil
 		},
 	})

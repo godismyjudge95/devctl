@@ -35,6 +35,8 @@ func StatusStyle(status string) string {
 		return styleWarn.Render("↻ restarting")
 	case "failed":
 		return styleErr.Render("✕ failed")
+	case "missing":
+		return styleErr.Render("✕ not installed")
 	default:
 		return styleDim.Render("? " + status)
 	}

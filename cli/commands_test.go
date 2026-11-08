@@ -192,6 +192,9 @@ func TestSitesWorktreeConfig_IsRegistered(t *testing.T) {
 func TestSitesBranches_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "sites:branches", wantArgs: true})
 }
+func TestSitesConfigInit_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "sites:config:init", wantArgs: true, wantFlag: "force"})
+}
 
 // ---------------------------------------------------------------------------
 // services (already had tests — include here for completeness)

@@ -134,7 +134,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		framework = info.Framework
 	}
 
-	site, err := s.queries.UpdateSite(context.Background(), dbq.UpdateSiteParams{
+	site, err := s.saveSite(r.Context(), dbq.UpdateSiteParams{
 		Domain:       req.Domain,
 		RootPath:     req.RootPath,
 		PhpVersion:   req.PHPVersion,
@@ -152,6 +152,17 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	writeJSON(w, s.siteView(site))
+}
+
+// saveSite stores the site row, then syncs its Caddy vhost and starts the
+// PHP-FPM pool of its version. The site settings form and the project config
+// both save through it.
+func (s *Server) saveSite(ctx context.Context, p dbq.UpdateSiteParams) (dbq.Site, error) {
+	site, err := s.queries.UpdateSite(ctx, p)
+	if err != nil {
+		return dbq.Site{}, err
 	}
 
 	// Sync updated site to Caddy (preserving site type from settings).
@@ -181,8 +192,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 			_ = s.supervisor.Start(def)
 		}
 	}
-
-	writeJSON(w, s.siteView(site))
+	return site, nil
 }
 
 func (s *Server) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
@@ -240,18 +250,21 @@ func (s *Server) handleSPXEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rewrite PHP config and restart FPM so the new spx.data_dir is applied.
-	if ver := site.PhpVersion; ver != "" {
-		if err := php.WriteConfigs(ver, s.serverRoot, s.siteUser); err != nil {
-			// Non-fatal — log but don't fail the response.
-			fmt.Printf("spx enable: rewrite configs for %s: %v\n", ver, err)
-		} else {
-			def := s.phpFPMServiceDef(ver)
-			_ = s.supervisor.Restart(def)
-		}
-	}
-
+	s.reloadPHPConfigs(site.PhpVersion)
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// reloadPHPConfigs rewrites the PHP config of ver, which lists the sites with
+// SPX on, and restarts its FPM pool so the change applies.
+func (s *Server) reloadPHPConfigs(ver string) {
+	if ver == "" {
+		return
+	}
+	if err := php.WriteConfigs(ver, s.serverRoot, s.siteUser); err != nil {
+		fmt.Printf("spx: rewrite configs for %s: %v\n", ver, err)
+		return
+	}
+	_ = s.supervisor.Restart(s.phpFPMServiceDef(ver))
 }
 
 func (s *Server) handleSPXDisable(w http.ResponseWriter, r *http.Request) {
@@ -267,16 +280,7 @@ func (s *Server) handleSPXDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rewrite PHP config and restart FPM.
-	if ver := site.PhpVersion; ver != "" {
-		if err := php.WriteConfigs(ver, s.serverRoot, s.siteUser); err != nil {
-			fmt.Printf("spx disable: rewrite configs for %s: %v\n", ver, err)
-		} else {
-			def := s.phpFPMServiceDef(ver)
-			_ = s.supervisor.Restart(def)
-		}
-	}
-
+	s.reloadPHPConfigs(site.PhpVersion)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 

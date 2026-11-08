@@ -50,12 +50,12 @@ func TestValidate(t *testing.T) {
 		{"cron", "", false},
 	}
 	for _, c := range cases {
-		err := validate(c.typ, c.command)
+		err := Validate(c.typ, c.command)
 		if c.ok && err != nil {
-			t.Errorf("validate(%q, %q) = %v, want nil", c.typ, c.command, err)
+			t.Errorf("Validate(%q, %q) = %v, want nil", c.typ, c.command, err)
 		}
 		if !c.ok && !errors.Is(err, ErrInvalid) {
-			t.Errorf("validate(%q, %q) = %v, want ErrInvalid", c.typ, c.command, err)
+			t.Errorf("Validate(%q, %q) = %v, want ErrInvalid", c.typ, c.command, err)
 		}
 	}
 }

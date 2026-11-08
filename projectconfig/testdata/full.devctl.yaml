@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/godismyjudge95/devctl/main/projectconfig/schema.json
+php: "8.4"
+node: "22"
+public_dir: public
+https: true
+cors: false
+spx: false
+aliases: [www.myapp.test]
+workers:
+  - queue
+  - vite
+  - type: custom
+    command: php8.4 artisan reverb:start
+services: [mysql, redis, mailpit]

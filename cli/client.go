@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,6 +167,27 @@ type Site struct {
 	GitRemoteURL   string  `json:"git_remote_url"`
 	ParentSiteID   *string `json:"parent_site_id"`
 	WorktreeBranch *string `json:"worktree_branch"`
+	// ProjectConfig is nil while project config is off or the site has no
+	// .devctl.yaml.
+	ProjectConfig *SiteProjectConfig `json:"project_config"`
+}
+
+// SiteProjectConfig is what a site's .devctl.yaml controls.
+type SiteProjectConfig struct {
+	Files    []string `json:"files"`
+	Managed  []string `json:"managed"`
+	Error    string   `json:"error,omitempty"`
+	Services []struct {
+		ID     string `json:"id"`
+		Label  string `json:"label"`
+		Status string `json:"status"`
+	} `json:"services"`
+}
+
+// ProjectConfigInit is the file sites:config:init wrote.
+type ProjectConfigInit struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 // Share mirrors one row of GET /api/shares.
@@ -424,6 +446,12 @@ func (c *Client) UnshareSite(id string) error {
 func (c *Client) ListShares() ([]Share, error) {
 	var out []Share
 	return out, c.get("/api/shares", &out)
+}
+
+// InitProjectConfig writes .devctl.yaml for the site from its current values.
+func (c *Client) InitProjectConfig(id string, force bool) (ProjectConfigInit, error) {
+	var out ProjectConfigInit
+	return out, c.post("/api/sites/"+id+"/config/init?force="+strconv.FormatBool(force), nil, &out)
 }
 
 func (c *Client) UpdateSite(id string, body map[string]any) (Site, error) {

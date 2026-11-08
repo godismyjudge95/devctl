@@ -140,7 +140,7 @@ async function trustCert() {
       <Card>
         <CardHeader>
           <CardTitle>Sites</CardTitle>
-          <CardDescription>Root directory watched for auto-discovered sites.</CardDescription>
+          <CardDescription>Root directory watched for auto-discovered sites, and project config files.</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="grid gap-2">
@@ -155,6 +155,20 @@ async function trustCert() {
             <p class="text-xs text-muted-foreground">
               <code class="font-mono">~</code> and <code class="font-mono">$HOME</code> are expanded.
               Install default: <code class="font-mono">~/ddev/sites</code> on Linux, <code class="font-mono">~/Code/sites</code> on macOS.
+            </p>
+          </div>
+          <div class="mt-4 grid gap-1">
+            <div class="flex items-center gap-2">
+              <Checkbox
+                id="project_config_enabled"
+                :checked="store.settings['project_config_enabled'] === 'true'"
+                @update:checked="(v) => save('project_config_enabled', v === true ? 'true' : 'false')"
+              />
+              <Label for="project_config_enabled">Read .devctl.yaml project files</Label>
+            </div>
+            <p class="text-sm text-muted-foreground">
+              A <code class="font-mono">.devctl.yaml</code> in a site root sets its PHP and Node versions, HTTPS, aliases, workers, and required services.
+              devctl applies it when it changes. When this is off, devctl does not read the file.
             </p>
           </div>
         </CardContent>

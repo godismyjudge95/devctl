@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { Site } from '@/lib/api'
+import type { ProjectConfigField, Site } from '@/lib/api'
 import { getPHPVersions, detectSite } from '@/lib/api'
 import { useSitesStore } from '@/stores/sites'
 import { useNodeStore } from '@/stores/node'
@@ -18,6 +18,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import SettingRow from '@/components/layout/SettingRow.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
 import SiteWorkers from '@/components/SiteWorkers.vue'
+import SiteProjectConfig from '@/components/SiteProjectConfig.vue'
+import ManagedByConfig from '@/components/ManagedByConfig.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,6 +45,10 @@ const form = reactive({
 
 const siteId = computed(() => route.params.id as string)
 const site = computed<Site | undefined>(() => store.sites.find(s => s.id === siteId.value))
+
+const configFiles = computed(() => site.value?.project_config?.files ?? [])
+const managed = computed(() => new Set<ProjectConfigField>(site.value?.project_config?.managed ?? []))
+const isManaged = (f: ProjectConfigField) => managed.value.has(f)
 
 const defaultNode = computed(() => nodeStore.versions.find(v => v.default)?.version ?? '')
 const nodeStatus = computed(() => {
@@ -113,7 +119,12 @@ async function save() {
     const aliasList = form.aliases
       ? form.aliases.split(',').map((a) => a.trim()).filter(Boolean)
       : []
-    const spxChanged = form.spx_enabled !== (site.value.spx_enabled === 1)
+    const spxEnabled = form.spx_enabled
+    const spxChanged = spxEnabled !== (site.value.spx_enabled === 1)
+    const nodeVersion = form.node_version.trim()
+    const nodeChanged = !isManaged('node') && nodeVersion !== '' && nodeVersion !== (site.value.node?.version ?? '')
+    const siteId = site.value.id
+    const domain = form.domain
     await store.update(site.value.id, {
       domain: form.domain,
       root_path: form.root_path,
@@ -125,13 +136,12 @@ async function save() {
       spx_enabled: form.spx_enabled ? 1 : 0,
     })
     if (spxChanged) {
-      await store.toggleSPX(site.value.id, form.spx_enabled)
+      await store.toggleSPX(siteId, spxEnabled)
     }
-    const nodeVersion = form.node_version.trim()
-    if (nodeVersion && nodeVersion !== (site.value.node?.version ?? '')) {
-      await nodeStore.setSiteVersion(site.value.id, nodeVersion)
+    if (nodeChanged) {
+      await nodeStore.setSiteVersion(siteId, nodeVersion)
     }
-    toast.success(`${form.domain} settings saved`)
+    toast.success(`${domain} settings saved`)
     router.push('/sites')
   } catch (e: any) {
     toast.error('Failed to save settings', { description: e.message })
@@ -178,13 +188,14 @@ async function save() {
             />
           </SettingRow>
           <SettingRow label="Public directory" hint="Optional web root inside the project." for="sd-public">
-            <Input id="sd-public" v-model="form.public_dir" placeholder="public" class="font-mono" />
+            <Input id="sd-public" v-model="form.public_dir" placeholder="public" class="font-mono" :disabled="isManaged('public_dir')" />
+            <ManagedByConfig v-if="isManaged('public_dir')" field="public_dir" :files="configFiles" />
             <p v-if="detectedFramework" class="mt-2 text-xs text-muted-foreground">
               Detected: <span class="capitalize">{{ detectedFramework }}</span>
             </p>
           </SettingRow>
           <SettingRow label="PHP version" for="sd-php">
-            <Select v-model="form.php_version">
+            <Select v-model="form.php_version" :disabled="isManaged('php_version')">
               <SelectTrigger id="sd-php" class="w-full sm:w-48">
                 <SelectValue placeholder="Select version" />
               </SelectTrigger>
@@ -194,6 +205,7 @@ async function save() {
                 </SelectItem>
               </SelectContent>
             </Select>
+            <ManagedByConfig v-if="isManaged('php_version')" field="php_version" :files="configFiles" />
           </SettingRow>
           <SettingRow
             label="Node version"
@@ -205,11 +217,14 @@ async function save() {
               v-model="form.node_version"
               :placeholder="defaultNode ? `Default (${defaultNode})` : 'Default'"
               class="font-mono sm:w-48"
+              :disabled="isManaged('node')"
             />
             <p data-testid="site-node-status" class="mt-2 text-xs text-muted-foreground">{{ nodeStatus }}</p>
+            <ManagedByConfig v-if="isManaged('node')" field="node" :files="configFiles" />
           </SettingRow>
           <SettingRow label="Aliases" hint="Comma-separated extra hostnames." for="sd-aliases">
-            <Input id="sd-aliases" v-model="form.aliases" placeholder="www.myapp.test" />
+            <Input id="sd-aliases" v-model="form.aliases" placeholder="www.myapp.test" :disabled="isManaged('aliases')" />
+            <ManagedByConfig v-if="isManaged('aliases')" field="aliases" :files="configFiles" />
           </SettingRow>
         </CardContent>
       </Card>
@@ -222,23 +237,28 @@ async function save() {
         <CardContent class="pb-0 sm:pb-0">
           <SettingRow label="Force HTTPS" hint="Redirect HTTP to HTTPS." for="sd-https">
             <div class="flex h-9 items-center">
-              <Checkbox id="sd-https" v-model:checked="form.https" />
+              <Checkbox id="sd-https" v-model:checked="form.https" :disabled="isManaged('https')" />
             </div>
+            <ManagedByConfig v-if="isManaged('https')" field="https" :files="configFiles" />
           </SettingRow>
           <SettingRow label="SPX profiler" hint="Activates via cookie or query param." for="sd-spx">
             <div class="flex h-9 items-center">
-              <Checkbox id="sd-spx" v-model:checked="form.spx_enabled" />
+              <Checkbox id="sd-spx" v-model:checked="form.spx_enabled" :disabled="isManaged('spx_enabled')" />
             </div>
+            <ManagedByConfig v-if="isManaged('spx_enabled')" field="spx_enabled" :files="configFiles" />
           </SettingRow>
           <SettingRow label="Inject CORS headers" hint="Disable when the app manages its own CORS." for="sd-cors">
             <div class="flex h-9 items-center">
-              <Checkbox id="sd-cors" v-model:checked="form.cors" />
+              <Checkbox id="sd-cors" v-model:checked="form.cors" :disabled="isManaged('cors')" />
             </div>
+            <ManagedByConfig v-if="isManaged('cors')" field="cors" :files="configFiles" />
           </SettingRow>
         </CardContent>
       </Card>
 
-      <SiteWorkers :site-id="site.id" />
+      <SiteProjectConfig v-if="site.project_config" :config="site.project_config" />
+
+      <SiteWorkers :site-id="site.id" :managed-by="isManaged('workers') ? configFiles : undefined" />
 
       <Card v-if="!site.parent_site_id && site.is_git_repo">
         <CardHeader>

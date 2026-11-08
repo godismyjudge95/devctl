@@ -29,6 +29,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [Git Worktrees](#git-worktrees)
 - [Sharing a Site](#sharing-a-site)
 - [Workers](#workers)
+- [Project config (.devctl.yaml)](#project-config-devctlyaml)
 - [PHP Dumps](#php-dumps)
 - [Request Inspector](#request-inspector)
 - [SPX Profiler](#spx-profiler)
@@ -648,6 +649,50 @@ From another computer (the router sends `*.test` to this machine) the browser ca
 
 ---
 
+## Project config (.devctl.yaml)
+
+A team can commit a `.devctl.yaml` in the site root that says how devctl runs the project, so a new checkout works the same on every machine. It is off by default. Turn it on in **Settings → Sites → Read .devctl.yaml project files** or with `devctl settings:set project_config_enabled=true`. While it is off, devctl does not read the file.
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/godismyjudge95/devctl/main/projectconfig/schema.json
+php: "8.4"
+node: "22"
+public_dir: public
+https: true
+cors: false
+spx: false
+aliases: [www.myapp.test]
+workers:
+  - queue
+  - vite
+  - type: custom
+    command: php8.4 artisan reverb:start
+services: [mysql, redis, mailpit]
+```
+
+Every key is optional. A key that is not in the file leaves that value of the site alone.
+
+| Key | Sets |
+|---|---|
+| `php` | PHP version of the site |
+| `node` | Node version. devctl writes it to `.nvmrc`, which the `node`/`npm`/`npx` shims and Vite workers read |
+| `public_dir` | Web root inside the project (empty for the project root) |
+| `https`, `cors`, `spx` | Force HTTPS, CORS header injection, SPX profiler |
+| `aliases` | Extra host names |
+| `workers` | The site's workers. devctl adds the missing ones and removes the ones not listed |
+| `services` | Services the project needs. devctl does not install them by itself. Site settings lists the missing or stopped ones with **Install** and **Start** buttons |
+
+A `.devctl.local.yaml` next to it (add it to `.gitignore`) overrides the shared file key by key, for example `php: "8.3"` on one machine.
+
+- **When devctl applies it.** When it finds a site with the file, within about two seconds of a change to either file, at startup, and when you turn the setting on. A site that already matches is not touched.
+- **Managed values.** Site settings shows "managed by .devctl.yaml" next to the values the file sets and makes those inputs read-only. Change them in the file.
+- **Errors.** devctl checks the file before it applies anything. Site settings and `devctl sites:get` show the error with its line, for example `.devctl.yaml: line 3: php: "8" is not a PHP version like 8.4`.
+- **Editor validation.** The JSON Schema is in the repository (`projectconfig/schema.json`) and at `http://127.0.0.1:4000/api/project-config/schema`. The `yaml-language-server` comment line makes VS Code, Zed, and other editors with the YAML language server use it.
+
+`devctl sites:config:init <domain>` writes a `.devctl.yaml` from the current site settings (`--force` replaces an existing file).
+
+---
+
 ## PHP Dumps
 
 devctl sets `auto_prepend_file = {serverRoot}/devctl/prepend.php` for every installed PHP version, for PHP-FPM and for the `php` CLI wrapper. Your dumps go to devctl's dump receiver (default port `9912`) and show in the **Dumps** tab in real time. You do not change app code.
@@ -933,6 +978,7 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `sites:share <domain>` | Share a site on a public `trycloudflare.com` URL (no account) |
 | | `sites:unshare <domain>` | Stop sharing a site and close its tunnel |
 | | `sites:shares` | List shared sites and their public URLs |
+| | `sites:config:init <domain> [--force]` | Write `.devctl.yaml` from the current site settings |
 | `helpers` | `helpers:list` | List installed CLI helpers and versions |
 | | `helpers:available` | List helpers that can be installed |
 | | `helpers:install <id>` | Download and install a helper |

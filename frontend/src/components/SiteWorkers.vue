@@ -12,8 +12,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import StatusDot from '@/components/layout/StatusDot.vue'
+import ManagedByConfig from '@/components/ManagedByConfig.vue'
 
-const props = defineProps<{ siteId: string }>()
+// managedBy lists the project config files that set the workers; the list
+// can then only change in those files.
+const props = defineProps<{ siteId: string; managedBy?: string[] }>()
 const store = useWorkersStore()
 
 const workers = computed(() => store.forSite(props.siteId))
@@ -98,6 +101,7 @@ function toggleLog(w: Worker) {
         Background processes devctl keeps running for this site, with its PHP and Node versions.
         They restart when they crash and start again with devctl.
       </CardDescription>
+      <ManagedByConfig v-if="managedBy" field="workers" :files="managedBy" />
     </CardHeader>
     <CardContent class="space-y-4">
       <p v-if="workers.length === 0" class="text-sm text-muted-foreground">No workers yet.</p>
@@ -165,6 +169,7 @@ function toggleLog(w: Worker) {
                 <ScrollText class="size-4" />
               </Button>
               <Button
+                v-if="!managedBy"
                 variant="ghost"
                 size="icon-sm"
                 :aria-label="`Remove ${w.type} worker`"
@@ -185,7 +190,7 @@ function toggleLog(w: Worker) {
         </li>
       </ul>
 
-      <div class="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center">
+      <div v-if="!managedBy" class="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center">
         <Select v-model="newType">
           <SelectTrigger class="w-full sm:w-44" aria-label="Worker type">
             <SelectValue />

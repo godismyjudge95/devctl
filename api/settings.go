@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dumps"
@@ -18,6 +19,7 @@ var settingDefaults = map[string]string{
 	"devctl_port":           "4000",
 	"dump_tcp_port":         "9912",
 	"dump_to_page":          "false",
+	projectConfigSetting:    "false",
 	"service_poll_interval": "5",
 	"mailpit_http_port":     "8025",
 	"mailpit_smtp_port":     "1025",
@@ -74,6 +76,15 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	}
+
+	if v, ok := input[projectConfigSetting]; ok {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			writeError(w, projectConfigSetting+" must be true or false", http.StatusBadRequest)
+			return
+		}
+		input[projectConfigSetting] = strconv.FormatBool(on)
 	}
 
 	for k, v := range input {

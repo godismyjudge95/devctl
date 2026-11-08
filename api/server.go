@@ -188,6 +188,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/sites/{id}/share", s.handleShareSite)
 	s.mux.HandleFunc("DELETE /api/sites/{id}/share", s.handleUnshareSite)
 	s.mux.HandleFunc("GET /api/shares", s.handleGetShares)
+	s.mux.HandleFunc("POST /api/sites/{id}/config/init", s.handleInitProjectConfig)
+	s.mux.HandleFunc("GET /api/project-config/schema", s.handleProjectConfigSchema)
 	// Workers
 	s.mux.HandleFunc("GET /api/workers", s.handleListWorkers)
 	s.mux.HandleFunc("POST /api/workers", s.handleCreateWorker)

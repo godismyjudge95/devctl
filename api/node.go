@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/node"
 	"github.com/danielgormly/devctl/paths"
+	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/tools"
 )
 
@@ -26,6 +28,9 @@ type siteNode struct {
 type siteView struct {
 	dbq.Site
 	Node siteNode `json:"node"`
+	// ProjectConfig is null while project config is off or the site has no
+	// config file.
+	ProjectConfig *projectConfigView `json:"project_config"`
 }
 
 func nodeFor(rootPath string, installed []node.Version) siteNode {
@@ -39,9 +44,17 @@ func nodeFor(rootPath string, installed []node.Version) siteNode {
 
 func (s *Server) siteViews(all []dbq.Site) []siteView {
 	installed := node.Installed(s.serverRoot)
+	var states map[string]services.ServiceState
+	if s.projectConfigEnabled(context.Background()) {
+		states = s.serviceStatesByID()
+	}
 	out := make([]siteView, 0, len(all))
 	for _, site := range all {
-		out = append(out, siteView{Site: site, Node: nodeFor(site.RootPath, installed)})
+		v := siteView{Site: site, Node: nodeFor(site.RootPath, installed)}
+		if states != nil {
+			v.ProjectConfig = projectConfigFor(site.RootPath, states)
+		}
+		out = append(out, v)
 	}
 	return out
 }

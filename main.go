@@ -421,6 +421,7 @@ func run() error {
 
 	go poller.Run(runCtx)
 	go srv.WatchCaddyConfig(runCtx)
+	go srv.WatchProjectConfigs(runCtx)
 	supDone := make(chan struct{})
 	go func() {
 		supervisor.Run(runCtx)

@@ -171,7 +171,7 @@ func (m *Manager) Get(ctx context.Context, id int64) (State, error) {
 // Add stores a worker for the site and starts it.
 func (m *Manager) Add(ctx context.Context, siteID string, t Type, command string) (State, error) {
 	command = strings.TrimSpace(command)
-	if err := validate(t, command); err != nil {
+	if err := Validate(t, command); err != nil {
 		return State{}, err
 	}
 	if _, err := m.q.GetSite(ctx, siteID); err != nil {
@@ -180,7 +180,7 @@ func (m *Manager) Add(ctx context.Context, siteID string, t Type, command string
 		}
 		return State{}, err
 	}
-	if !kinds[t].multiple {
+	if !t.Multiple() {
 		existing, err := m.List(ctx, siteID)
 		if err != nil {
 			return State{}, err

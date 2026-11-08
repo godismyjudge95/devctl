@@ -7,7 +7,7 @@ import { toast } from 'vue-sonner'
 import {
   Plus, Sparkles, ExternalLink, Trash2, Zap, Loader2,
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
-  Lock, Unlock, Settings, Globe, Share2,
+  Lock, Unlock, Settings, Globe, Share2, FileCog,
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -144,6 +144,15 @@ function nodeTitle(site: Site): string {
   if (!n) return ''
   const from = n.file.split('/').pop()
   return n.resolved ? `Runs ${n.resolved} (from ${from})` : `Not installed (from ${from})`
+}
+
+/** Why a site's project config needs attention, or '' when it does not. */
+function configProblem(site: Site): string {
+  const pc = site.project_config
+  if (!pc) return ''
+  if (pc.error) return pc.error
+  const missing = pc.services.filter(s => s.status !== 'running').map(s => s.label)
+  return missing.length ? `Needs ${missing.join(', ')}. Open site settings to install or start.` : ''
 }
 
 function frameworkLabel(fw: string): string {
@@ -305,6 +314,14 @@ function frameworkLabel(fw: string): string {
                     {{ site.https ? 'HTTPS' : 'HTTP' }}
                   </MetaChip>
                   <SiteWorkerChips :site-id="site.id" />
+                  <MetaChip
+                    v-if="site.project_config"
+                    data-testid="site-project-config"
+                    :tone="configProblem(site) ? 'warning' : 'muted'"
+                    :title="configProblem(site) || `Managed by ${site.project_config.files.join(' + ')}`"
+                  >
+                    <FileCog />.devctl.yaml
+                  </MetaChip>
                 </div>
               </TableCell>
 
@@ -415,6 +432,14 @@ function frameworkLabel(fw: string): string {
                 {{ site.https ? 'HTTPS' : 'HTTP' }}
               </MetaChip>
               <SiteWorkerChips :site-id="site.id" />
+              <MetaChip
+                v-if="site.project_config"
+                data-testid="site-project-config"
+                :tone="configProblem(site) ? 'warning' : 'muted'"
+                :title="configProblem(site) || `Managed by ${site.project_config.files.join(' + ')}`"
+              >
+                <FileCog />.devctl.yaml
+              </MetaChip>
               <MetaChip v-if="site.framework">{{ frameworkLabel(site.framework) }}</MetaChip>
               <MetaChip v-if="site.spx_enabled" tone="warning"><Zap />SPX</MetaChip>
               <MetaChip v-if="site.worktree_branch" class="max-w-full">

@@ -35,6 +35,28 @@ export interface Site {
   created_at: string
   updated_at: string
   node?: SiteNode
+  /** null while project config is off or the site has no .devctl.yaml. */
+  project_config?: SiteProjectConfig | null
+}
+
+/** Site fields a .devctl.yaml can set, by their API names. */
+export type ProjectConfigField =
+  'php_version' | 'node' | 'public_dir' | 'https' | 'cors' | 'spx_enabled' | 'aliases' | 'workers' | 'services'
+
+/** What a site's .devctl.yaml (and .devctl.local.yaml) controls. */
+export interface SiteProjectConfig {
+  files: string[]
+  managed: ProjectConfigField[]
+  /** Parse or validation error with file and line; nothing is applied while set. */
+  error?: string
+  services: RequiredService[]
+}
+
+/** A service the project needs. status is 'missing' when it is not installed. */
+export interface RequiredService {
+  id: string
+  label: string
+  status: 'missing' | ServiceState['status']
 }
 
 /** Node version a site asks for (from its files) and the installed version it runs. */

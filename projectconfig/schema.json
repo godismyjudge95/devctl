@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/godismyjudge95/devctl/main/projectconfig/schema.json",
+  "title": "devctl project config",
+  "description": "How devctl runs this project (.devctl.yaml, and .devctl.local.yaml on top of it). devctl reads it only when the project_config_enabled setting is on. A key that is not set leaves that site value alone.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "php": {
+      "description": "PHP version of the site, for example \"8.4\".",
+      "type": ["string", "number"],
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "node": {
+      "description": "Node.js version. devctl writes it to .nvmrc. Use 22, 20.11.1, lts/*, lts/iron, or a range like >=20.",
+      "type": ["string", "number"],
+      "minLength": 1
+    },
+    "public_dir": {
+      "description": "Web root inside the project, for example public. Empty for the project root.",
+      "type": "string",
+      "not": { "pattern": "(^/|^\\.\\.(/|$)|/\\.\\.(/|$))" }
+    },
+    "https": {
+      "description": "Redirect HTTP to HTTPS.",
+      "type": "boolean"
+    },
+    "cors": {
+      "description": "Add permissive CORS headers to every response.",
+      "type": "boolean"
+    },
+    "spx": {
+      "description": "Turn on the SPX profiler for the site.",
+      "type": "boolean"
+    },
+    "aliases": {
+      "description": "Extra host names for the site, for example www.myapp.test or *.myapp.test.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(\\*\\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+      }
+    },
+    "workers": {
+      "description": "Workers devctl runs for the site. devctl adds the workers that are missing and removes the ones not listed.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "description": "A built-in worker type.",
+            "type": "string",
+            "enum": ["queue", "horizon", "schedule", "vite"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "enum": ["queue", "horizon", "schedule", "vite", "custom"] },
+              "command": { "type": "string", "minLength": 1, "description": "Shell command of a custom worker." }
+            },
+            "if": { "properties": { "type": { "const": "custom" } } },
+            "then": { "required": ["command"] },
+            "else": { "not": { "required": ["command"] } }
+          }
+        ]
+      }
+    },
+    "services": {
+      "description": "Services the project needs. devctl shows the missing ones on the site with an install action. It does not install them by itself.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["redis", "mysql", "postgres", "mailpit", "meilisearch", "typesense", "reverb", "maxio", "clickhouse"]
+      }
+    }
+  }
+}

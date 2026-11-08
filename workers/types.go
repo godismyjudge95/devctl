@@ -47,8 +47,8 @@ var Types = []Type{"queue", "horizon", "schedule", "vite", "custom"}
 // ErrInvalid marks a request the caller must fix (unknown type, bad command).
 var ErrInvalid = errors.New("invalid worker")
 
-// validate checks the type and that only custom workers carry a command.
-func validate(t Type, command string) error {
+// Validate checks the type and that only custom workers carry a command.
+func Validate(t Type, command string) error {
 	k, ok := kinds[t]
 	if !ok {
 		return fmt.Errorf("%w: unknown type %q (use %s)", ErrInvalid, t, typeList())
@@ -62,6 +62,9 @@ func validate(t Type, command string) error {
 	}
 	return nil
 }
+
+// Multiple reports whether a site may have more than one worker of type t.
+func (t Type) Multiple() bool { return kinds[t].multiple }
 
 func typeList() string {
 	names := make([]string, len(Types))
