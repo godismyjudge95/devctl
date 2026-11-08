@@ -187,6 +187,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteSite(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	s.shares.Stop(id)
 	if err := s.siteManager.Delete(r.Context(), id); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return

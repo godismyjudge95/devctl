@@ -37,7 +37,7 @@ func TestGetHelpers_IncludesCatalog(t *testing.T) {
 		}
 		byID[h.ID] = h
 	}
-	for _, id := range []string{"sqlite3", "mago", "phpantom_lsp", "wp", "fnm", "yq"} {
+	for _, id := range []string{"sqlite3", "mago", "phpantom_lsp", "wp", "fnm", "yq", "cloudflared"} {
 		if _, ok := byID[id]; !ok {
 			t.Errorf("missing helper %s", id)
 		}

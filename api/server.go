@@ -9,17 +9,21 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/danielgormly/devctl/database"
 	dbq "github.com/danielgormly/devctl/db/queries"
+	"github.com/danielgormly/devctl/dist"
 	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/internal/versioncache"
+	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
+	"github.com/danielgormly/devctl/share"
 	"github.com/danielgormly/devctl/sites"
 )
 
@@ -61,6 +65,8 @@ type Server struct {
 
 	// elevateClient is shared so doctor pings reuse one keep-alive connection.
 	elevateClient *elevate.DaemonClient
+
+	shares *share.Manager
 }
 
 // NewServer creates and configures the HTTP server.
@@ -102,6 +108,7 @@ func NewServer(
 		selfVersion: selfVersion,
 		dbPool:         database.NewPool(),
 		elevateClient:  elevate.NewDaemonClient(serverRoot),
+		shares:         share.NewManager(share.Cloudflared(filepath.Join(paths.BinDir(serverRoot), "cloudflared"), dist.HTTPSPort())),
 	}
 	s.registerRoutes()
 	return s
@@ -174,6 +181,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/sites/{id}/spx/enable", s.handleSPXEnable)
 	s.mux.HandleFunc("POST /api/sites/{id}/spx/disable", s.handleSPXDisable)
 	s.mux.HandleFunc("PUT /api/sites/{id}/node", s.handleSetSiteNode)
+	s.mux.HandleFunc("POST /api/sites/{id}/share", s.handleShareSite)
+	s.mux.HandleFunc("DELETE /api/sites/{id}/share", s.handleUnshareSite)
+	s.mux.HandleFunc("GET /api/shares", s.handleGetShares)
 	// Worktrees
 	s.mux.HandleFunc("GET /api/sites/{id}/branches", s.handleGetSiteBranches)
 	s.mux.HandleFunc("GET /api/sites/{id}/worktree-config", s.handleGetWorktreeConfig)

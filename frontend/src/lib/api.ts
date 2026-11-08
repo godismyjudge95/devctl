@@ -44,6 +44,15 @@ export interface SiteNode {
   resolved: string  // installed version used; '' when none matches
 }
 
+export interface Share {
+  site_id: string
+  domain: string
+  status: 'starting' | 'active' | 'failed'
+  url?: string
+  error?: string
+  started_at: string
+}
+
 export interface Branch {
   name: string
   is_remote: boolean
@@ -350,6 +359,9 @@ export const updateSite = (id: string, data: SiteInput) =>
 export const deleteSite = (id: string) => request<void>('DELETE', `/api/sites/${id}`)
 export const enableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/enable`)
 export const disableSPX = (id: string) => request<void>('POST', `/api/sites/${id}/spx/disable`)
+export const getShares = () => request<Share[]>('GET', '/api/shares')
+export const shareSite = (id: string) => request<Share>('POST', `/api/sites/${id}/share`)
+export const unshareSite = (id: string) => request<void>('DELETE', `/api/sites/${id}/share`)
 export const detectSite = (rootPath: string) =>
   request<{ public_dir: string; framework: string }>('GET', `/api/sites/detect?root_path=${encodeURIComponent(rootPath)}`)
 export const refreshSiteMetadata = () =>

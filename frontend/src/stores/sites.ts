@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Site, SiteInput, CreateWorktreeInput } from '@/lib/api'
+import type { Site, SiteInput, CreateWorktreeInput, Share } from '@/lib/api'
 import {
   getSites,
+  getShares,
+  shareSite,
+  unshareSite,
   createSite,
   updateSite,
   deleteSite,
@@ -17,6 +20,8 @@ export const useSitesStore = defineStore('sites', () => {
   const sites = ref<Site[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // Public tunnels keyed by site ID. The daemon keeps them in memory only.
+  const shares = ref<Record<string, Share>>({})
 
   async function load() {
     loading.value = true
@@ -53,6 +58,39 @@ export const useSitesStore = defineStore('sites', () => {
   async function remove(id: string) {
     await deleteSite(id)
     sites.value = sites.value.filter((s: Site) => s.id !== id)
+    delete shares.value[id]
+  }
+
+  async function loadShares() {
+    const list = await getShares()
+    shares.value = Object.fromEntries(list.map((s) => [s.site_id, s]))
+  }
+
+  /** Start a tunnel. The daemon answers once the URL is known or after a timeout. */
+  async function share(id: string) {
+    const site = sites.value.find((s) => s.id === id)
+    shares.value[id] = { site_id: id, domain: site?.domain ?? id, status: 'starting', started_at: new Date().toISOString() }
+    let result: Share
+    try {
+      result = await shareSite(id)
+    } catch (e) {
+      delete shares.value[id]
+      throw e
+    }
+    // Stop was pressed while the tunnel was starting.
+    if (!shares.value[id]) return undefined
+    shares.value[id] = result
+    // A slow tunnel can still be starting when the request returns.
+    for (let i = 0; i < 30 && shares.value[id]?.status === 'starting'; i++) {
+      await new Promise((r) => setTimeout(r, 2000))
+      await loadShares()
+    }
+    return shares.value[id]
+  }
+
+  async function unshare(id: string) {
+    await unshareSite(id)
+    delete shares.value[id]
   }
 
   async function toggleSPX(id: string, enabled: boolean) {
@@ -73,6 +111,7 @@ export const useSitesStore = defineStore('sites', () => {
   async function deleteWorktree(parentId: string, worktreeId: string) {
     await removeWorktree(parentId, worktreeId)
     sites.value = sites.value.filter((s: Site) => s.id !== worktreeId)
+    delete shares.value[worktreeId]
   }
 
   /** Re-inspect all sites and refresh git/framework metadata, then reload. */
@@ -84,5 +123,9 @@ export const useSitesStore = defineStore('sites', () => {
 
   const count = computed(() => sites.value.length)
 
-  return { sites, count, loading, error, load, create, update, remove, toggleSPX, addWorktree, deleteWorktree, refreshMetadata }
+  return {
+    sites, count, loading, error, shares,
+    load, create, update, remove, toggleSPX, addWorktree, deleteWorktree, refreshMetadata,
+    loadShares, share, unshare,
+  }
 })

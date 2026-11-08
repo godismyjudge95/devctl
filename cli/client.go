@@ -168,6 +168,16 @@ type Site struct {
 	WorktreeBranch *string `json:"worktree_branch"`
 }
 
+// Share mirrors one row of GET /api/shares.
+type Share struct {
+	SiteID    string    `json:"site_id"`
+	Domain    string    `json:"domain"`
+	Status    string    `json:"status"`
+	URL       string    `json:"url,omitempty"`
+	Error     string    `json:"error,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+}
+
 type WorktreeConfig struct {
 	Symlinks []string `json:"symlinks"`
 	Copies   []string `json:"copies"`
@@ -383,6 +393,21 @@ func (c *Client) CreateWorktree(parentID string, body map[string]any) (Site, err
 
 func (c *Client) RemoveWorktree(parentID, worktreeID string) error {
 	return c.delete("/api/sites/" + parentID + "/worktrees/" + worktreeID)
+}
+
+// ShareSite waits for the tunnel URL. The first share also downloads cloudflared.
+func (c *Client) ShareSite(id string) (Share, error) {
+	var out Share
+	return out, c.postTimeout("/api/sites/"+id+"/share", nil, &out, 5*time.Minute)
+}
+
+func (c *Client) UnshareSite(id string) error {
+	return c.delete("/api/sites/" + id + "/share")
+}
+
+func (c *Client) ListShares() ([]Share, error) {
+	var out []Share
+	return out, c.get("/api/shares", &out)
 }
 
 func (c *Client) UpdateSite(id string, body map[string]any) (Site, error) {

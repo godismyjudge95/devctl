@@ -123,7 +123,7 @@ func (s *Server) handleApplySelfUpdate(w http.ResponseWriter, r *http.Request) {
 	// Re-exec after the HTTP response has been flushed — no systemctl/sudo.
 	serverRoot := s.serverRoot
 	reexec.Schedule(300*time.Millisecond, func() {
-		s.supervisor.StopAll()
+		s.stopChildren()
 		tools.EnsureAllLatest(context.Background(), paths.BinDir(serverRoot), io.Discard)
 	})
 }

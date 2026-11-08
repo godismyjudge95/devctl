@@ -137,6 +137,7 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/sites/{id}/worktrees/{worktreeId}
 func (s *Server) handleRemoveWorktree(w http.ResponseWriter, r *http.Request) {
 	worktreeID := r.PathValue("worktreeId")
+	s.shares.Stop(worktreeID)
 	if err := s.siteManager.RemoveWorktree(r.Context(), worktreeID); err != nil {
 		writeError(w, err.Error(), http.StatusUnprocessableEntity)
 		return

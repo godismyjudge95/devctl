@@ -460,6 +460,7 @@ func run() error {
 	// --- Listen ---
 	listenErr := srv.Listen(runCtx, addr)
 	cancel()
+	srv.StopShares()
 	<-supDone
 	return listenErr
 }

@@ -7,7 +7,7 @@ import { toast } from 'vue-sonner'
 import {
   Plus, Sparkles, ExternalLink, Trash2, Zap, Loader2,
   GitBranch, GitFork, CornerDownRight, Github, Search, RefreshCw,
-  Lock, Unlock, Settings, Globe,
+  Lock, Unlock, Settings, Globe, Share2,
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,8 @@ import Surface from '@/components/layout/Surface.vue'
 import SectionHeader from '@/components/layout/SectionHeader.vue'
 import MetaChip from '@/components/layout/MetaChip.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
+import SiteShareStatus from '@/components/SiteShareStatus.vue'
+import { useSiteShare } from '@/composables/useSiteShare'
 import { Input } from '@/components/ui/input'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -23,8 +25,10 @@ import {
 
 const store = useSitesStore()
 const router = useRouter()
+const { start: startShare } = useSiteShare()
 onMounted(() => {
   store.load()
+  store.loadShares().catch(() => {})
 })
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -264,6 +268,7 @@ function frameworkLabel(fw: string): string {
                         <Zap />SPX
                       </MetaChip>
                     </div>
+                    <SiteShareStatus v-if="store.shares[site.id]" :share="store.shares[site.id]!" />
                   </div>
                 </div>
               </TableCell>
@@ -311,6 +316,16 @@ function frameworkLabel(fw: string): string {
                   >
                     <GitFork class="size-3.5" />{{ worktreeCount(site.id) }}
                   </span>
+                  <Button
+                    v-if="!store.shares[site.id]"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Share"
+                    title="Share on a public URL"
+                    @click="startShare(site.id, site.domain)"
+                  >
+                    <Share2 class="size-4" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -404,10 +419,22 @@ function frameworkLabel(fw: string): string {
               </MetaChip>
             </div>
 
+            <SiteShareStatus v-if="store.shares[site.id]" :share="store.shares[site.id]!" />
+
             <div class="-mx-1 flex items-center gap-1 border-t border-border pt-3">
               <Button variant="ghost" size="sm" @click="router.push(`/sites/${site.id}`)">
                 <Settings class="size-3.5" />
                 Settings
+              </Button>
+              <Button
+                v-if="!store.shares[site.id]"
+                variant="ghost"
+                size="sm"
+                title="Share on a public URL"
+                @click="startShare(site.id, site.domain)"
+              >
+                <Share2 class="size-3.5" />
+                Share
               </Button>
               <Button
                 v-if="site.is_git_repo && site.git_remote_url"

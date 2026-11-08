@@ -854,3 +854,111 @@ func newSiteFlags() []FlagDef {
 	}
 	return flags
 }
+
+func init() {
+	Register(&Cmd{
+		Name:        "sites:share",
+		Description: "Share a site on a public trycloudflare.com URL (no account needed)",
+		Usage:       "<domain>",
+		Args:        []ArgDef{{Name: "domain", Description: "Site domain, id, or path (use . for cwd)"}},
+		Examples:    []string{"devctl sites:share myapp.test", "devctl sites:share . --json"},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			if len(args) == 0 {
+				return fmt.Errorf("usage: devctl sites:share <domain>")
+			}
+			site, err := findSite(c, args[0], nil)
+			if err != nil {
+				return err
+			}
+			sh, err := c.ShareSite(site.ID)
+			if err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(sh)
+			}
+			switch sh.Status {
+			case "failed":
+				return fmt.Errorf("tunnel for %s failed: %s", site.Domain, sh.Error)
+			case "starting":
+				if !jsonMode {
+					fmt.Println("The tunnel for " + site.Domain + " is still starting. Run `devctl sites:shares` to see its URL.")
+				}
+				return nil
+			}
+			if !jsonMode {
+				PrintOK("Sharing " + site.Domain)
+				KV("URL", sh.URL)
+				fmt.Println(styleDim.Render("  Stop with: devctl sites:unshare " + site.Domain))
+			}
+			return nil
+		},
+	})
+
+	Register(&Cmd{
+		Name:        "sites:unshare",
+		Description: "Stop sharing a site and close its public tunnel",
+		Usage:       "<domain>",
+		Args:        []ArgDef{{Name: "domain", Description: "Site domain, id, or path (use . for cwd)"}},
+		Examples:    []string{"devctl sites:unshare myapp.test", "devctl sites:unshare myapp.test --json"},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			if len(args) == 0 {
+				return fmt.Errorf("usage: devctl sites:unshare <domain>")
+			}
+			site, err := findSite(c, args[0], nil)
+			if err != nil {
+				return err
+			}
+			if err := c.UnshareSite(site.ID); err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(map[string]string{"status": "stopped", "domain": site.Domain})
+				return nil
+			}
+			PrintOK("Stopped sharing " + site.Domain)
+			return nil
+		},
+	})
+
+	Register(&Cmd{
+		Name:        "sites:shares",
+		Description: "List shared sites and their public URLs",
+		Examples:    []string{"devctl sites:shares", "devctl sites:shares --json"},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			shares, err := c.ListShares()
+			if err != nil {
+				return err
+			}
+			if jsonMode {
+				PrintJSON(shares)
+				return nil
+			}
+			if len(shares) == 0 {
+				fmt.Println("No shared sites. Share one with `devctl sites:share <domain>`.")
+				return nil
+			}
+			rows := make([][]string, 0, len(shares))
+			for _, sh := range shares {
+				detail := sh.URL
+				if sh.Status == "failed" {
+					detail = styleErr.Render(sh.Error)
+				}
+				rows = append(rows, []string{sh.Domain, shareStatusStyle(sh.Status), orDash(detail)})
+			}
+			Table([]string{"Domain", "Status", "Public URL"}, rows)
+			return nil
+		},
+	})
+}
+
+func shareStatusStyle(status string) string {
+	switch status {
+	case "active":
+		return styleOK.Render("● active")
+	case "starting":
+		return styleWarn.Render("◌ starting")
+	default:
+		return styleErr.Render("○ " + status)
+	}
+}

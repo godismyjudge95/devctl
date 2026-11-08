@@ -27,6 +27,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [DNS](#dns)
 - [Sites](#sites)
 - [Git Worktrees](#git-worktrees)
+- [Sharing a Site](#sharing-a-site)
 - [PHP Dumps](#php-dumps)
 - [Request Inspector](#request-inspector)
 - [SPX Profiler](#spx-profiler)
@@ -91,7 +92,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ✅ (PHP 8.1+) |
 | SPX profiler | ✅ (macOS) | ✅ | ❌ | ✅ |
 | Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
-| Share a site publicly | ✅ | ✅ | ✅ | ❌ |
+| Share a site publicly | ✅ | ✅ | ✅ | ✅ |
 | Health checks (`doctor`) | ❌ | ✅ | ✅ | ✅ |
 | AI integration | MCP | MCP | MCP | CLI + skill + MCP |
 | Per-project Node isolation | ❌ | ✅ | tools install | ✅ (fnm) |
@@ -321,6 +322,7 @@ sqlite3 is installed by default. Everything else is opt-in from the **Helpers** 
 | `wp` | [wp-cli/wp-cli](https://github.com/wp-cli/wp-cli) | WordPress CLI (`wp`). Also installed when you install PHP. |
 | `fnm` | [Schniz/fnm](https://github.com/Schniz/fnm) | Fast Node Manager, also linked as `nvm` |
 | `yq` | [mikefarah/yq](https://github.com/mikefarah/yq) | YAML / JSON / XML processor |
+| `cloudflared` | [cloudflare/cloudflared](https://github.com/cloudflare/cloudflared) | Cloudflare Tunnel client. Installed on the first [share](#sharing-a-site). |
 
 devctl checks GitHub (or sqlite.org) daily for newer releases, the same way it does for managed services. An update badge appears in the dashboard when a newer version is available.
 
@@ -552,6 +554,59 @@ devctl sites:worktree:rm myapp-feature-auth.test
 
 ---
 
+## Sharing a Site
+
+Share a local site on a public `https://<random>.trycloudflare.com` URL. You do not need a Cloudflare account. Click **Share** on the site in the Sites page, or use the CLI:
+
+```sh
+devctl sites:share myapp.test     # start a tunnel and print the public URL
+devctl sites:shares               # list shared sites
+devctl sites:unshare myapp.test   # close the tunnel
+```
+
+The site row shows the public URL with **Copy** and **Stop** buttons. The first share downloads the `cloudflared` helper into `{serverRoot}/bin/`. Each shared site runs its own `cloudflared` [quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/). The URL is random and changes each time you share.
+
+Shares are kept in memory only. devctl closes every tunnel when the daemon stops, restarts, or updates. Deleting a site also stops its share. Anyone who has the URL can open the site, so stop the share when you are done.
+
+**How requests reach PHP.** cloudflared connects to Caddy at `https://127.0.0.1:443`. It sends the site's own name as the `Host` header and as the TLS server name, so the normal site vhost answers and devctl adds no Caddy routes. The **Force HTTPS** redirect applies only to plain HTTP, so it does not fire. PHP sees the request like this:
+
+| PHP `$_SERVER` key | Value |
+|---|---|
+| `HTTP_HOST`, `SERVER_NAME` | `myapp.test` |
+| `HTTPS`, `HTTP_X_FORWARDED_PROTO` | `on`, `https` |
+| `HTTP_X_FORWARDED_HOST` | `<random>.trycloudflare.com` |
+| `HTTP_CF_CONNECTING_IP` | the visitor's IP address |
+| `REMOTE_ADDR` | `127.0.0.1` |
+
+Apps that check the host (WordPress `siteurl`, multi-tenant routing) keep working. But URLs that the app generates from the request host point to `https://myapp.test`, which a visitor cannot open.
+
+**Laravel.** `url()`, `route()`, `asset()`, and redirects use the request host, not `APP_URL`. To make them use the public host, trust the local proxy. Laravel then reads `X-Forwarded-Host`:
+
+```php
+// bootstrap/app.php (Laravel 11+). Laravel 10: $proxies = '127.0.0.1' in app/Http/Middleware/TrustProxies.php
+->withMiddleware(function (Middleware $middleware) {
+    $middleware->trustProxies(at: '127.0.0.1');
+})
+```
+
+Local browser requests send no `X-Forwarded-Host`, so they still use `myapp.test`. `APP_URL` is used where no request exists: queued jobs, mail sent from `artisan`, and `php artisan` commands. Links made there still point to `APP_URL`. To send public links from a queue, set `APP_URL` to the tunnel URL and restart the workers.
+
+**Signed URLs.** The signature covers the full URL, host included. A signed URL works through the tunnel when it was made through the tunnel (with the trusted proxy above). A signed URL made with `APP_URL` (for example in a queued email) fails with 403 when it is opened on the tunnel host. Use relative signatures for links that must work on both hosts: `URL::signedRoute('name', $params, absolute: false)` with the `signed:relative` middleware.
+
+**Vite.** `@vite` in dev mode loads assets from the Vite dev server, which visitors cannot reach. Run `npm run build` (and remove `public/hot`) before you share.
+
+**WordPress.** WordPress makes links from its `home` and `siteurl` options. To serve the public host, add this to `wp-config.php` above "That's all, stop editing!":
+
+```php
+if (str_ends_with($_SERVER['HTTP_X_FORWARDED_HOST'] ?? '', '.trycloudflare.com')) {
+    $_SERVER['HTTP_HOST'] = $_SERVER['HTTP_X_FORWARDED_HOST'];
+    define('WP_HOME', 'https://' . $_SERVER['HTTP_HOST']);
+    define('WP_SITEURL', WP_HOME);
+}
+```
+
+---
+
 ## PHP Dumps
 
 devctl sets `auto_prepend_file = {serverRoot}/devctl/prepend.php` for every installed PHP version, for PHP-FPM and for the `php` CLI wrapper. Your dumps go to devctl's dump receiver (default port `9912`) and show in the **Dumps** tab in real time. You do not change app code.
@@ -773,6 +828,7 @@ devctl sites:list                 # list all sites
 devctl sites:php myapp.test 8.4   # switch PHP version for a site
 devctl sites:new shop --template=laravel --starter-kit=react  # new project + vhost
 devctl sites:worktree:add myapp.test feature/auth  # new worktree + vhost
+devctl sites:share myapp.test     # public trycloudflare.com URL for a site
 devctl logs:tail caddy --follow   # stream the tail of a log live
 devctl mail:list                  # list captured emails
 devctl mail:wait --to=me@app.test # block until a new email arrives (sign-up flows)
@@ -831,6 +887,9 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `sites:worktree:add <domain> <branch>` | Create a worktree site. Rewrite URLs in `.env`. Copy `vendor` and `node_modules` only when the lockfile matches |
 | | `sites:worktree:rm <domain>` | Remove a worktree (git + directory + vhost) |
 | | `sites:worktree:config <domain>` | Show or save default copy/symlink paths |
+| | `sites:share <domain>` | Share a site on a public `trycloudflare.com` URL (no account) |
+| | `sites:unshare <domain>` | Stop sharing a site and close its tunnel |
+| | `sites:shares` | List shared sites and their public URLs |
 | `helpers` | `helpers:list` | List installed CLI helpers and versions |
 | | `helpers:available` | List helpers that can be installed |
 | | `helpers:install <id>` | Download and install a helper |

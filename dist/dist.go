@@ -66,6 +66,10 @@ var assetTable = []assetRow{
 	{GOOS: "linux", GOARCH: "arm64", Name: "fnm", Asset: Asset{Token: "arm64", File: "fnm-arm64.zip"}},
 	{GOOS: "darwin", GOARCH: "arm64", Name: "fnm", Asset: Asset{Token: "macos", File: "fnm-macos.zip"}},
 
+	{GOOS: "linux", GOARCH: "amd64", Name: "cloudflared", Asset: Asset{Token: "linux-amd64", File: "cloudflared-linux-amd64"}},
+	{GOOS: "linux", GOARCH: "arm64", Name: "cloudflared", Asset: Asset{Token: "linux-arm64", File: "cloudflared-linux-arm64"}},
+	{GOOS: "darwin", GOARCH: "arm64", Name: "cloudflared", Asset: Asset{Token: "darwin-arm64", File: "cloudflared-darwin-arm64.tgz"}},
+
 	{GOOS: "linux", GOARCH: "amd64", Name: "sqlite3", Asset: Asset{Token: "linux-x64", File: "sqlite-tools-linux-x64.zip"}},
 	{GOOS: "linux", GOARCH: "arm64", Name: "sqlite3", Asset: Asset{Token: "linux-x64", File: "sqlite-tools-linux-x64.zip"}},
 	{GOOS: "darwin", GOARCH: "arm64", Name: "sqlite3", Asset: Asset{Token: "osx-arm64", File: "sqlite-tools-osx-arm64.zip"}},
