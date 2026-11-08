@@ -697,6 +697,7 @@ devctl sites:php myapp.test 8.4   # switch PHP version for a site
 devctl sites:worktree:add myapp.test feature/auth  # new worktree + vhost
 devctl logs:tail caddy --follow   # stream the tail of a log live
 devctl mail:list                  # list captured emails
+devctl mail:wait --to=me@app.test # block until a new email arrives (sign-up flows)
 devctl settings:get               # show all settings
 devctl settings:set devctl_port=4001  # change a setting (key=value)
 devctl helpers:list               # list installed CLI helpers
@@ -773,8 +774,13 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `dumps:clear` | Delete all php_dd() dumps |
 | `spx` | `spx:profiles [--domain=]` | List recent SPX profiler captures |
 | | `spx:profile <key>` | Show CPU hotspot functions for an SPX profile |
-| `mail` | `mail:list [--limit=N]` | List recent emails captured by Mailpit |
-| | `mail:get <id>` | Show the full content of an email |
+| `mail` | `mail:list [--to=X] [--from=X] [--subject=X] [--since=15m] [--limit=N]` | List recent emails captured by Mailpit, optionally filtered |
+| | `mail:get <id\|latest> [--format=text\|html\|raw\|json]` | Show the full content of an email |
+| | `mail:latest [filters] [--format=…]` | Show the newest email (or the newest that matches the filters) |
+| | `mail:wait [filters] [--timeout=30s]` | Wait for a new matching email, print it, exit 1 on timeout |
+| | `mail:links <id\|latest>` | Print every URL in an email (text and HTML parts) |
+| | `mail:attachments <id\|latest>` | List the attachments of an email |
+| | `mail:attachment <id\|latest> <part> --out=<file>` | Save one attachment (`--out=-` writes to stdout) |
 | | `mail:delete <id>[,<id>...]` | Delete one or more emails by ID |
 | | `mail:clear` | Delete all emails from Mailpit |
 | `dns` | `dns:status` | Check whether systemd-resolved is configured for `*.test` |

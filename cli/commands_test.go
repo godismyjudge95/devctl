@@ -105,6 +105,29 @@ func TestMailDelete_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "mail:delete", wantArgs: true})
 }
 func TestMailClear_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "mail:clear"}) }
+func TestMailList_HasFilterFlags(t *testing.T) {
+	for _, f := range []string{"to", "from", "subject", "since"} {
+		assertCmd(t, cmdCheck{name: "mail:list", wantFlag: f})
+	}
+}
+func TestMailGet_HasFormatFlag(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "mail:get", wantArgs: true, wantFlag: "format"})
+}
+func TestMailLatest_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "mail:latest", wantFlag: "to"})
+}
+func TestMailWait_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "mail:wait", wantFlag: "timeout"})
+}
+func TestMailLinks_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "mail:links", wantArgs: true})
+}
+func TestMailAttachments_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "mail:attachments", wantArgs: true})
+}
+func TestMailAttachment_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "mail:attachment", wantArgs: true, wantFlag: "out"})
+}
 
 // ---------------------------------------------------------------------------
 // php

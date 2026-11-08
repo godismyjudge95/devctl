@@ -299,16 +299,25 @@ type MailMessage struct {
 }
 
 type MailMessageDetail struct {
-	ID      string        `json:"ID"`
-	Read    bool          `json:"Read"`
-	From    MailAddress   `json:"From"`
-	To      []MailAddress `json:"To"`
-	Cc      []MailAddress `json:"Cc"`
-	Subject string        `json:"Subject"`
-	Created string        `json:"Created"`
-	Size    int64         `json:"Size"`
-	Text    string        `json:"Text"`
-	HTML    string        `json:"HTML"`
+	ID          string           `json:"ID"`
+	Read        bool             `json:"Read"`
+	From        MailAddress      `json:"From"`
+	To          []MailAddress    `json:"To"`
+	Cc          []MailAddress    `json:"Cc"`
+	Subject     string           `json:"Subject"`
+	Date        string           `json:"Date"`
+	Size        int64            `json:"Size"`
+	Text        string           `json:"Text"`
+	HTML        string           `json:"HTML"`
+	Attachments []MailAttachment `json:"Attachments"`
+	Inline      []MailAttachment `json:"Inline"`
+}
+
+type MailAttachment struct {
+	PartID      string `json:"PartID"`
+	FileName    string `json:"FileName"`
+	ContentType string `json:"ContentType"`
+	Size        int64  `json:"Size"`
 }
 
 type MailListResponse struct {
@@ -756,15 +765,30 @@ func (c *Client) TrustCA() (string, error) {
 	return out.Output, c.post("/api/tls/trust", nil, &out)
 }
 
-func (c *Client) ListMail(limit, start int) (MailListResponse, error) {
+// SearchMail lists messages newest first. An empty query lists all messages;
+// otherwise it uses Mailpit's search syntax (to:, from:, subject:).
+func (c *Client) SearchMail(query string, limit, start int) (MailListResponse, error) {
 	var out MailListResponse
 	path := fmt.Sprintf("/api/mail/api/v1/messages?limit=%d&start=%d", limit, start)
+	if query != "" {
+		path = fmt.Sprintf("/api/mail/api/v1/search?query=%s&limit=%d&start=%d", url.QueryEscape(query), limit, start)
+	}
 	return out, c.get(path, &out)
 }
 
 func (c *Client) GetMail(id string) (MailMessageDetail, error) {
 	var out MailMessageDetail
-	return out, c.get("/api/mail/api/v1/message/"+id, &out)
+	return out, c.get("/api/mail/api/v1/message/"+url.PathEscape(id), &out)
+}
+
+// GetMailRaw returns the full RFC 822 source of a message.
+func (c *Client) GetMailRaw(id string) (string, error) {
+	return c.getRaw("/api/mail/api/v1/message/" + url.PathEscape(id) + "/raw")
+}
+
+// GetMailPart returns the decoded bytes of one MIME part (an attachment).
+func (c *Client) GetMailPart(id, partID string) (string, error) {
+	return c.getRaw("/api/mail/api/v1/message/" + url.PathEscape(id) + "/part/" + url.PathEscape(partID))
 }
 
 func (c *Client) DeleteMail(ids []string) error {
