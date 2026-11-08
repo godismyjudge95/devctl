@@ -89,3 +89,52 @@ test.describe('config editor — PostgreSQL', () => {
     }
   })
 })
+
+test.describe('services settings — PHP version scope', () => {
+  type Directive = { scope: string, key: string, value: string }
+
+  test('version selector shows values that differ from all versions and saves only edited keys', async ({ page, request }) => {
+    const versions = await (await request.get('/api/php/versions')).json() as { version: string }[]
+    if (versions.length === 0) {
+      test.skip()
+      return
+    }
+    const ver = versions[0].version
+    const before = await (await request.get('/api/php/ini')).json() as Directive[]
+
+    try {
+      expect((await request.put('/api/php/settings', { data: { memory_limit: '300M' } })).ok()).toBeTruthy()
+      expect((await request.put(`/api/php/settings?version=${ver}`, { data: { memory_limit: '400M' } })).ok()).toBeTruthy()
+
+      await page.goto(`/services/php-fpm-${ver}/settings`)
+      await expect(page.locator('#php_memory_limit')).toHaveValue('300M', { timeout: 10_000 })
+
+      await page.locator('#php_scope').click()
+      await page.getByRole('option', { name: `PHP ${ver}` }).click()
+      await expect(page.locator('#php_memory_limit')).toHaveValue('400M')
+      await expect(page.getByText('Differs from all versions (300M).')).toBeVisible()
+
+      await page.getByRole('button', { name: 'Use all-versions value' }).click()
+      await expect(page.locator('#php_memory_limit')).toHaveValue('300M')
+      await expect(page.getByText('Differs from all versions (300M).')).toHaveCount(0)
+
+      await page.locator('#php_max_exec').fill('55')
+      await page.getByRole('button', { name: 'Save & Restart' }).click()
+      await expect(page.getByRole('button', { name: 'Save & Restart' })).toBeEnabled({ timeout: 10_000 })
+
+      await expect.poll(async () => {
+        const ds = await (await request.get(`/api/php/ini?scope=${ver}`)).json() as Directive[]
+        return ds.map(d => `${d.key}=${d.value}`).join(',')
+      }).toBe('max_execution_time=55')
+    } finally {
+      const after = await (await request.get('/api/php/ini')).json() as Directive[]
+      const same = (a: Directive, b: Directive) => a.scope === b.scope && a.key === b.key && a.value === b.value
+      for (const d of after) {
+        if (!before.some(b => same(b, d))) await request.delete(`/api/php/ini/${d.scope}/${d.key}`)
+      }
+      for (const d of before) {
+        if (!after.some(a => same(a, d))) await request.put(`/api/php/ini/${d.scope}/${d.key}`, { data: { value: d.value } })
+      }
+    }
+  })
+})

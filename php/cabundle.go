@@ -154,6 +154,7 @@ func migrateCAFile(iniPath, bundlePath string) error {
 	if bundlePath == "" {
 		return nil
 	}
+	defer LockIni()()
 	data, err := os.ReadFile(iniPath)
 	if os.IsNotExist(err) {
 		return nil
@@ -170,14 +171,19 @@ func migrateCAFile(iniPath, bundlePath string) error {
 	return os.WriteFile(iniPath, []byte(updated2), 0644)
 }
 
-// setIniKey updates every uncommented assignment of key, or appends the key
-// when it is absent. Commented template lines are left as-is.
+// setIniKey updates every uncommented assignment of key outside the devctl
+// managed block, or adds the key when there is none. Commented template lines
+// and the managed block are left as-is.
 func setIniKey(content, key, value string) (string, bool) {
 	line := key + " = " + value
 	lines := strings.Split(content, "\n")
+	begin, end := managedBlockRange(lines)
 	found := false
 	changed := false
 	for i, l := range lines {
+		if i >= begin && i <= end {
+			continue
+		}
 		trimmed := strings.TrimSpace(l)
 		if trimmed == "" || strings.HasPrefix(trimmed, ";") {
 			continue
@@ -196,12 +202,9 @@ func setIniKey(content, key, value string) (string, bool) {
 		lines[i] = line
 		changed = true
 	}
-	if found {
-		return strings.Join(lines, "\n"), changed
+	if !found {
+		lines = appendOutsideBlock(lines, line)
+		changed = true
 	}
-	out := content
-	if out != "" && !strings.HasSuffix(out, "\n") {
-		out += "\n"
-	}
-	return out + line + "\n", true
+	return strings.Join(lines, "\n"), changed
 }

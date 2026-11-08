@@ -113,7 +113,14 @@ func TestMailClear_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "mai
 func TestPHPVersions_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "php:versions"}) }
 func TestPHPSettings_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "php:settings"}) }
 func TestPHPSet_IsRegistered(t *testing.T) {
-	assertCmd(t, cmdCheck{name: "php:set", wantArgs: true})
+	assertCmd(t, cmdCheck{name: "php:set", wantArgs: true, wantFlag: "version"})
+}
+func TestPHPIniList_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "php:ini:list"}) }
+func TestPHPIniSet_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "php:ini:set", wantArgs: true})
+}
+func TestPHPIniUnset_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "php:ini:unset", wantArgs: true})
 }
 
 // ---------------------------------------------------------------------------

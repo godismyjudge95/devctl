@@ -198,6 +198,11 @@ func run() error {
 			}
 		}
 	}
+	// Before the first FPM start, so a regenerated php.ini gets its managed
+	// directives back before any pool reads it.
+	if err := api.SyncPHPIni(ctx, queries, cfg.ServerRoot); err != nil {
+		log.Printf("php: sync managed ini: %v", err)
+	}
 	done()
 
 	// --- Service config migration ---

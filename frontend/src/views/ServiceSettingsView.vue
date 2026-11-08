@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Loader2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -7,14 +7,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
   getServiceSettings, putServiceSettings,
   detectDNSIP, setupSystemDNS, teardownSystemDNS,
+  getPHPVersions, getPHPSettings, setPHPSettings, unsetPHPIni,
 } from '@/lib/api'
 import type {
   MailpitServiceSettings,
   MySQLServiceSettings,
   MeilisearchServiceSettings,
   PHPSettings,
+  PHPSettingsView,
   DNSServiceSettings,
   PostgresServiceSettings,
   PostgresExtensionStatus,
@@ -54,10 +59,18 @@ const mailpitHttpPort = ref('')
 const mailpitSmtpPort = ref('')
 const mysqlPort = ref('')
 const mysqlBindAddress = ref('')
-const phpMemoryLimit = ref('')
-const phpUploadMaxFilesize = ref('')
-const phpPostMaxSize = ref('')
-const phpMaxExecutionTime = ref('')
+type PHPSettingKey = keyof PHPSettings
+const phpFields: { key: PHPSettingKey, id: string, placeholder: string }[] = [
+  { key: 'memory_limit', id: 'php_memory_limit', placeholder: '256M' },
+  { key: 'upload_max_filesize', id: 'php_upload_max', placeholder: '128M' },
+  { key: 'post_max_size', id: 'php_post_max', placeholder: '128M' },
+  { key: 'max_execution_time', id: 'php_max_exec', placeholder: '120' },
+]
+const phpScope = ref('all')
+const phpVersions = ref<string[]>([])
+const phpForm = ref<PHPSettings>({ memory_limit: '', upload_max_filesize: '', post_max_size: '', max_execution_time: '' })
+const phpLoaded = ref<PHPSettingsView | null>(null)
+const phpGlobal = ref<PHPSettingsView | null>(null)
 const meilisearchEnv = ref('')
 const meilisearchArgs = ref('')
 const dnsPort = ref('')
@@ -68,9 +81,51 @@ const dnsDetecting = ref(false)
 const dnsSetupLoading = ref(false)
 const postgresExtensions = ref<PostgresExtensionStatus[]>([])
 
+async function loadPHPSettings() {
+  const scope = phpScope.value
+  const [global, current] = await Promise.all([
+    getPHPSettings(),
+    scope === 'all' ? Promise.resolve(null) : getPHPSettings(scope),
+  ])
+  const view = current ?? global
+  phpGlobal.value = global
+  phpLoaded.value = view
+  phpForm.value = Object.fromEntries(phpFields.map(f => [f.key, view[f.key]])) as unknown as PHPSettings
+}
+
+function phpOverridden(key: PHPSettingKey) {
+  return phpScope.value !== 'all' && (phpLoaded.value?.overrides ?? []).includes(key)
+}
+
+function phpHint(key: PHPSettingKey) {
+  if (phpScope.value === 'all' || !phpLoaded.value || !phpGlobal.value) return undefined
+  if (phpLoaded.value[key] !== phpGlobal.value[key]) return `Differs from all versions (${phpGlobal.value[key]}).`
+  if (phpOverridden(key)) return 'Set for this version.'
+  return undefined
+}
+
+async function resetPHPSetting(key: PHPSettingKey) {
+  try {
+    await unsetPHPIni(phpScope.value, key)
+    await loadPHPSettings()
+    toast.success(`${key} now uses the all-versions value`)
+  } catch (e: any) {
+    toast.error('Failed to reset setting', { description: e.message })
+  }
+}
+
+watch(phpScope, () => {
+  loadPHPSettings().catch((e: any) => toast.error('Failed to load settings', { description: e.message }))
+})
+
 async function loadSettings() {
   loading.value = true
   try {
+    if (isPHPFPM(serviceId.value)) {
+      phpVersions.value = (await getPHPVersions()).map(v => v.version)
+      await loadPHPSettings()
+      return
+    }
     const data = await getServiceSettings(serviceId.value)
     if (isMailpit(serviceId.value)) {
       const mp = data as MailpitServiceSettings
@@ -84,12 +139,6 @@ async function loadSettings() {
       const meili = data as MeilisearchServiceSettings
       meilisearchEnv.value = meili.env
       meilisearchArgs.value = meili.args
-    } else if (isPHPFPM(serviceId.value)) {
-      const php = data as PHPSettings
-      phpMemoryLimit.value = php.memory_limit
-      phpUploadMaxFilesize.value = php.upload_max_filesize
-      phpPostMaxSize.value = php.post_max_size
-      phpMaxExecutionTime.value = php.max_execution_time
     } else if (isDNS(serviceId.value)) {
       const d = data as DNSServiceSettings
       dnsPort.value = d.port
@@ -130,13 +179,20 @@ async function saveSettings() {
       })
       toast.success('Meilisearch settings saved — restarting…')
     } else if (isPHPFPM(id)) {
-      await putServiceSettings(id, {
-        memory_limit: phpMemoryLimit.value,
-        upload_max_filesize: phpUploadMaxFilesize.value,
-        post_max_size: phpPostMaxSize.value,
-        max_execution_time: phpMaxExecutionTime.value,
-      })
-      toast.success('PHP settings saved — restarting FPM…')
+      // Send only edited keys so untouched ones keep following their source.
+      const changed = Object.fromEntries(
+        phpFields
+          .filter(f => phpForm.value[f.key] !== phpLoaded.value?.[f.key])
+          .map(f => [f.key, phpForm.value[f.key]]),
+      ) as Partial<PHPSettings>
+      if (Object.keys(changed).length === 0) {
+        toast.info('No changes to save')
+        return
+      }
+      const scope = phpScope.value
+      await setPHPSettings(changed, scope === 'all' ? undefined : scope)
+      await loadPHPSettings()
+      toast.success(scope === 'all' ? 'PHP settings saved for all versions' : `PHP ${scope} settings saved`)
     } else if (isDNS(id)) {
       await putServiceSettings(id, {
         port: dnsPort.value,
@@ -247,19 +303,26 @@ onMounted(loadSettings)
     </Surface>
 
     <Surface v-else-if="isPHPFPM(serviceId)">
-      <SectionHeader title="php.ini" description="PHP-FPM restarts when saved." />
+      <SectionHeader title="php.ini" description="Running PHP-FPM pools restart when saved." />
       <div class="px-4 pb-1 sm:px-5">
-        <SettingRow label="memory_limit" for="php_memory_limit">
-          <Input id="php_memory_limit" v-model="phpMemoryLimit" class="font-mono sm:max-w-xs" placeholder="256M" />
+        <SettingRow label="Applies to" hint="A version value wins over the all-versions value." for="php_scope">
+          <Select v-model="phpScope">
+            <SelectTrigger id="php_scope" class="w-full sm:w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All versions</SelectItem>
+              <SelectItem v-for="ver in phpVersions" :key="ver" :value="ver">PHP {{ ver }}</SelectItem>
+            </SelectContent>
+          </Select>
         </SettingRow>
-        <SettingRow label="upload_max_filesize" for="php_upload_max">
-          <Input id="php_upload_max" v-model="phpUploadMaxFilesize" class="font-mono sm:max-w-xs" placeholder="128M" />
-        </SettingRow>
-        <SettingRow label="post_max_size" for="php_post_max">
-          <Input id="php_post_max" v-model="phpPostMaxSize" class="font-mono sm:max-w-xs" placeholder="128M" />
-        </SettingRow>
-        <SettingRow label="max_execution_time" for="php_max_exec">
-          <Input id="php_max_exec" v-model="phpMaxExecutionTime" class="font-mono sm:max-w-xs" placeholder="120" />
+        <SettingRow v-for="f in phpFields" :key="f.key" :label="f.key" :hint="phpHint(f.key)" :for="f.id">
+          <div class="flex flex-wrap items-center gap-2">
+            <Input :id="f.id" v-model="phpForm[f.key]" class="font-mono sm:max-w-xs" :placeholder="f.placeholder" />
+            <Button v-if="phpOverridden(f.key)" variant="outline" size="sm" @click="resetPHPSetting(f.key)">
+              Use all-versions value
+            </Button>
+          </div>
         </SettingRow>
       </div>
     </Surface>

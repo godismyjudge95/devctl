@@ -10,6 +10,7 @@
 - Databases: **Import SQL…** and **Export database…** on the MySQL and PostgreSQL database context menu. Import streams a `.sql` or `.sql.gz` file to `mysql` / `psql` with upload progress, can create the target database, and shows engine errors in the dialog. Export downloads a full `mysqldump` / `pg_dump`.
 - CLI: `db:*` commands. `db:list`, `db:create`, `db:drop` (asks first, `--force` for scripts), `db:duplicate`, `db:import` (file or stdin, `--create`), `db:export` (file or stdout), `db:query` (table or `--json`), and `db:connection` (the site database and URL from its `.env`). In a site directory, engine and name default to `DB_CONNECTION` and `DB_DATABASE`.
 - The config editor now opens PostgreSQL's `postgresql.conf` and `pg_hba.conf` (two tabs). Save & Restart writes the file in `{serverRoot}/postgres/data/` and restarts PostgreSQL.
+- PHP ini settings for each version. The PHP settings panel has a version selector (All versions / 8.3 / 8.4 …) and shows which values differ from all versions. `PUT /api/php/settings?version=8.4` and `devctl php:set memory_limit=1G --version=8.4` set one version. `devctl php:ini:set <all|version> <key> <value>`, `php:ini:unset`, and `php:ini:list` manage any php.ini directive. devctl writes these values in a managed block at the end of each `php.ini`, so your edits elsewhere in the file stay. Saving now restarts the running PHP-FPM pools it affects.
 
 ## v0.18.1 — 2026-10-09
 

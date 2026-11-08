@@ -439,9 +439,20 @@ export const stopPHPVersion = (ver: string) =>
   request<void>('POST', `/api/php/versions/${ver}/stop`)
 export const restartPHPVersion = (ver: string) =>
   request<void>('POST', `/api/php/versions/${ver}/restart`)
-export const getPHPSettings = () => request<PHPSettings>('GET', '/api/php/settings')
-export const setPHPSettings = (data: PHPSettings) =>
-  request<PHPSettings>('PUT', '/api/php/settings', data)
+// scope is 'all' or a PHP version; overrides lists the keys set in that scope.
+export interface PHPSettingsView extends PHPSettings {
+  scope: string
+  overrides: string[]
+}
+
+const phpSettingsPath = (version?: string) =>
+  version ? `/api/php/settings?version=${encodeURIComponent(version)}` : '/api/php/settings'
+export const getPHPSettings = (version?: string) =>
+  request<PHPSettingsView>('GET', phpSettingsPath(version))
+export const setPHPSettings = (data: Partial<PHPSettings>, version?: string) =>
+  request<PHPSettingsView>('PUT', phpSettingsPath(version), data)
+export const unsetPHPIni = (scope: string, key: string) =>
+  request<void>('DELETE', `/api/php/ini/${encodeURIComponent(scope)}/${encodeURIComponent(key)}`)
 
 // --- TLS ---
 export const getTLSCertURL = () => '/api/tls/cert'

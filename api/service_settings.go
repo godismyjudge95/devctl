@@ -223,25 +223,24 @@ func (s *Server) handlePutServiceSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Kept for API compatibility: saves for all versions, like PUT /api/php/settings.
 	if strings.HasPrefix(id, "php-fpm-") {
-		ver := strings.TrimPrefix(id, "php-fpm-")
 		var settings php.GlobalSettings
 		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
 			writeError(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		errs := php.ApplySettings(r.Context(), settings, s.serverRoot)
-		if len(errs) > 0 {
-			msgs := make([]string, len(errs))
-			for i, e := range errs {
-				msgs[i] = e.Error()
+		kv := settings.Values()
+		for k, v := range kv {
+			if err := php.ValidateDirective(k, v); err != nil {
+				writeError(w, err.Error(), http.StatusBadRequest)
+				return
 			}
-			writeError(w, strings.Join(msgs, "; "), http.StatusInternalServerError)
+		}
+		if err := s.setPHPIniDirectives(r.Context(), php.GlobalScope, kv); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// Restart this specific FPM version.
-		def := s.phpFPMServiceDef(ver)
-		_ = s.supervisor.Restart(def)
 		writeJSON(w, map[string]string{"status": "ok"})
 		return
 	}
@@ -417,7 +416,10 @@ func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) 
 		writeError(w, fmt.Sprintf("service %q does not support config file %q", id, file), http.StatusBadRequest)
 		return
 	}
-	if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
+	unlock := php.LockIni()
+	err := os.WriteFile(path, []byte(body.Content), 0644)
+	unlock()
+	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

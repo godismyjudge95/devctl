@@ -365,7 +365,9 @@ On first install, devctl creates a `php.ini` based on the full upstream `php.ini
 
 The `php.ini` is user-editable and never overwritten on restart. To regenerate it with updated defaults, delete the file and restart devctl.
 
-The **Global PHP Settings** panel in the dashboard patches `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time` across **all installed PHP versions** at once.
+The **PHP settings** panel in the dashboard edits `memory_limit`, `upload_max_filesize`, `post_max_size`, and `max_execution_time`. Its version selector chooses **All versions** or one version (8.3, 8.4, …). A version value wins over the all-versions value, and the panel marks each value that differs from all versions. Saving restarts the running PHP-FPM pools it affects.
+
+Any other php.ini directive can be set from the CLI with `devctl php:ini:set <all|version> <key> <value>`. devctl stores these values in its database and writes them in a managed block at the end of each `php.ini` (last assignment wins). Edits elsewhere in `php.ini` stay. Do not edit inside the block, because devctl rewrites it.
 
 ### Config editor
 
@@ -703,6 +705,7 @@ devctl php:settings               # show PHP ini settings
 devctl php:set memory_limit=512M  # update a PHP ini setting
 devctl db:connection              # DB settings and URL of the site in the cwd
 devctl db:export > dump.sql       # dump the site database (from its .env)
+devctl php:ini:set 8.4 opcache.jit tracing  # set any php.ini directive for one version
 devctl dns:status                 # check systemd-resolved DNS setup
 devctl dumps:list                 # list recent php_dd() dumps
 devctl spx:profiles               # list recent SPX profiler captures
@@ -748,8 +751,11 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `helpers:update <id>` | Update a helper to the latest version |
 | | `helpers:uninstall <id>` | Remove an installed helper |
 | `php` | `php:versions` | List installed PHP versions and their FPM status |
-| | `php:settings` | Show current PHP ini settings (applies to all versions) |
-| | `php:set <key=value>...` | Update PHP ini settings |
+| | `php:settings [all\|<version>] [--version=<ver>]` | Show PHP ini settings for all versions or one version |
+| | `php:set <key=value>... [--version=<ver>]` | Update PHP ini settings for all versions or one version |
+| | `php:ini:list [all\|<version>]` | List the php.ini directives devctl manages |
+| | `php:ini:set <all\|version> <key> <value>` | Set a php.ini directive for all versions or one version |
+| | `php:ini:unset <all\|version> <key>` | Remove a php.ini directive that devctl manages |
 | `postgres` | `postgres:extensions` | List managed PostgreSQL extensions and status |
 | | `postgres:extensions:ensure` | Install missing extension files and wire SQL objects |
 | `db` | `db:list [engine]` | List databases on one engine, or on every running engine |

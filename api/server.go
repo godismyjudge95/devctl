@@ -178,6 +178,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/php/versions/{ver}/restart", s.handlePHPFPMRestart)
 	s.mux.HandleFunc("GET /api/php/settings", s.handleGetPHPSettings)
 	s.mux.HandleFunc("PUT /api/php/settings", s.handleSetPHPSettings)
+	s.mux.HandleFunc("GET /api/php/ini", s.handleListPHPIni)
+	s.mux.HandleFunc("PUT /api/php/ini/{scope}/{key}", s.handleSetPHPIni)
+	s.mux.HandleFunc("DELETE /api/php/ini/{scope}/{key}", s.handleUnsetPHPIni)
 	s.mux.HandleFunc("GET /api/php/versions/{ver}/config/{file}", s.handleGetPHPConfig)
 	s.mux.HandleFunc("PUT /api/php/versions/{ver}/config/{file}", s.handleSetPHPConfig)
 

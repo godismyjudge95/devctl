@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/services"
@@ -49,6 +48,9 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 	if err := php.Install(r.Context(), ver, s.serverRoot, s.siteUser, s.siteHome); err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if err := s.writePHPIni(r.Context(), ver, false); err != nil {
+		log.Printf("php: write managed ini for %s: %v", ver, err)
 	}
 
 	// Register a supervised definition and start FPM for the new version.
@@ -129,47 +131,6 @@ func (s *Server) handlePHPFPMRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleGetPHPSettings(w http.ResponseWriter, r *http.Request) {
-	versions, err := php.InstalledVersions(s.serverRoot)
-	if err != nil || len(versions) == 0 {
-		// Return defaults if no PHP installed.
-		writeJSON(w, php.GlobalSettings{
-			UploadMaxFilesize: "128M",
-			MemoryLimit:       "256M",
-			MaxExecutionTime:  "120",
-			PostMaxSize:       "128M",
-		})
-		return
-	}
-
-	settings, err := php.GetSettings(versions[0].Version, s.serverRoot)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, settings)
-}
-
-func (s *Server) handleSetPHPSettings(w http.ResponseWriter, r *http.Request) {
-	var settings php.GlobalSettings
-	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
-		writeError(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	errs := php.ApplySettings(r.Context(), settings, s.serverRoot)
-	if len(errs) > 0 {
-		msgs := make([]string, len(errs))
-		for i, e := range errs {
-			msgs[i] = e.Error()
-		}
-		writeError(w, strings.Join(msgs, "; "), http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, settings)
 }
 
 // refreshPHPCABundle writes the combined CA bundle (OS CAs + Caddy local
@@ -277,7 +238,10 @@ func (s *Server) handleSetPHPConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if err := os.WriteFile(path, []byte(body.Content), 0644); err != nil {
+	unlock := php.LockIni()
+	err := os.WriteFile(path, []byte(body.Content), 0644)
+	unlock()
+	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -1,7 +1,6 @@
 package php
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"fmt"
@@ -30,7 +29,7 @@ func InstallPrepend(serverRoot string) error {
 	return os.WriteFile(p, prependPHP, 0644)
 }
 
-// GlobalSettings are the php.ini keys we expose for editing.
+// GlobalSettings are the php.ini keys the PHP settings panel and php:set edit.
 type GlobalSettings struct {
 	UploadMaxFilesize string `json:"upload_max_filesize"`
 	MemoryLimit       string `json:"memory_limit"`
@@ -38,34 +37,65 @@ type GlobalSettings struct {
 	PostMaxSize       string `json:"post_max_size"`
 }
 
-// GetSettings reads the global settings from the first installed FPM php.ini.
-func GetSettings(ver, serverRoot string) (GlobalSettings, error) {
-	iniPath := fpmIniPath(ver, serverRoot)
-	return readIni(iniPath)
+// SettingKeys are the php.ini keys of GlobalSettings.
+var SettingKeys = []string{"memory_limit", "upload_max_filesize", "post_max_size", "max_execution_time"}
+
+func (g *GlobalSettings) fields() map[string]*string {
+	return map[string]*string{
+		"upload_max_filesize": &g.UploadMaxFilesize,
+		"memory_limit":        &g.MemoryLimit,
+		"max_execution_time":  &g.MaxExecutionTime,
+		"post_max_size":       &g.PostMaxSize,
+	}
 }
 
-// ApplySettings writes the given settings to all installed PHP-FPM versions.
-// Callers should restart PHP-FPM processes via the supervisor to apply changes.
-// This is a best-effort operation — errors are collected but all versions are attempted.
-func ApplySettings(ctx context.Context, s GlobalSettings, serverRoot string) []error {
-	versions, err := InstalledVersions(serverRoot)
-	if err != nil {
-		return []error{fmt.Errorf("list versions: %w", err)}
-	}
-
-	var errs []error
-	for _, v := range versions {
-		if err := writeIni(fpmIniPath(v.Version, serverRoot), s); err != nil {
-			errs = append(errs, fmt.Errorf("write ini for %s: %w", v.Version, err))
+// Values returns the non-empty settings keyed by php.ini name.
+func (g GlobalSettings) Values() map[string]string {
+	out := map[string]string{}
+	for k, p := range g.fields() {
+		if *p != "" {
+			out[k] = *p
 		}
 	}
-	return errs
+	return out
+}
+
+// Overlay sets every GlobalSettings key present in directives.
+func (g *GlobalSettings) Overlay(directives map[string]string) {
+	for k, p := range g.fields() {
+		if v, ok := directives[k]; ok {
+			*p = v
+		}
+	}
+}
+
+// GetSettings reads the effective settings from the FPM php.ini of ver,
+// including the devctl managed block.
+func GetSettings(ver, serverRoot string) (GlobalSettings, error) {
+	data, err := os.ReadFile(fpmIniPath(ver, serverRoot))
+	if err != nil {
+		return GlobalSettings{}, err
+	}
+	return parseIniSettings(string(data)), nil
+}
+
+// BaseSettings reads the settings from the FPM php.ini of ver without the
+// devctl managed block, i.e. the values PHP falls back to when no directive
+// is set.
+func BaseSettings(ver, serverRoot string) (GlobalSettings, error) {
+	data, err := os.ReadFile(fpmIniPath(ver, serverRoot))
+	if err != nil {
+		return GlobalSettings{}, err
+	}
+	rest, _ := stripManagedBlock(string(data))
+	return parseIniSettings(rest), nil
 }
 
 // ConfigurePrepend writes auto_prepend_file into the FPM php.ini for the
 // given version. The FPM process must be restarted by the caller (via the
 // supervisor) to pick up the new setting.
 func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
+	defer LockIni()()
 	path := fpmIniPath(ver, serverRoot)
 	input, err := os.ReadFile(path)
 	if err != nil {
@@ -75,8 +105,12 @@ func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
 	const key = "auto_prepend_file"
 	line := key + " = " + paths.PrependPath(serverRoot)
 	lines := strings.Split(string(input), "\n")
+	begin, end := managedBlockRange(lines)
 	found := false
 	for i, l := range lines {
+		if i >= begin && i <= end {
+			continue
+		}
 		trimmed := strings.TrimSpace(l)
 		// Match both commented and uncommented variants.
 		if strings.HasPrefix(strings.TrimLeft(trimmed, ";"), key) {
@@ -86,7 +120,7 @@ func ConfigurePrepend(ctx context.Context, ver, serverRoot string) error {
 		}
 	}
 	if !found {
-		lines = append(lines, line)
+		lines = appendOutsideBlock(lines, line)
 	}
 
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644); err != nil {
@@ -114,8 +148,8 @@ func SPXDataDir(ver, serverRoot string) string {
 //     order; the last assignment wins, so our overrides take effect even
 //     though the base file sets the same keys earlier.
 //   - If the file already exists it is left untouched — the user may have
-//     customised it. Only the GlobalSettings keys (upload limits, memory
-//     limit, etc.) are patched in-place by ApplySettings / writeIni.
+//     customised it. devctl-owned directives (php:set, php:ini:set) live in
+//     a managed block at the end, written by WriteManagedBlock.
 //     openssl.cafile and curl.cainfo are also patched so PHP trusts Caddy.
 //
 // php-fpm.conf is always regenerated because it contains runtime paths
@@ -203,9 +237,9 @@ curl.cainfo = %s
 ; devctl overrides for PHP %s
 ; These settings are appended after the php.ini-development
 ; baseline above. Edit them here to customise your environment.
-; The GlobalSettings keys (upload_max_filesize, memory_limit,
-; max_execution_time, post_max_size) are also managed via the
-; devctl Settings UI — changes there patch these lines in-place.
+; Values set in the devctl PHP settings panel, devctl php:set or
+; devctl php:ini:set go in a managed block at the end of this file
+; and win over the lines here.
 ; ============================================================
 
 ; --- Resource limits (dev-friendly defaults) ---
@@ -309,29 +343,11 @@ func fpmIniPath(ver, serverRoot string) string {
 	return filepath.Join(PHPDir(ver, serverRoot), "php.ini")
 }
 
-func readIni(path string) (GlobalSettings, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return GlobalSettings{}, fmt.Errorf("open %s: %w", path, err)
-	}
-	defer f.Close()
-
-	keys := map[string]*string{
-		"upload_max_filesize": nil,
-		"memory_limit":        nil,
-		"max_execution_time":  nil,
-		"post_max_size":       nil,
-	}
-	// Pre-assign pointers.
+func parseIniSettings(content string) GlobalSettings {
 	var s GlobalSettings
-	keys["upload_max_filesize"] = &s.UploadMaxFilesize
-	keys["memory_limit"] = &s.MemoryLimit
-	keys["max_execution_time"] = &s.MaxExecutionTime
-	keys["post_max_size"] = &s.PostMaxSize
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	fields := s.fields()
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, ";") {
 			continue
 		}
@@ -339,45 +355,11 @@ func readIni(path string) (GlobalSettings, error) {
 		if len(parts) != 2 {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		if ptr, ok := keys[key]; ok && ptr != nil {
-			*ptr = val
+		if p, ok := fields[strings.TrimSpace(parts[0])]; ok {
+			*p = strings.TrimSpace(parts[1])
 		}
 	}
-	return s, scanner.Err()
-}
-
-func writeIni(path string, s GlobalSettings) error {
-	input, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-
-	updates := map[string]string{
-		"upload_max_filesize": s.UploadMaxFilesize,
-		"memory_limit":        s.MemoryLimit,
-		"max_execution_time":  s.MaxExecutionTime,
-		"post_max_size":       s.PostMaxSize,
-	}
-
-	lines := strings.Split(string(input), "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, ";") {
-			continue
-		}
-		parts := strings.SplitN(trimmed, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		if newVal, ok := updates[key]; ok && newVal != "" {
-			lines[i] = key + " = " + newVal
-		}
-	}
-
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+	return s
 }
 
 // migrateSpxKey ensures spx.http_key = dev in an existing php.ini.
@@ -385,6 +367,7 @@ func writeIni(path string, s GlobalSettings) error {
 // to empty. This restores the correct value on startup.
 // The function is a no-op when the file does not exist or the key is already set.
 func migrateSpxKey(path string) error {
+	defer LockIni()()
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil
@@ -393,8 +376,12 @@ func migrateSpxKey(path string) error {
 		return err
 	}
 	lines := strings.Split(string(data), "\n")
+	begin, end := managedBlockRange(lines)
 	changed := false
 	for i, line := range lines {
+		if i >= begin && i <= end {
+			continue
+		}
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, ";") {
 			continue

@@ -213,10 +213,18 @@ type PHPVersion struct {
 }
 
 type PHPSettings struct {
-	UploadMaxFilesize string `json:"upload_max_filesize"`
-	MemoryLimit       string `json:"memory_limit"`
-	MaxExecutionTime  string `json:"max_execution_time"`
-	PostMaxSize       string `json:"post_max_size"`
+	UploadMaxFilesize string   `json:"upload_max_filesize"`
+	MemoryLimit       string   `json:"memory_limit"`
+	MaxExecutionTime  string   `json:"max_execution_time"`
+	PostMaxSize       string   `json:"post_max_size"`
+	Scope             string   `json:"scope"`
+	Overrides         []string `json:"overrides"`
+}
+
+type PHPIniDirective struct {
+	Scope string `json:"scope"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type SPXProfile struct {
@@ -475,14 +483,43 @@ func (c *Client) ListPHPVersions() ([]PHPVersion, error) {
 	return out, c.get("/api/php/versions", &out)
 }
 
-func (c *Client) GetPHPSettings() (PHPSettings, error) {
-	var out PHPSettings
-	return out, c.get("/api/php/settings", &out)
+func phpSettingsPath(version string) string {
+	if version == "" {
+		return "/api/php/settings"
+	}
+	return "/api/php/settings?version=" + url.QueryEscape(version)
 }
 
-func (c *Client) SetPHPSettings(s PHPSettings) (PHPSettings, error) {
+// GetPHPSettings reads the settings for one PHP version, or for all versions
+// when version is "".
+func (c *Client) GetPHPSettings(version string) (PHPSettings, error) {
 	var out PHPSettings
-	return out, c.put("/api/php/settings", s, &out)
+	return out, c.get(phpSettingsPath(version), &out)
+}
+
+// SetPHPSettings stores only the keys in kv, so keys the user did not name
+// keep following their current source.
+func (c *Client) SetPHPSettings(version string, kv map[string]string) (PHPSettings, error) {
+	var out PHPSettings
+	return out, c.put(phpSettingsPath(version), kv, &out)
+}
+
+func (c *Client) ListPHPIni(scope string) ([]PHPIniDirective, error) {
+	var out []PHPIniDirective
+	path := "/api/php/ini"
+	if scope != "" {
+		path += "?scope=" + url.QueryEscape(scope)
+	}
+	return out, c.get(path, &out)
+}
+
+func (c *Client) SetPHPIni(scope, key, value string) (PHPIniDirective, error) {
+	var out PHPIniDirective
+	return out, c.put("/api/php/ini/"+url.PathEscape(scope)+"/"+url.PathEscape(key), map[string]string{"value": value}, &out)
+}
+
+func (c *Client) UnsetPHPIni(scope, key string) error {
+	return c.delete("/api/php/ini/" + url.PathEscape(scope) + "/" + url.PathEscape(key))
 }
 
 func (c *Client) EnableSPX(siteID string) error {

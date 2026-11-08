@@ -17,6 +17,12 @@ type Dump struct {
 	SiteDomain *string `db:"site_domain" json:"site_domain"`
 }
 
+type PhpIniDirective struct {
+	Scope string `db:"scope" json:"scope"`
+	Key   string `db:"key" json:"key"`
+	Value string `db:"value" json:"value"`
+}
+
 type Setting struct {
 	Key   string `db:"key" json:"key"`
 	Value string `db:"value" json:"value"`
