@@ -6,6 +6,7 @@
 - Fixed: macOS PostgreSQL now puts `psql` on PATH. The wrapper looked only for Percona's `psql.bin`; EDB ships `psql`.
 - PATH setup now rewrites leftover `export PATH` blocks in other shell files (for example `~/.profile` from an older sites directory).
 - Fixed: CLI command flags before a positional argument (`mail:list --limit=5`, `dumps:list --domain=…`) failed with "flag provided but not defined", and `--json` after a positional argument was ignored.
+- Fixed: the services list showed a newly installed PHP-FPM version as not installed until the next status poll.
 
 ## v0.18.1 — 2026-10-09
 

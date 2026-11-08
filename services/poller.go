@@ -75,6 +75,9 @@ func (p *Poller) CurrentStates() []ServiceState {
 				Status:         StatusUnknown,
 				Log:            def.Log,
 				Installable:    def.Installable,
+				// Same default as Manager.GetState: a non-installable def
+				// (a php-fpm-<ver> registered by PHP install) is installed.
+				Installed: !def.Installable,
 			})
 		}
 	}
