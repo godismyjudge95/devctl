@@ -119,7 +119,7 @@ PHP binaries use unique immutable tags such as `php-binaries-20260422.1`. Publis
 **Compile 8.x locally first.** GitHub Actions is a terrible place to iterate on static-php-cli failures. Prove the current extension list before tagging:
 
 ```sh
-scripts/local-build-php8.sh 8.4          # Linux (Docker / Alpine)
+scripts/local-build-php8.sh 8.4          # Linux (Docker / ubuntu:24.04, glibc, like CI)
 scripts/local-build-php8-macos.sh 8.4    # macOS Apple silicon (native ./bin/spc)
 ```
 
@@ -151,7 +151,7 @@ gh release create "$PHP_TAG" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`). It builds Linux 7.x plus Linux and macOS 8.0–8.5 in parallel (same custom 8.x extension set: mysqli/sodium/spx/pcov; 8.2+ also swoole). macOS 7.x is not built. macOS 8.x rows also build `xdebug.so` (`--build-shared=xdebug`, Xdebug pinned to 3.5.3 in `patch-spc-for-php8.sh`) and fail if it does not load into the built PHP. Linux PHP is static musl and cannot load it (see `docs/plans/xdebug-spike.md`). The job attaches the binaries plus `php-binaries.json`.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`). It builds Linux 7.x plus Linux and macOS 8.0–8.5 in parallel (same custom 8.x extension set: mysqli/sodium/spx/pcov; 8.2+ also swoole). macOS 7.x is not built. Every 8.x row also builds `xdebug.so` (`--build-shared=xdebug`, Xdebug pinned to 3.5.3 in `patch-spc-for-php8.sh`) and fails if it does not load into the built CLI and FPM. Linux 8.x rows run spc natively on `ubuntu-24.04` with `SPC_LIBC=glibc`: glibc and libstdc++ link dynamically, everything else statically, and the binaries need glibc 2.39 or newer (Ubuntu 24.04+, Debian 13+). The Linux rows fail if a binary needs a shared library other than glibc, libstdc++, libgcc_s, or zlib, and log the highest `GLIBC_` symbol version they need. Do not move the Linux rows to a newer runner without accepting a higher glibc floor. Linux 7.x stays static musl (spc 2.3.0, Alpine) without Xdebug. The job attaches the binaries plus `php-binaries.json`.
 
 ### 2.4 Verify
 
@@ -160,17 +160,17 @@ After the CI run completes, check the release page has the expected assets (mino
 php-7.0-cli-linux-x86_64 / php-7.0-fpm-linux-x86_64
 php-7.2-cli-linux-x86_64 / php-7.2-fpm-linux-x86_64
 php-7.4-cli-linux-x86_64 / php-7.4-fpm-linux-x86_64
-php-8.0-cli-linux-x86_64 / php-8.0-fpm-linux-x86_64
+php-8.0-cli-linux-x86_64 / php-8.0-fpm-linux-x86_64 / php-8.0-xdebug-linux-x86_64.so
 php-8.0-cli-macos-aarch64 / php-8.0-fpm-macos-aarch64 / php-8.0-xdebug-macos-aarch64.so
-php-8.1-cli-linux-x86_64 / php-8.1-fpm-linux-x86_64
+php-8.1-cli-linux-x86_64 / php-8.1-fpm-linux-x86_64 / php-8.1-xdebug-linux-x86_64.so
 php-8.1-cli-macos-aarch64 / php-8.1-fpm-macos-aarch64 / php-8.1-xdebug-macos-aarch64.so
-php-8.2-cli-linux-x86_64 / php-8.2-fpm-linux-x86_64
+php-8.2-cli-linux-x86_64 / php-8.2-fpm-linux-x86_64 / php-8.2-xdebug-linux-x86_64.so
 php-8.2-cli-macos-aarch64 / php-8.2-fpm-macos-aarch64 / php-8.2-xdebug-macos-aarch64.so
-php-8.3-cli-linux-x86_64 / php-8.3-fpm-linux-x86_64
+php-8.3-cli-linux-x86_64 / php-8.3-fpm-linux-x86_64 / php-8.3-xdebug-linux-x86_64.so
 php-8.3-cli-macos-aarch64 / php-8.3-fpm-macos-aarch64 / php-8.3-xdebug-macos-aarch64.so
-php-8.4-cli-linux-x86_64 / php-8.4-fpm-linux-x86_64
+php-8.4-cli-linux-x86_64 / php-8.4-fpm-linux-x86_64 / php-8.4-xdebug-linux-x86_64.so
 php-8.4-cli-macos-aarch64 / php-8.4-fpm-macos-aarch64 / php-8.4-xdebug-macos-aarch64.so
-php-8.5-cli-linux-x86_64 / php-8.5-fpm-linux-x86_64
+php-8.5-cli-linux-x86_64 / php-8.5-fpm-linux-x86_64 / php-8.5-xdebug-linux-x86_64.so
 php-8.5-cli-macos-aarch64 / php-8.5-fpm-macos-aarch64 / php-8.5-xdebug-macos-aarch64.so
 php-binaries.json
 ```

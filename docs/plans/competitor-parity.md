@@ -4,7 +4,7 @@ Status: approved by the owner on 2026-11-06. Phases 0 to 3 are done on `main` (2
 
 Open after the build:
 
-- 2.2 Xdebug works on macOS only, and only after the next PHP binaries release (`xdebug-spike.md`). Linux static musl builds cannot load it. A fix changes every Linux PHP binary.
+- 2.2 Xdebug ships with the next PHP binaries release (`xdebug-spike.md`). Linux PHP 8.x binaries now link against glibc (Ubuntu 24.04+ / Debian 13+, glibc 2.38 symbols) so they can load `xdebug.so`. `scripts/prove-glibc-xdebug.sh` passed on arm64 Ubuntu 26.04.
 - 3.1 The request inspector covers PHP 8.1+ (8.2+ for apps without Laravel), with no C extension (`request-inspector-spike.md`).
 
 ## Goal

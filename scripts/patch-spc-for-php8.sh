@@ -14,8 +14,8 @@
 # pcov.enabled defaults to 0.
 #
 # xdebug: spc's "pie" source takes the first packagist version, which is now
-# 3.6.0alpha1 (PHP >= 8.2). Pin the 3.5.3 PECL release (PHP 8.0-8.5). macOS
-# builds it with --build-shared=xdebug. Static musl Linux cannot load it.
+# 3.6.0alpha1 (PHP >= 8.2). Pin the 3.5.3 PECL release (PHP 8.0-8.5). Every
+# 8.x row builds it with --build-shared=xdebug (Linux links glibc to load it).
 #
 # macos clang 21: Apple clang 21 (Xcode 26 / macos-26) defaults to C23. PHP
 # 8.0/8.1 libbcmath still uses K&R parameter lists, which C23 dropped. Append

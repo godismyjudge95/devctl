@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 # static-php-cli hits api.github.com for many optional deps (libcares, zlib, …).
-# Unauthenticated requests 403 under parallel matrix load; the Alpine container
-# forwards this into curl (see bin/spc-alpine-docker).
+# Unauthenticated requests 403 under parallel matrix load. Native spc reads it
+# from the environment; the legacy Alpine container forwards it into curl.
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -28,6 +28,9 @@ jobs:
   # plus ImageMagick 7.1.2-30 / imagick 3.8.1 via scripts/patch-spc-for-php80.sh.
   # Do not use --prefer-pre-built: those sqlite libs often lack
   # SQLITE_ENABLE_COLUMN_METADATA.
+  # Linux rows link glibc (and libstdc++) dynamically and everything else
+  # statically, so the binaries can load the xdebug.so built next to them.
+  # They need the glibc of the ubuntu-24.04 runner (2.39) or newer.
   # Prove 8.x compiles locally with scripts/local-build-php8.sh (Linux) or
   # scripts/local-build-php8-macos.sh (macOS) before tagging.
   package:
@@ -46,75 +49,63 @@ jobs:
           - minor: "8.0"
             patch: "8.0.30"
             build: compile
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: linux-x86_64
-            spc: ./bin/spc-alpine-docker
           - minor: "8.1"
             patch: "8.1.34"
             build: compile
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: linux-x86_64
-            spc: ./bin/spc-alpine-docker
           - minor: "8.2"
             patch: "8.2.32"
             build: compile
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: linux-x86_64
-            spc: ./bin/spc-alpine-docker
           - minor: "8.3"
             patch: "8.3.32"
             build: compile
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: linux-x86_64
-            spc: ./bin/spc-alpine-docker
           - minor: "8.4"
             patch: "8.4.23"
             build: compile
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: linux-x86_64
-            spc: ./bin/spc-alpine-docker
           - minor: "8.5"
             patch: "8.5.8"
             build: compile
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: linux-x86_64
-            spc: ./bin/spc-alpine-docker
           - minor: "8.0"
             patch: "8.0.30"
             build: compile
             os: macos-26
             platform: macos-aarch64
-            spc: ./bin/spc
           - minor: "8.1"
             patch: "8.1.34"
             build: compile
             os: macos-26
             platform: macos-aarch64
-            spc: ./bin/spc
           - minor: "8.2"
             patch: "8.2.32"
             build: compile
             os: macos-26
             platform: macos-aarch64
-            spc: ./bin/spc
           - minor: "8.3"
             patch: "8.3.32"
             build: compile
             os: macos-26
             platform: macos-aarch64
-            spc: ./bin/spc
           - minor: "8.4"
             patch: "8.4.23"
             build: compile
             os: macos-26
             platform: macos-aarch64
-            spc: ./bin/spc
           - minor: "8.5"
             patch: "8.5.8"
             build: compile
             os: macos-26
             platform: macos-aarch64
-            spc: ./bin/spc
 
     steps:
       - name: Download and repackage static-php.dev common (PHP 8.0)
@@ -197,8 +188,18 @@ jobs:
         if: matrix.build == 'compile' && runner.os == 'macOS'
         run: test "$(uname -m)" = "arm64"
 
-      - name: Setup PHP (macOS builder)
-        if: matrix.build == 'compile' && runner.os == 'macOS'
+      - name: Link Linux PHP against glibc
+        if: matrix.build == 'compile' && runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          # spc defaults Linux to static musl, and static musl cannot dlopen.
+          # SPC_LIBC=glibc selects spc's native gcc toolchain instead.
+          echo "SPC_LIBC=glibc" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends autoconf automake autopoint bison flex libtool re2c
+
+      - name: Setup PHP (spc runtime)
+        if: matrix.build == 'compile'
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
@@ -206,8 +207,8 @@ jobs:
           extensions: curl, openssl, mbstring
           ini-values: memory_limit=-1
 
-      - name: Install static-php-cli (macOS)
-        if: matrix.build == 'compile' && runner.os == 'macOS'
+      - name: Install static-php-cli
+        if: matrix.build == 'compile'
         working-directory: spc
         run: composer update --no-dev --classmap-authoritative --no-interaction --prefer-dist --no-plugins
 
@@ -246,7 +247,7 @@ jobs:
       - name: Check and fix build environment
         if: matrix.build == 'compile'
         working-directory: spc
-        run: ${{ matrix.spc }} doctor --auto-fix
+        run: ./bin/spc doctor --auto-fix
 
       - name: Download PHP sources and dependency tarballs
         if: matrix.build == 'compile'
@@ -257,14 +258,9 @@ jobs:
           if [ "${{ matrix.minor }}" = "8.0" ]; then
             IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
           fi
-          EXTS="${{ steps.exts.outputs.list }}"
-          # Static musl Linux cannot dlopen, so only macOS ships xdebug.so.
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            EXTS="${EXTS},xdebug"
-          fi
-          ${{ matrix.spc }} download \
+          ./bin/spc download \
             --with-php=${{ matrix.patch }} \
-            --for-extensions="$EXTS" \
+            --for-extensions="${{ steps.exts.outputs.list }},xdebug" \
             --ignore-cache-sources="$IGNORE_CACHE" \
             --retry=5
 
@@ -282,15 +278,11 @@ jobs:
         working-directory: spc
         run: |
           set -euo pipefail
-          SHARED=()
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            SHARED=(--build-shared=xdebug)
-          fi
-          ${{ matrix.spc }} build \
+          ./bin/spc build \
             ${{ steps.exts.outputs.list }} \
             --build-cli \
             --build-fpm \
-            "${SHARED[@]}" \
+            --build-shared=xdebug \
             --with-added-patch=config/spc-pcov-static.php
 
           mkdir -p ../tmp_dist ../tmp_meta
@@ -344,18 +336,32 @@ jobs:
             done
           fi
 
-          XDEBUG_FIELD=""
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            XDEBUG_ASSET="php-${{ matrix.minor }}-xdebug-${{ matrix.platform }}.so"
-            test -f buildroot/modules/xdebug.so
-            cp buildroot/modules/xdebug.so "../tmp_dist/${XDEBUG_ASSET}"
-            "$CLI" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -m | grep -ixq xdebug || {
-              echo "xdebug.so does not load into the built PHP" >&2
-              "$CLI" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -v >&2
+          XDEBUG_ASSET="php-${{ matrix.minor }}-xdebug-${{ matrix.platform }}.so"
+          test -f buildroot/modules/xdebug.so
+          cp buildroot/modules/xdebug.so "../tmp_dist/${XDEBUG_ASSET}"
+          FPM="../tmp_dist/php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"
+          for bin in "$CLI" "$FPM"; do
+            "$bin" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -m | grep -ixq xdebug || {
+              echo "xdebug.so does not load into $bin" >&2
+              "$bin" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -v >&2
               exit 1
             }
-            XDEBUG_FIELD=",
-            \"xdebug\": \"${XDEBUG_ASSET}\""
+          done
+
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            # Only glibc, libstdc++, and zlib may load at run time. These are on
+            # every Ubuntu and Debian install; anything else means a runner
+            # library leaked into the build.
+            for f in "$CLI" "$FPM" "../tmp_dist/${XDEBUG_ASSET}"; do
+              NEEDED=$(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+              echo "$f needs: $(echo "$NEEDED" | tr '\n' ' ')"
+              BAD=$(echo "$NEEDED" | grep -Ev '^(libc|libm|libdl|libpthread|librt|libresolv|libutil|libstdc\+\+|libgcc_s|libz)\.so\.[0-9]+$|^ld-linux-x86-64\.so\.2$' || true)
+              if [ -n "$BAD" ]; then
+                echo "unexpected shared library dependency in $f: $BAD" >&2
+                exit 1
+              fi
+            done
+            echo "requires $(objdump -T "$CLI" "$FPM" "../tmp_dist/${XDEBUG_ASSET}" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
           fi
 
           cat > "../tmp_meta/${{ matrix.minor }}-${{ matrix.platform }}.json" <<EOF
@@ -364,7 +370,8 @@ jobs:
             "patch": "${PHP_PATCH}",
             "platform": "${{ matrix.platform }}",
             "cli": "php-${{ matrix.minor }}-cli-${{ matrix.platform }}",
-            "fpm": "php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"${XDEBUG_FIELD}
+            "fpm": "php-${{ matrix.minor }}-fpm-${{ matrix.platform }}",
+            "xdebug": "${XDEBUG_ASSET}"
           }
           EOF
 

@@ -149,3 +149,31 @@ func TestReleaseManifest_ReadsXdebugAssetFromWorkflowJSON(t *testing.T) {
 		t.Errorf("linux assets = %+v ok=%v", a, ok)
 	}
 }
+
+func TestInstallXdebug_LinuxGlibcReleaseShipsXdebug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/php-binaries-20261201.1/php-8.4-xdebug-linux-x86_64.so" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("linux-xdebug-bytes"))
+	}))
+	defer srv.Close()
+	t.Setenv("DEVCTL_PHP_RELEASES_DOWNLOAD_BASE", srv.URL)
+
+	raw := `{"release_tag":"php-binaries-20261201.1","platform_assets":{"linux-x86_64":{"8.4":{"cli":"php-8.4-cli-linux-x86_64","fpm":"php-8.4-fpm-linux-x86_64","xdebug":"php-8.4-xdebug-linux-x86_64.so"}}}}`
+	var manifest ReleaseManifest
+	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := installXdebug(context.Background(), &manifest, "8.4", root, "linux-x86_64"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, XdebugPath("8.4", root)); got != "linux-xdebug-bytes" {
+		t.Errorf("xdebug.so = %q", got)
+	}
+	if st := XdebugStatusFor("8.4", root, nil); !st.Available {
+		t.Errorf("Xdebug not available after a Linux install that ships it: %+v", st)
+	}
+}

@@ -28,8 +28,8 @@ type XdebugStatus struct {
 	Mode      string `json:"mode"`
 }
 
-// XdebugPath is where a PHP build's shared Xdebug extension lives. Static
-// musl builds (Linux) cannot load it, so their releases do not ship it.
+// XdebugPath is where a PHP build's shared Xdebug extension lives. PHP 7.x
+// (static musl, no dlopen) and releases before Xdebug do not ship one.
 func XdebugPath(ver, serverRoot string) string {
 	return filepath.Join(PHPDir(ver, serverRoot), "xdebug.so")
 }

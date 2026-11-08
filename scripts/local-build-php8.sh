@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Local (Docker) mirror of the GHA `package` compile cells for PHP 8.0–8.5.
+# Local (Docker) mirror of the GHA `package` Linux compile cells for PHP 8.0–8.5.
 #
-# Purpose: prove the custom extension set (plus sodium, spx, and pcov) before
-# burning Actions minutes. GHA remains the publish path (release assets +
-# php-binaries.json).
+# Purpose: prove the custom extension set (plus sodium, spx, pcov, and the
+# shared xdebug.so) before burning Actions minutes. GHA remains the publish
+# path (release assets + php-binaries.json).
+#
+# Like CI, spc runs natively with SPC_LIBC=glibc, here inside an ubuntu:24.04
+# container (the CI runner's glibc). All commands run in the container as your
+# user, with WORKDIR mounted at the same path.
 #
 # PHP 8.0.30 compiles with scripts/patch-spc-for-php80.sh (older libxml2,
 # libxslt, ICU, ImageMagick 7.1.2-30, imagick 3.8.1). It omits protobuf
@@ -15,8 +19,10 @@
 #   - Never deletes the workdir or downloads cache unless you pass --wipe-build
 #     (which only removes spc build intermediates, not downloads/)
 #   - Never force-resets an existing git checkout
+#   - A workdir from the older Alpine (musl) builds needs --wipe-build once,
+#     and `sudo chown -R "$USER" WORKDIR` if Docker left root-owned files
 #
-# Prerequisites: docker (same as CI's spc-alpine-docker), git, bash
+# Prerequisites: docker, git, bash
 #
 # Usage:
 #   scripts/local-build-php8.sh 8.4
@@ -25,7 +31,7 @@
 #
 # Flags:
 #   --skip-download   reuse existing downloads/ (faster re-builds)
-#   --skip-doctor     skip spc-alpine-docker doctor
+#   --skip-doctor     skip spc doctor
 #   --wipe-build      remove buildroot/ source/ build intermediates before build
 #                     (keeps downloads/; refuses paths outside WORKDIR)
 #   --debug           pass --debug to spc (huge gcc logs; default off)
@@ -139,12 +145,13 @@ need_cmd() {
 
 need_cmd git
 
+DOCKER=(docker)
 if [[ "$DRY_RUN" -eq 0 ]]; then
   need_cmd docker
   if ! docker info >/dev/null 2>&1; then
     if sudo docker info >/dev/null 2>&1; then
-      export SPC_USE_SUDO=yes
-      echo "==> docker needs sudo; set SPC_USE_SUDO=yes"
+      DOCKER=(sudo docker)
+      echo "==> docker needs sudo"
     else
       echo "docker is not usable (start the daemon, or fix /var/run/docker.sock permissions)" >&2
       exit 1
@@ -189,6 +196,35 @@ fi
 
 cd "$SPC_DIR"
 
+SPC_IMAGE="devctl-spc-glibc:ubuntu-24.04"
+if ! "${DOCKER[@]}" image inspect "$SPC_IMAGE" >/dev/null 2>&1; then
+  echo "==> building $SPC_IMAGE (first time)"
+  "${DOCKER[@]}" build -t "$SPC_IMAGE" - <<'DOCKERFILE'
+FROM ubuntu:24.04
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    autoconf automake autopoint binutils bison bzip2 ca-certificates cmake curl \
+    flex g++ gcc git libtool make patch re2c tar unzip xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+DOCKERFILE
+fi
+
+box() {
+  "${DOCKER[@]}" run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
+    -e SPC_LIBC=glibc -e GITHUB_TOKEN \
+    -v "${WORKDIR}:${WORKDIR}" -w "$SPC_DIR" "$SPC_IMAGE" "$@"
+}
+
+spc() {
+  box ./bin/php bin/spc "$@"
+}
+
+if [[ ! -x bin/php || ! -f vendor/autoload.php ]]; then
+  echo "==> installing the spc PHP runtime and Composer deps (first time)"
+  run box sh bin/setup-runtime
+  run box ./bin/php bin/composer install --no-dev --classmap-authoritative --no-interaction --prefer-dist --no-plugins
+fi
+
 echo "==> patching static-php-cli for PHP 8.x (libaom pin, pcov static)"
 run bash "$PATCH_SCRIPT" .
 
@@ -198,8 +234,8 @@ if [[ "$MINOR" == "8.0" ]]; then
 fi
 
 if [[ "$SKIP_DOCTOR" -eq 0 ]]; then
-  echo "==> spc-alpine-docker doctor --auto-fix"
-  run ./bin/spc-alpine-docker doctor --auto-fix
+  echo "==> spc doctor --auto-fix"
+  run spc doctor --auto-fix
 else
   echo "==> skipping doctor (--skip-doctor)"
 fi
@@ -210,9 +246,9 @@ if [[ "$SKIP_DOWNLOAD" -eq 0 ]]; then
   if [[ "$MINOR" == "8.0" ]]; then
     IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
   fi
-  run ./bin/spc-alpine-docker download \
+  run spc download \
     --with-php="$PATCH" \
-    --for-extensions="$PHP8_EXTS" \
+    --for-extensions="${PHP8_EXTS},xdebug" \
     --ignore-cache-sources="$IGNORE_CACHE" \
     --retry=5
 else
@@ -246,27 +282,30 @@ if [[ "$WIPE_BUILD" -eq 1 ]]; then
 fi
 
 echo "==> building PHP $PATCH (cli + fpm)"
-BUILD_ARGS=("$PHP8_EXTS" --build-cli --build-fpm --with-added-patch=config/spc-pcov-static.php)
+BUILD_ARGS=("$PHP8_EXTS" --build-cli --build-fpm --build-shared=xdebug --with-added-patch=config/spc-pcov-static.php)
 if [[ "$DEBUG" -eq 1 ]]; then
   BUILD_ARGS+=(--debug)
 fi
-run ./bin/spc-alpine-docker build "${BUILD_ARGS[@]}"
+run spc build "${BUILD_ARGS[@]}"
 
 OUT_DIR="${WORKDIR}/dist"
 run mkdir -p "$OUT_DIR"
 
 CLI_OUT="${OUT_DIR}/php-${MINOR}-cli-linux-x86_64"
 FPM_OUT="${OUT_DIR}/php-${MINOR}-fpm-linux-x86_64"
+XDEBUG_OUT="${OUT_DIR}/php-${MINOR}-xdebug-linux-x86_64.so"
 
 test -x buildroot/bin/php
 test -x buildroot/bin/php-fpm
+test -f buildroot/modules/xdebug.so
 cp -f buildroot/bin/php "$CLI_OUT"
 cp -f buildroot/bin/php-fpm "$FPM_OUT"
+cp -f buildroot/modules/xdebug.so "$XDEBUG_OUT"
 chmod 755 "$CLI_OUT" "$FPM_OUT"
 
-echo "==> smoke test"
-"$CLI_OUT" -v
-PHP_PATCH_GOT="$("$CLI_OUT" -v | awk 'NR==1 {print $2}')"
+echo "==> smoke test (in the container, so the host glibc does not matter)"
+box "$CLI_OUT" -v
+PHP_PATCH_GOT="$(box "$CLI_OUT" -v | awk 'NR==1 {print $2}')"
 case "$PHP_PATCH_GOT" in
   "${MINOR}".*) ;;
   *)
@@ -275,7 +314,7 @@ case "$PHP_PATCH_GOT" in
     ;;
 esac
 
-MODS="$("$CLI_OUT" -m)"
+MODS="$(box "$CLI_OUT" -m)"
 # php -m uses canonical names (SPX, FFI); compare case-insensitively.
 for want in mysqli sodium spx ffi openssl; do
   echo "$MODS" | grep -ixq "$want" || {
@@ -299,9 +338,18 @@ if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
   }
 fi
 
+for bin in "$CLI_OUT" "$FPM_OUT"; do
+  box "$bin" -n -d zend_extension="$XDEBUG_OUT" -m | grep -ixq xdebug || {
+    echo "xdebug.so does not load into $bin" >&2
+    box "$bin" -n -d zend_extension="$XDEBUG_OUT" -v >&2
+    exit 1
+  }
+done
+
 echo
-echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx loaded)"
-echo "  cli: $CLI_OUT"
-echo "  fpm: $FPM_OUT"
+echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx loaded; xdebug.so loads)"
+echo "  cli:    $CLI_OUT"
+echo "  fpm:    $FPM_OUT"
+echo "  xdebug: $XDEBUG_OUT"
 echo
 echo "Tip: re-run with --wipe-build (and usually --skip-download) after a failed compile."

@@ -45,7 +45,7 @@ php8_exts_for() {
 # PHP 8.0 gen_stub (PHP-Parser 4.13) rejects `const` in stub files.
 # zstd.c and brotli.c already define arginfo inline for PHP < 8.2.
 # Drop the stub and leave an empty *_arginfo.h so make's %.c: %_arginfo.h
-# heuristic is satisfied without running gen_stub. CI alpine has `php` on
+# heuristic is satisfied without running gen_stub. CI has `php` on
 # PATH so make actually runs gen_stub; a missing php binary skips the rule.
 php8_neutralize_php80_stubs() {
   local downloads="${1:?php8_neutralize_php80_stubs: downloads dir required}"
@@ -56,7 +56,7 @@ php8_neutralize_php80_stubs() {
     stub="${dir}/${name}.stub.php"
     arginfo="${dir}/${name}_arginfo.h"
     if [[ -f "$stub" ]]; then
-      # spc-alpine-docker download writes these as root.
+      # Older Docker (Alpine) downloads wrote these as root.
       if [[ -w "$stub" ]]; then
         rm -f "$stub"
       else
