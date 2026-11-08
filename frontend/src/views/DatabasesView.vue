@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -34,10 +36,11 @@ import PaneHeader from '@/components/layout/PaneHeader.vue'
 import PaneListItem from '@/components/layout/PaneListItem.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
 import CodeEditor from '@/components/CodeEditor.vue'
+import { formatBytes } from '@/lib/utils'
 import {
   ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown,
   Copy, Database, Download, Play, Plus, RefreshCw, Search, Table2,
-  Trash2, X, KeyRound, Rows3, PanelRight, Pencil,
+  Trash2, X, KeyRound, Rows3, PanelRight, Pencil, Upload,
 } from 'lucide-vue-next'
 
 const store = useDatabasesStore()
@@ -473,6 +476,30 @@ const showDupDb = ref(false)
 const dupDbFrom = ref('')
 const dupDbTo = ref('')
 
+type ImportState =
+  | { phase: 'idle' }
+  | { phase: 'running'; loaded: number; total: number }
+  | { phase: 'failed'; error: string }
+
+const showImport = ref(false)
+const importEngine = ref('')
+const importTarget = ref('')
+const importFile = ref<File | null>(null)
+const importCreate = ref(false)
+const importState = ref<ImportState>({ phase: 'idle' })
+let importAbort: AbortController | null = null
+
+const importPercent = computed(() => {
+  const st = importState.value
+  return st.phase === 'running' && st.total > 0 ? Math.round((st.loaded / st.total) * 100) : 0
+})
+const importProgressText = computed(() => {
+  const st = importState.value
+  if (st.phase !== 'running') return ''
+  if (st.loaded >= st.total) return 'Finishing import…'
+  return `Importing ${formatBytes(st.loaded)} of ${formatBytes(st.total)}`
+})
+
 const showRenameTable = ref(false)
 const renameTableSrc = ref<DatabaseTable | null>(null)
 const renameTableTo = ref('')
@@ -565,6 +592,40 @@ async function handleDupDb() {
     await store.duplicateCatalog(dupDbFrom.value, dupDbTo.value.trim())
     showDupDb.value = false
   } catch {}
+}
+function openImport(engineId: string, name: string) {
+  importEngine.value = engineId
+  importTarget.value = name
+  importFile.value = null
+  importCreate.value = false
+  importState.value = { phase: 'idle' }
+  showImport.value = true
+}
+function onImportFile(e: Event) {
+  importFile.value = (e.target as HTMLInputElement).files?.[0] ?? null
+}
+function closeImport() {
+  importAbort?.abort()
+  showImport.value = false
+}
+async function handleImport() {
+  const file = importFile.value
+  if (!file) return
+  importAbort = new AbortController()
+  importState.value = { phase: 'running', loaded: 0, total: file.size }
+  try {
+    await store.importDump(importEngine.value, importTarget.value.trim(), file, {
+      create: importCreate.value,
+      signal: importAbort.signal,
+      onProgress: (loaded, total) => { importState.value = { phase: 'running', loaded, total } },
+    })
+    showImport.value = false
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') return
+    importState.value = { phase: 'failed', error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    importAbort = null
+  }
 }
 function openRenameTable(t: DatabaseTable) {
   renameTableSrc.value = t
@@ -761,6 +822,11 @@ function copySelectionSQL() {
                     <ContextMenuItem v-if="eng.capabilities.create_table && catalogTargets(eng.id, db.name).length === 1" @click="store.selectDatabase(eng.id, db.name).then(() => openCreateTable())">New table</ContextMenuItem>
                     <ContextMenuItem v-if="eng.capabilities.duplicate_database && catalogTargets(eng.id, db.name).length === 1" @click="openDupDb(db.name, eng.id)">Duplicate…</ContextMenuItem>
                     <ContextMenuItem v-if="eng.capabilities.rename_database && catalogTargets(eng.id, db.name).length === 1" @click="openRenameDb(db.name, eng.id)">Rename…</ContextMenuItem>
+                    <template v-if="eng.capabilities.import_export && catalogTargets(eng.id, db.name).length === 1">
+                      <ContextMenuSeparator />
+                      <ContextMenuItem @click="openImport(eng.id, db.name)"><Upload class="size-4" />Import SQL…</ContextMenuItem>
+                      <ContextMenuItem @click="store.exportDump(eng.id, db.name)"><Download class="size-4" />Export database…</ContextMenuItem>
+                    </template>
                     <ContextMenuSeparator />
                     <ContextMenuItem
                       v-if="eng.capabilities.drop_database"
@@ -1495,6 +1561,53 @@ function copySelectionSQL() {
         <DialogFooter>
           <DialogClose as-child><Button variant="outline" size="sm">Cancel</Button></DialogClose>
           <Button size="sm" :disabled="!dupDbTo.trim()" @click="handleDupDb">Duplicate</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="showImport" @update:open="(v) => { if (!v) closeImport() }">
+      <DialogContent class="max-w-md">
+        <DialogHeader><DialogTitle>Import SQL</DialogTitle></DialogHeader>
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <Label for="import-file">Dump file (.sql or .sql.gz)</Label>
+            <input
+              id="import-file"
+              type="file"
+              accept=".sql,.gz"
+              class="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-secondary-foreground"
+              :disabled="importState.phase === 'running'"
+              @change="onImportFile"
+            >
+          </div>
+          <div class="space-y-1.5">
+            <Label for="import-target">Database</Label>
+            <Input id="import-target" v-model="importTarget" class="font-mono" :disabled="importState.phase === 'running'" />
+          </div>
+          <label class="flex items-center gap-2 text-sm">
+            <Checkbox :checked="importCreate" :disabled="importState.phase === 'running'" @update:checked="(v) => importCreate = v === true" />
+            Create the database if it does not exist
+          </label>
+          <p class="text-xs text-muted-foreground">
+            Cancel stops the import part way. Statements that already ran stay in an existing database.
+          </p>
+          <div v-if="importState.phase === 'running'" class="space-y-1.5" data-testid="import-progress">
+            <Progress :model-value="importPercent" />
+            <p class="text-xs text-muted-foreground tabular-nums">{{ importProgressText }}</p>
+          </div>
+          <pre
+            v-if="importState.phase === 'failed'"
+            data-testid="import-error"
+            class="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-destructive/10 p-2 font-mono text-xs text-destructive"
+          >{{ importState.error }}</pre>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" @click="closeImport">Cancel</Button>
+          <Button
+            size="sm"
+            :disabled="!importFile || !importTarget.trim() || importState.phase === 'running'"
+            @click="handleImport"
+          >Import</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -5,6 +5,7 @@ import type {
   DatabaseCatalog,
   DatabaseColumnDef,
   DatabaseEngine,
+  DatabaseImportResult,
   DatabaseQueryResult,
   DatabaseRowsResult,
   DatabaseStructure,
@@ -21,9 +22,11 @@ import {
   dropDatabaseTable,
   duplicateDatabaseCatalog,
   duplicateDatabaseTable,
+  exportDatabaseDump,
   exportDatabaseTable,
   getDatabaseRows,
   getDatabaseStructure,
+  importDatabaseDump,
   insertDatabaseRow,
   listDatabaseCatalogs,
   listDatabaseEngines,
@@ -35,6 +38,7 @@ import {
   truncateDatabaseTable,
   updateDatabaseRow,
 } from '@/lib/api'
+import { formatBytes } from '@/lib/utils'
 
 export type DbPane = 'data' | 'structure' | 'query'
 
@@ -476,6 +480,34 @@ export const useDatabasesStore = defineStore('databases', () => {
     toast.success(`Exported ${table.name} as ${format.toUpperCase()}`)
   }
 
+  async function importDump(
+    engine: string,
+    name: string,
+    file: File,
+    opts: { create: boolean; signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void },
+  ): Promise<DatabaseImportResult> {
+    const res = await importDatabaseDump(engine, name, file, opts)
+    await loadCatalogs(engine)
+    if (selectedEngine.value === engine && selectedDatabase.value === name) await loadTables()
+    toast.success(res.created ? `Created "${name}" and imported ${file.name}` : `Imported ${file.name} into "${name}"`)
+    return res
+  }
+
+  async function exportDump(engine: string, name: string) {
+    const id = toast.loading(`Exporting "${name}"…`)
+    let shownAt = 0
+    try {
+      await exportDatabaseDump(engine, name, (bytes) => {
+        if (Date.now() - shownAt < 250) return
+        shownAt = Date.now()
+        toast.loading(`Exporting "${name}"… ${formatBytes(bytes)}`, { id })
+      })
+      toast.success(`Exported "${name}"`, { id })
+    } catch (e: unknown) {
+      toast.error(`Export of "${name}" failed`, { id, description: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
   async function bulkUpdate(values: Record<string, unknown>) {
     if (!rows.value) return
     const keys = selectedRowIndexes.value
@@ -806,6 +838,8 @@ export const useDatabasesStore = defineStore('databases', () => {
     saveColumn,
     renameColumn,
     exportTable,
+    importDump,
+    exportDump,
     bulkUpdate,
   }
 })

@@ -35,6 +35,7 @@ func (s *Server) handleListDBEngines(w http.ResponseWriter, r *http.Request) {
 	out := []database.EngineInfo{}
 
 	add := func(id, label, kind, host, port string, caps database.Capabilities) {
+		_, caps.ImportExport = dumpTools[kind]
 		installed, running := s.engineStatus(id)
 		info := database.EngineInfo{
 			ID: id, Label: label, Kind: kind,

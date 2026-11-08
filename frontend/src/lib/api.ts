@@ -721,6 +721,7 @@ export interface DatabaseCapabilities {
   rename_table: boolean
   duplicate_table: boolean
   alter_table: boolean
+  import_export: boolean
 }
 
 export interface DatabaseEngine {
@@ -901,13 +902,95 @@ export async function exportDatabaseTable(
   const blob = await res.blob()
   const cd = res.headers.get('Content-Disposition') ?? ''
   const match = /filename="([^"]+)"/.exec(cd)
-  const filename = match?.[1] ?? `${body.table}.${body.format}`
+  saveBlob(blob, match?.[1] ?? `${body.table}.${body.format}`)
+}
+
+function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+export interface DatabaseImportResult {
+  status: string
+  /** SQL bytes fed to the engine (after gunzip). */
+  bytes: number
+  created: boolean
+}
+
+/**
+ * Streams a .sql or .sql.gz file into a database. XHR, because fetch cannot
+ * report upload progress. The server feeds the engine as it reads, so upload
+ * progress tracks import progress.
+ */
+export function importDatabaseDump(
+  engine: string,
+  name: string,
+  file: Blob,
+  opts: { create: boolean; signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void },
+): Promise<DatabaseImportResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const query = opts.create ? '?create=1' : ''
+    xhr.open('POST', `/api/databases/${engine}/databases/${encodeURIComponent(name)}/import${query}`)
+    xhr.setRequestHeader('Content-Type', 'application/sql')
+    xhr.upload.onprogress = (e) => opts.onProgress?.(e.loaded, e.lengthComputable ? e.total : file.size)
+    xhr.onload = () => {
+      let body: Partial<DatabaseImportResult> & { error?: string } = {}
+      try {
+        body = JSON.parse(xhr.responseText)
+      } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as DatabaseImportResult)
+      else reject(new Error(body.error ?? (xhr.statusText || `HTTP ${xhr.status}`)))
+    }
+    xhr.onerror = () => reject(new Error('The upload to devctl failed.'))
+    xhr.onabort = () => reject(new DOMException('Import cancelled', 'AbortError'))
+    opts.signal?.addEventListener('abort', () => xhr.abort())
+    xhr.send(file)
+  })
+}
+
+/** Downloads a full SQL dump (mysqldump / pg_dump) of one database. */
+export async function exportDatabaseDump(engine: string, name: string, onProgress?: (bytes: number) => void): Promise<void> {
+  const res = await fetch(`/api/databases/${engine}/databases/${encodeURIComponent(name)}/export`)
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error ?? res.statusText)
+  }
+  const reader = res.body.getReader()
+  const parts: Blob[] = []
+  let chunks: Uint8Array<ArrayBuffer>[] = []
+  let chunkBytes = 0
+  let total = 0
+  for (;;) {
+    let next: ReadableStreamReadResult<Uint8Array<ArrayBuffer>>
+    try {
+      next = await reader.read()
+    } catch {
+      throw new Error('The dump stopped before it finished. See the devctl log for the engine error.')
+    }
+    if (next.done) break
+    chunks.push(next.value)
+    chunkBytes += next.value.length
+    total += next.value.length
+    onProgress?.(total)
+    // Fold chunks into Blobs so a large dump can leave the JS heap.
+    if (chunkBytes >= 16 << 20) {
+      parts.push(new Blob(chunks))
+      chunks = []
+      chunkBytes = 0
+    }
+  }
+  parts.push(new Blob(chunks))
+  const cd = res.headers.get('Content-Disposition') ?? ''
+  // Go's mime.FormatMediaType sends only filename*=utf-8''… for non-ASCII names.
+  const encoded = /filename\*=utf-8''([^;]+)/i.exec(cd)?.[1]
+  const plain = /filename="?([^";]+)"?/.exec(cd)?.[1]
+  const filename = encoded ? decodeURIComponent(encoded) : plain
+  saveBlob(new Blob(parts, { type: 'application/sql' }), filename ?? `${name}.sql`)
 }
 
 /** Fetch object bytes via the devctl S3 proxy (same-origin; no presigned URL / CORS). */

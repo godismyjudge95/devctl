@@ -284,6 +284,8 @@ The **Databases** sidebar opens a built-in explorer (not an iframe) for every lo
 
 The layout follows TablePlus: engines and databases on the left, tables in the middle, and a Data / Structure / Query pane on the right. Shift-click selects a range and Ctrl/⌘-click toggles individual databases, tables, or rows. Double-click a cell to edit (when the table has a primary key). The query editor runs SQL against the selected database; Ctrl/⌘+Enter executes.
 
+Right-click a MySQL or PostgreSQL database for **Import SQL…** and **Export database…**. Import takes a `.sql` or `.sql.gz` file, can create the target database, and streams it to `mysql` / `psql` without loading it into memory. Export downloads a full `mysqldump` / `pg_dump`. Engine errors show in the import dialog. The API is `POST /api/databases/{engine}/databases/{name}/import[?create=1]` (raw dump as the request body) and `GET /api/databases/{engine}/databases/{name}/export`.
+
 ### MaxIO
 
 ![MaxIO file browser showing bucket contents](docs/screenshot-maxio.png)

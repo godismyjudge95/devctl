@@ -20,6 +20,7 @@ type Capabilities struct {
 	RenameTable        bool `json:"rename_table"`
 	DuplicateTable     bool `json:"duplicate_table"`
 	AlterTable         bool `json:"alter_table"`
+	ImportExport       bool `json:"import_export"`
 }
 
 // EngineInfo is a connection the dashboard can open.

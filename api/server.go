@@ -231,6 +231,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/databases/{engine}/query", s.handleDBQuery)
 	s.mux.HandleFunc("POST /api/databases/{engine}/databases/rename", s.handleRenameDBCatalog)
 	s.mux.HandleFunc("POST /api/databases/{engine}/databases/duplicate", s.handleDuplicateDBCatalog)
+	s.mux.HandleFunc("POST /api/databases/{engine}/databases/{name}/import", s.handleImportDatabase)
+	s.mux.HandleFunc("GET /api/databases/{engine}/databases/{name}/export", s.handleExportDatabase)
 	s.mux.HandleFunc("POST /api/databases/{engine}/tables/rename", s.handleRenameDBTable)
 	s.mux.HandleFunc("POST /api/databases/{engine}/tables/duplicate", s.handleDuplicateDBTable)
 	s.mux.HandleFunc("POST /api/databases/{engine}/columns", s.handleAddDBColumn)

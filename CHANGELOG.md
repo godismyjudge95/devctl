@@ -7,6 +7,7 @@
 - PATH setup now rewrites leftover `export PATH` blocks in other shell files (for example `~/.profile` from an older sites directory).
 - Fixed: CLI command flags before a positional argument (`mail:list --limit=5`, `dumps:list --domain=…`) failed with "flag provided but not defined", and `--json` after a positional argument was ignored.
 - Fixed: the services list showed a newly installed PHP-FPM version as not installed until the next status poll.
+- Databases: **Import SQL…** and **Export database…** on the MySQL and PostgreSQL database context menu. Import streams a `.sql` or `.sql.gz` file to `mysql` / `psql` with upload progress, can create the target database, and shows engine errors in the dialog. Export downloads a full `mysqldump` / `pg_dump`.
 
 ## v0.18.1 — 2026-10-09
 
