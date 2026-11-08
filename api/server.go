@@ -287,6 +287,15 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/", s.handleSPA)
 }
 
+// handler rejects writes that a browser marks as cross-origin, same-site
+// *.test pages included, so a page the developer visits cannot change local
+// state. The dashboard always reaches the daemon with its own Host (Caddy and
+// the Vite proxy keep it), so no trusted origins are needed. The CLI sends
+// neither Origin nor Sec-Fetch-Site and passes.
+func (s *Server) handler() http.Handler {
+	return http.NewCrossOriginProtection().Handler(s.mux)
+}
+
 // Listen starts the HTTP server on the given address and shuts down cleanly
 // when ctx is cancelled.
 func (s *Server) Listen(ctx context.Context, addr string) error {
@@ -296,7 +305,7 @@ func (s *Server) Listen(ctx context.Context, addr string) error {
 	}
 	log.Printf("devctl listening on http://%s", ln.Addr())
 
-	srv := &http.Server{Handler: s.mux}
+	srv := &http.Server{Handler: s.handler()}
 
 	// Shut down when the context is done.
 	go func() {

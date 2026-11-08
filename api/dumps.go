@@ -8,9 +8,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
+// wsUpgrader keeps gorilla's default origin check: an upgrade whose Origin
+// host differs from Host gets 403, so other pages cannot read dumps or mail.
+var wsUpgrader = websocket.Upgrader{}
 
 func (s *Server) handleGetDumps(w http.ResponseWriter, r *http.Request) {
 	site := r.URL.Query().Get("site")
