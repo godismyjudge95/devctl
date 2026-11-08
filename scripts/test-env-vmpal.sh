@@ -52,6 +52,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# After a resume, the guest's VMPal root service can need a few seconds
+# before administrator commands work.
+for _ in $(seq 1 60); do
+  vmpal exec "$VM" --admin -- true >/dev/null 2>&1 && break
+  sleep 2
+done
+
 info "Installing devctl and starting the units..."
 vmpal cp --admin "$BIN" "$VM:/usr/local/bin/devctl"
 vmpal cp --admin "$SCRIPT_DIR/test-guest-provision.sh" "$VM:/tmp/test-guest-provision.sh"
