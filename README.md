@@ -79,20 +79,20 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | MariaDB | ✅ (Pro) | ✅ | ✅ | ❌ |
 | PostgreSQL | ✅ (Pro) | ✅ | ✅ | ✅ |
 | Redis | ✅ (Pro) | ✅ | ✅ | ✅ (Valkey) |
-| ClickHouse | ❌ | ❌ | ❌ | ✅ |
-| Meilisearch | ❌ | ✅ | ❌ | ✅ |
-| Typesense | ❌ | ❌ | ❌ | ✅ |
-| Object storage (S3) | ❌ | ✅ (RustFS) | ❌ | ✅ (MaxIO) |
+| ClickHouse | ❌ | ✅ (container preset) | ❌ | ✅ |
+| Meilisearch | ✅ (Pro) | ✅ | ✅ | ✅ |
+| Typesense | ✅ (Pro) | ✅ (container preset) | ❌ | ✅ |
+| Object storage (S3) | ✅ (MinIO / RustFS, Pro) | ✅ (RustFS) | ❌ | ✅ (MaxIO) |
 | Mail capture | ✅ (Pro) | ✅ | ✅ | ✅ (Mailpit) |
-| WebSockets (Reverb) | ✅ (Pro) | ✅ | ❌ | ✅ |
-| Database GUI | ❌ | ✅ | ❌ | ✅ (built-in) |
+| WebSockets (Reverb) | ✅ (Pro) | ✅ | ✅ | ✅ |
+| Database GUI | ❌ | Partial (phpMyAdmin / pgAdmin presets) | ❌ | ✅ (built-in) |
 | Variable dump inspector | ✅ (Pro) | ✅ | ✅ | ✅ (`php_dd`) |
 | Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ❌ |
-| SPX profiler | ❌ | ✅ | ❌ | ✅ |
-| Git worktrees | ❌ | ✅ | ❌ | ✅ |
+| SPX profiler | ✅ (macOS) | ✅ | ❌ | ✅ |
+| Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
 | Share a site publicly | ✅ | ✅ | ✅ | ❌ |
 | Health checks (`doctor`) | ❌ | ✅ | ✅ | ❌ |
-| AI integration | MCP | MCP | ❌ | CLI + skill |
+| AI integration | MCP | MCP | MCP | CLI + skill |
 | Per-project Node isolation | ❌ | ✅ | tools install | ❌ |
 | Rootless day-to-day | ✅ | ✅ | ✅ | ✅ |
 | Containers / VM | None | Podman | None | None [^no-containers] |
@@ -105,7 +105,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 
 ## Requirements
 
-- **OS**: Ubuntu 22.04+ or Debian 12+ (amd64 or arm64), or macOS 15+ (Apple silicon)
+- **OS**: Ubuntu 22.04+ or Debian 12+ (amd64 or arm64, also under WSL2 on Windows), or macOS 15+ (Apple silicon)
 - **sudo once** for elevation (CA trust, DNS resolver, privileged ports). Day-to-day work does **not** need root. On Linux, `devctl install` also needs sudo. On macOS, install and uninstall run as the site user.
 - A non-root user whose sites directory devctl will manage (`~/ddev/sites` on Linux, `~/Code/sites` on macOS)
 - **DNS**: the `.test` TLD must resolve to your machine. The easiest approach is `sudo devctl elevate resolver` (see [Elevation](#elevation) and [DNS](#dns)). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
