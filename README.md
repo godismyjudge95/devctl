@@ -110,7 +110,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 
 ## Requirements
 
-- **OS**: Ubuntu 22.04+ or Debian 12+ (amd64 or arm64, also under WSL2 on Windows), or macOS 15+ (Apple silicon)
+- **OS**: Ubuntu 24.04+ or Debian 13+ (amd64 or arm64, also under WSL2 on Windows), or macOS 15+ (Apple silicon)
 - **sudo once** for elevation (CA trust, DNS resolver, privileged ports). Day-to-day work does **not** need root. On Linux, `devctl install` also needs sudo. On macOS, install and uninstall run as the site user.
 - A non-root user whose sites directory devctl will manage (`~/ddev/sites` on Linux, `~/Code/sites` on macOS)
 - **DNS**: the `.test` TLD must resolve to your machine. The easiest approach is `sudo devctl elevate resolver` (see [Elevation](#elevation) and [DNS](#dns)). Alternatively, configure a wildcard `*.test` entry in your router's DNS.
@@ -360,7 +360,7 @@ devctl node:uninstall v20.11.1
 
 PHP versions are installed as self-contained binaries (no PPA, no system PHP packages). Supported minors: **7.0, 7.2, 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5**. PHP **8.0–8.5** are compiled with [static-php-cli](https://github.com/crazywhalecc/static-php-cli) using the custom extension set: **mysqli**, **sodium**, **pdo_mysql**, **pdo_pgsql**, **pdo_sqlite**, **ffi**, **intl**, **imagick**, **spx**, **pcov**, and the rest of the previous static build (8.2+ also includes **swoole**). PHP **8.0** omits protobuf, opentelemetry (current PECL needs PHP 8.1+), and **pcov** (the 8.0 PECL cfg does not compile in-tree). PHP **7.x** is a smaller set that still includes **mysqli**, **pdo_mysql**, **pdo_pgsql**, and **pdo_sqlite** (sodium on 7.2 and 7.4; PHP 7.0 predates sodium).
 
-On Linux, PHP 8.x links glibc and libstdc++ from the system and everything else statically, so it can load `xdebug.so`. The binaries are built on Ubuntu 24.04 and need glibc 2.39 or newer: Ubuntu 24.04 or newer, or Debian 13 or newer. PHP 7.x on Linux is fully static (musl) and runs on any distribution. macOS binaries need macOS on Apple silicon.
+On Linux, PHP 8.x links glibc and libstdc++ from the system and everything else statically, so it can load `xdebug.so`. The binaries are built on Ubuntu 24.04 and need glibc 2.39 or newer: Ubuntu 24.04 or newer, or Debian 13 or newer. PHP 7.x on Linux is fully static (musl) and runs on any distribution. devctl starts each downloaded PHP before it replaces the installed one. On an older system the install stops with a glibc message and the installed PHP stays. macOS binaries need macOS on Apple silicon.
 
 devctl resolves PHP downloads from the newest immutable `php-binaries-*` release and reads `php-binaries.json` metadata from that release to surface patch-level updates such as `8.4.18 -> 8.4.19` in the Services UI.
 

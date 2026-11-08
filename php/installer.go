@@ -54,20 +54,28 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		return fmt.Errorf("php %s: resolve release assets: %w", ver, err)
 	}
 
-	// 3. Download FPM binary.
-	if err := installPHPBinary(ctx, fpmURL, fpmBin, "php-fpm"); err != nil {
+	// 3. Download both binaries next to the current ones and prove the CLI
+	//    starts before either replaces a working install.
+	if err := installPHPBinary(ctx, fpmURL, fpmBin+".new", "php-fpm"); err != nil {
 		return fmt.Errorf("php %s: download fpm: %w", ver, err)
 	}
-	if err := os.Chmod(fpmBin, 0755); err != nil {
-		return fmt.Errorf("php %s: chmod fpm: %w", ver, err)
-	}
-
-	// 4. Download CLI binary.
-	if err := installPHPBinary(ctx, cliURL, cliBin, "php"); err != nil {
+	defer os.Remove(fpmBin + ".new")
+	if err := installPHPBinary(ctx, cliURL, cliBin+".new", "php"); err != nil {
 		return fmt.Errorf("php %s: download cli: %w", ver, err)
 	}
-	if err := os.Chmod(cliBin, 0755); err != nil {
-		return fmt.Errorf("php %s: chmod cli: %w", ver, err)
+	defer os.Remove(cliBin + ".new")
+	for _, bin := range []string{fpmBin, cliBin} {
+		if err := os.Chmod(bin+".new", 0755); err != nil {
+			return fmt.Errorf("php %s: chmod %s: %w", ver, filepath.Base(bin), err)
+		}
+	}
+	if err := probeBinary(ctx, cliBin+".new"); err != nil {
+		return fmt.Errorf("php %s: %w", ver, err)
+	}
+	for _, bin := range []string{fpmBin, cliBin} {
+		if err := os.Rename(bin+".new", bin); err != nil {
+			return fmt.Errorf("php %s: install %s: %w", ver, filepath.Base(bin), err)
+		}
 	}
 
 	if err := installXdebug(ctx, manifest, ver, serverRoot, phpPlatformToken()); err != nil {
@@ -160,6 +168,20 @@ func installXdebug(ctx context.Context, manifest *ReleaseManifest, ver, serverRo
 		return nil
 	}
 	return curlDownload(ctx, releaseAssetURL(manifest.ReleaseTag, assets.Xdebug), dest)
+}
+
+// probeBinary runs "php -n -v". A Linux build needs a newer glibc than old
+// distributions ship, and the loader then refuses to start it.
+func probeBinary(ctx context.Context, bin string) error {
+	out, err := exec.CommandContext(ctx, bin, "-n", "-v").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	msg := strings.TrimSpace(string(out))
+	if strings.Contains(msg, "GLIBC_") {
+		return fmt.Errorf("this PHP build does not start on this system because its glibc is too old. Use Ubuntu 24.04 or Debian 13 or newer. The installed PHP did not change.\n%s", msg)
+	}
+	return fmt.Errorf("the downloaded PHP does not start. The installed PHP did not change: %w\n%s", err, msg)
 }
 
 func installPHPBinary(ctx context.Context, url, dest, binName string) error {
