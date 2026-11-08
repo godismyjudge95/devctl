@@ -313,7 +313,8 @@ func TestRequests_CapturedFromPHPCLI_PDO(t *testing.T) {
 		t.Skip("no PDO sqlite driver in this PHP build; TestRequests_CapturedFromPHPCLI_Laravel covers the agent without a database")
 	}
 
-	dir := t.TempDir()
+	// PHP reports the real path, and macOS TMPDIR is a symlink into /private.
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	nonce := "pdo-" + newRID(t)
 	script := `<?php
 $pdo = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -408,7 +409,8 @@ func TestRequests_CapturedFromPHPCLI_Laravel(t *testing.T) {
 	if got := phpEval(t, phpBin, "echo extension_loaded('opentelemetry') ? 'yes' : 'no';"); got != "yes" {
 		t.Fatalf("the devctl PHP build has no opentelemetry extension; the request inspector depends on it")
 	}
-	dir := t.TempDir()
+	// PHP reports the real path, and macOS TMPDIR is a symlink into /private.
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	if err := os.MkdirAll(filepath.Join(dir, "vendor"), 0755); err != nil {
 		t.Fatal(err)
 	}

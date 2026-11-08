@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -193,11 +194,16 @@ func TestWorkers_SurviveDaemonRestart(t *testing.T) {
 	on := addWorker(t, createNodeSite(t, "workers-boot-go.test", onDir), "custom", tickLoop)
 	offDir := nodeSiteDir(t, nil)
 	off := addWorker(t, createNodeSite(t, "workers-boot-off-go.test", offDir), "custom", tickLoop)
+	pollUntil(t, "first run of the worker to stop", 10*time.Second, func() bool { return len(pidsIn(offDir)) == 1 })
 	workerAction(t, off.ID, "stop")
 	pollUntil(t, "first run", 10*time.Second, func() bool { return len(pidsIn(onDir)) == 1 })
 
-	if out, err := exec.Command("systemctl", "restart", "devctl").CombinedOutput(); err != nil {
-		t.Fatalf("systemctl restart devctl: %v: %s", err, out)
+	restart := exec.Command("systemctl", "restart", "devctl")
+	if runtime.GOOS == "darwin" {
+		restart = exec.Command("launchctl", "kickstart", "-k", fmt.Sprintf("gui/%d/ai.devctl", os.Getuid()))
+	}
+	if out, err := restart.CombinedOutput(); err != nil {
+		t.Fatalf("%s: %v: %s", restart, err, out)
 	}
 	pollUntil(t, "devctl to come back", 30*time.Second, func() bool {
 		resp, err := http.Get(baseURL() + "/api/workers") //nolint:noctx
