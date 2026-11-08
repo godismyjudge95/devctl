@@ -12,6 +12,7 @@ var resolvedSettingsKeys = []string{
 	"devctl_host",
 	"devctl_port",
 	"dump_tcp_port",
+	"dump_to_page",
 	"service_poll_interval",
 	"mailpit_http_port",
 	"mailpit_smtp_port",

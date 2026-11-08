@@ -8,6 +8,7 @@ var settingsKeys = []string{
 	"devctl_host",
 	"devctl_port",
 	"dump_tcp_port",
+	"dump_to_page",
 	"service_poll_interval",
 	"mailpit_http_port",
 	"mailpit_smtp_port",
@@ -46,11 +47,12 @@ func init() {
 		Usage:       "<key=value>...",
 		Args: []ArgDef{{
 			Name:        "key=value",
-			Description: "Settings to change: devctl_host, devctl_port, dump_tcp_port, service_poll_interval, mailpit_http_port, mailpit_smtp_port, dns_port, dns_target_ip, dns_tld",
+			Description: "Settings to change: devctl_host, devctl_port, dump_tcp_port, dump_to_page, service_poll_interval, mailpit_http_port, mailpit_smtp_port, dns_port, dns_target_ip, dns_tld",
 		}},
 		Examples: []string{
 			"devctl settings:set devctl_port=4001",
 			"devctl settings:set dns_tld=local mailpit_http_port=9025",
+			"devctl settings:set dump_to_page=true",
 		},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
 			if len(args) == 0 {

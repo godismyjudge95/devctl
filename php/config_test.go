@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/danielgormly/devctl/paths"
 )
 
 // currentUser returns the username of whoever is running the test process.
@@ -334,5 +336,37 @@ func TestWriteConfigs_PoolGroupIsPrimaryGroup(t *testing.T) {
 	}
 	if !strings.Contains(string(conf), "listen.group = "+g.Name) {
 		t.Fatalf("php-fpm.conf missing listen.group = %s", g.Name)
+	}
+}
+
+// TestInstallPrepend_DumpToPage verifies the dump_to_page setting reaches the
+// prepend that PHP loads, and that switching it back restores the default.
+func TestInstallPrepend_DumpToPage(t *testing.T) {
+	serverRoot := t.TempDir()
+	p := paths.PrependPath(serverRoot)
+	for _, tc := range []struct {
+		toPage bool
+		want   string
+	}{
+		{true, "return true; // devctl:dump_to_page"},
+		{false, "return false; // devctl:dump_to_page"},
+	} {
+		if err := InstallPrepend(serverRoot, tc.toPage); err != nil {
+			t.Fatalf("InstallPrepend(%v): %v", tc.toPage, err)
+		}
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, fn, ok := strings.Cut(string(got), "function _devctl_dump_to_page(): bool")
+		if !ok {
+			t.Fatalf("prepend has no _devctl_dump_to_page()")
+		}
+		if body, _, _ := strings.Cut(fn, "}"); !strings.Contains(body, tc.want) {
+			t.Errorf("toPage=%v: _devctl_dump_to_page() body = %q, want %q", tc.toPage, body, tc.want)
+		}
+		if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {
+			t.Errorf("toPage=%v: temp file left behind", tc.toPage)
+		}
 	}
 }

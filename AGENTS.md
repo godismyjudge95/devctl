@@ -19,7 +19,7 @@ devctl is a local PHP development environment dashboard for Linux. It runs as a 
 | `{serverRoot}/devctl/devctl.db` | SQLite database |
 | `/etc/systemd/system/devctl.service` | Systemd unit (`User=` + ambient bind cap) |
 | `127.0.0.1:4000` | HTTP dashboard |
-| `127.0.0.1:9912` | TCP dump receiver (PHP `php_dd()`) |
+| `127.0.0.1:9912` | TCP dump receiver (PHP `dump()` / `dd()`) |
 
 ## Build commands
 

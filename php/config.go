@@ -1,6 +1,7 @@
 package php
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -19,14 +20,27 @@ var prependPHP []byte
 //go:embed php.ini-development
 var phpIniDevelopment []byte
 
+const dumpToPageOff = "return false; // devctl:dump_to_page"
+
 // InstallPrepend writes the embedded prepend.php to paths.PrependPath(serverRoot).
+// toPage is the dump_to_page setting: dumps also print in the page or terminal.
 // Safe to call on every startup — it is idempotent.
-func InstallPrepend(serverRoot string) error {
+func InstallPrepend(serverRoot string, toPage bool) error {
 	p := paths.PrependPath(serverRoot)
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return fmt.Errorf("create %s dir: %w", filepath.Dir(p), err)
 	}
-	return os.WriteFile(p, prependPHP, 0644)
+	content := prependPHP
+	if toPage {
+		content = bytes.Replace(prependPHP, []byte(dumpToPageOff), []byte("return true; // devctl:dump_to_page"), 1)
+	}
+	// Running PHP processes read this file on every request: a rename never
+	// shows them a half-written file.
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, content, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
 }
 
 // GlobalSettings are the php.ini keys the PHP settings panel and php:set edit.

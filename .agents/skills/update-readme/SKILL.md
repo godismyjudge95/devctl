@@ -33,7 +33,7 @@ The README must always contain a full TOC with anchor links. The sections must a
 9. DNS
 10. Sites
 11. Git Worktrees
-12. PHP Dumps (`php_dd`)
+12. PHP Dumps
 13. SPX Profiler
 14. Mail
 15. Config Editor

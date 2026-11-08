@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/paths"
+	"github.com/danielgormly/devctl/php"
 )
 
 // settingDefaults maps setting keys to their runtime fallback values,
@@ -15,6 +17,7 @@ var settingDefaults = map[string]string{
 	"devctl_host":           "127.0.0.1",
 	"devctl_port":           "4000",
 	"dump_tcp_port":         "9912",
+	"dump_to_page":          "false",
 	"service_poll_interval": "5",
 	"mailpit_http_port":     "8025",
 	"mailpit_smtp_port":     "1025",
@@ -46,6 +49,20 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
 		return
+	}
+
+	toPage, setToPage := input["dump_to_page"]
+	if setToPage {
+		on, err := strconv.ParseBool(toPage)
+		if err != nil {
+			writeError(w, "dump_to_page must be true or false", http.StatusBadRequest)
+			return
+		}
+		if err := php.InstallPrepend(s.serverRoot, on); err != nil {
+			writeError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		input["dump_to_page"] = strconv.FormatBool(on)
 	}
 
 	for k, v := range input {

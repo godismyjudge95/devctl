@@ -27,7 +27,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [DNS](#dns)
 - [Sites](#sites)
 - [Git Worktrees](#git-worktrees)
-- [PHP Dumps (php\_dd)](#php-dumps-php_dd)
+- [PHP Dumps](#php-dumps)
 - [SPX Profiler](#spx-profiler)
 - [Mail](#mail)
 - [Config Editor](#config-editor)
@@ -86,7 +86,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | Mail capture | ✅ (Pro) | ✅ | ✅ | ✅ (Mailpit) |
 | WebSockets (Reverb) | ✅ (Pro) | ✅ | ✅ | ✅ |
 | Database GUI | ❌ | Partial (phpMyAdmin / pgAdmin presets) | ❌ | ✅ (built-in) |
-| Variable dump inspector | ✅ (Pro) | ✅ | ✅ | ✅ (`php_dd`) |
+| Variable dump inspector | ✅ (Pro) | ✅ | ✅ | ✅ (`dump()` / `dd()`) |
 | Full query / N+1 inspector | ✅ (Pro) | ✅ | ✅ | ❌ |
 | SPX profiler | ✅ (macOS) | ✅ | ❌ | ✅ |
 | Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
@@ -360,7 +360,7 @@ On first install, devctl creates a `php.ini` based on the full upstream `php.ini
 | `max_execution_time` | `120` |
 | OPcache | Enabled with `validate_timestamps=1`, `revalidate_freq=0` (dev-safe) |
 | SPX profiler | Pre-configured (zero overhead when not active) |
-| `auto_prepend_file` | Points to `{serverRoot}/devctl/prepend.php` (for `php_dd()`) |
+| `auto_prepend_file` | Points to `{serverRoot}/devctl/prepend.php` (for dumps) |
 | `openssl.cafile` / `curl.cainfo` | `{serverRoot}/php/ca-bundle.crt` (OS CAs + Caddy local CA) |
 
 The `php.ini` is user-editable and never overwritten on restart. To regenerate it with updated defaults, delete the file and restart devctl.
@@ -511,17 +511,27 @@ devctl sites:worktree:rm myapp-feature-auth.test
 
 ---
 
-## PHP Dumps (`php_dd`)
+## PHP Dumps
 
-devctl injects `auto_prepend_file = {serverRoot}/devctl/prepend.php` into every installed PHP version's FPM ini. This makes a `php_dd()` helper available in all your sites without any configuration.
-
-Calling `php_dd()` sends a serialised variable dump over TCP to devctl's dump receiver (default port `9912`), which displays it in the **Dumps** tab in real time.
+devctl sets `auto_prepend_file = {serverRoot}/devctl/prepend.php` for every installed PHP version, for PHP-FPM and for the `php` CLI wrapper. Your dumps go to devctl's dump receiver (default port `9912`) and show in the **Dumps** tab in real time. You do not change app code.
 
 ```php
-php_dd($someVariable);         // displays in the Dumps tab
-php_dd($a, $b, $c);            // multiple args shown together
-dd($someVariable);             // alias — works the same way
+dump($someVariable);             // shows in the Dumps tab and returns $someVariable
+dd($a, $b);                      // shows both, then stops the script
+collect($items)->dump();         // Laravel ->dump() / ->dd() helpers
+Http::dump()->get($url);         // direct VarDumper::dump() calls
+php_dd($someVariable);           // older alias of dump()
 ```
+
+What devctl captures:
+
+- `dump()`, `dd()`, and `php_dd()`. devctl defines them before Composer loads, so they win over `symfony/var-dumper`. Laravel `->dump()` / `->dd()` on collections, query builders, and `Str` call these functions. The Dumps tab shows the file and line of your call, not a `vendor/` file.
+- Every direct `VarDumper::dump()` call (for example Laravel `Http::dump()` / `Http::dd()`) when the app has `symfony/var-dumper` in its `vendor/` directory. devctl installs its own VarDumper handler and sets `VAR_DUMPER_FORMAT=devctl`, so Laravel cannot replace the handler.
+- Web requests, `php artisan` commands, queue workers, and child PHP processes. The CLI wrapper exports `PHPRC`, so `queue:listen`, Horizon, and Composer scripts load the same `php.ini`.
+
+By default dumps go only to devctl. To also print them in the browser or terminal, turn on **Settings → PHP Dump Server → Also dump to the page**, or run `devctl settings:set dump_to_page=true`. The change applies to the next request.
+
+To keep Symfony's own dumper (for example `VAR_DUMPER_FORMAT=server` for `server:dump`, or a test that calls `VarDumper::setHandler()`), set `VAR_DUMPER_FORMAT` yourself. devctl then leaves VarDumper alone. `dump()` and `dd()` still go to devctl.
 
 No browser extension, no Xdebug, no configuration required.
 
@@ -632,7 +642,7 @@ devctl fires native desktop notifications when events occur while you are on ano
 
 | Event | Behaviour |
 |---|---|
-| New `php_dd()` dump | Fires when you are not on the Dumps page. Multiple dumps within 1.5 s are collapsed into one count notification. Clicking navigates to that dump. |
+| New dump | Fires when you are not on the Dumps page. Multiple dumps within 1.5 s are collapsed into one count notification. Clicking navigates to that dump. |
 | New email | Fires when you are not on the Mail page. Bursts are collapsed. Clicking navigates to the Mail page. |
 
 Notification permission is requested automatically on first load. devctl uses the **Service Worker Notification API** when supported, with a direct `Notification` API fallback for browsers without service worker support.
@@ -708,7 +718,7 @@ devctl db:connection              # DB settings and URL of the site in the cwd
 devctl db:export > dump.sql       # dump the site database (from its .env)
 devctl php:ini:set 8.4 opcache.jit tracing  # set any php.ini directive for one version
 devctl dns:status                 # check systemd-resolved DNS setup
-devctl dumps:list                 # list recent php_dd() dumps
+devctl dumps:list                 # list recent dumps
 devctl spx:profiles               # list recent SPX profiler captures
 sudo devctl elevate trust         # trust Caddy's internal CA (privileged)
 devctl elevate:status             # show elevate targets
@@ -773,8 +783,8 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | `logs` | `logs:list` | List available log files |
 | | `logs:tail <id> [--bytes=N] [--follow]` | Show the tail of a log file; `--follow` streams live |
 | | `logs:clear <id>` | Clear (truncate) a log file |
-| `dumps` | `dumps:list [--domain=]` | List recent php_dd() variable dumps |
-| | `dumps:clear` | Delete all php_dd() dumps |
+| `dumps` | `dumps:list [--domain=]` | List recent variable dumps |
+| | `dumps:clear` | Delete all dumps |
 | `spx` | `spx:profiles [--domain=]` | List recent SPX profiler captures |
 | | `spx:profile <key>` | Show CPU hotspot functions for an SPX profile |
 | `mail` | `mail:list [--to=X] [--from=X] [--subject=X] [--since=15m] [--limit=N]` | List recent emails captured by Mailpit, optionally filtered |
@@ -856,7 +866,7 @@ All devctl runtime data lives under `{serverRoot}`, which defaults to `{sitesDir
 | Path | Contents |
 |---|---|
 | `{serverRoot}/devctl/devctl.db` | SQLite database (sites, settings, dumps) |
-| `{serverRoot}/devctl/prepend.php` | PHP auto-prepend for `php_dd()` |
+| `{serverRoot}/devctl/prepend.php` | PHP auto-prepend for dumps |
 | `{serverRoot}/devctl/devctl` | devctl binary (default install location) |
 | `{serverRoot}/bin/` | Shared bin dir on `PATH` — devctl symlinks and auto-downloaded tools (sqlite3, …) |
 | `{serverRoot}/logs/` | Service log files (`caddy.log`, `dns.log`, `mysql.log`, …) |

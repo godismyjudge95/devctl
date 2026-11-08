@@ -1,52 +1,152 @@
 <?php
 /**
- * devctl dump prepend — sends structured JSON node trees to the dump TCP server.
+ * devctl dump prepend: sends structured JSON node trees to the dump TCP server.
  *
  * Install by adding to php.ini:
  *   auto_prepend_file = /path/to/prepend.php
  *
- * The dd() / dump() functions send a base64-encoded JSON payload to the TCP
- * server (default 127.0.0.1:9912).
+ * dump(), dd(), php_dd() and every Symfony VarDumper::dump() call send a
+ * base64-encoded JSON payload to the TCP server (default 127.0.0.1:9912).
  */
+
+function _devctl_dump_to_page(): bool
+{
+    return false; // devctl:dump_to_page
+}
 
 if (!function_exists('dd')) {
     function dd(...$vars): never
     {
-        _devctl_send_dumps($vars);
+        _devctl_dump($vars);
         exit(1);
     }
 }
 
 if (!function_exists('dump')) {
-    function dump(...$vars): void
+    function dump(...$vars)
     {
-        _devctl_send_dumps($vars);
+        return _devctl_dump($vars);
     }
+}
+
+if (!function_exists('php_dd')) {
+    function php_dd(...$vars)
+    {
+        return _devctl_dump($vars);
+    }
+}
+
+_devctl_hook_var_dumper();
+
+/**
+ * Makes VarDumper::dump() (Laravel Http::dump(), Saloon, direct calls) reach
+ * devctl. The class is loaded here from the app's vendor dir because no PHP
+ * hook runs after Composer loads a class, and Composer's autoloader always
+ * runs before any autoloader a prepend file registers. Setting
+ * VAR_DUMPER_FORMAT afterwards makes VarDumper::setHandler() a no-op, so
+ * Laravel's FoundationServiceProvider cannot replace the handler.
+ * A user who sets VAR_DUMPER_FORMAT keeps full control of VarDumper.
+ */
+function _devctl_hook_var_dumper(): void
+{
+    if (isset($_SERVER['VAR_DUMPER_FORMAT'])) {
+        return;
+    }
+    $class = 'Symfony\Component\VarDumper\VarDumper';
+    if (!class_exists($class, false)) {
+        $file = _devctl_find_var_dumper();
+        if ($file === null) {
+            return;
+        }
+        try {
+            require_once $file;
+        } catch (\Throwable $e) {
+            return;
+        }
+    }
+    $class::setHandler(function ($var, $label = null) {
+        _devctl_dump([$var]);
+    });
+    $_SERVER['VAR_DUMPER_FORMAT'] = 'devctl';
+}
+
+function _devctl_find_var_dumper(): ?string
+{
+    $script = $_SERVER['SCRIPT_FILENAME'] ?? '';
+    $real   = $script !== '' ? realpath($script) : false;
+    $dir    = $real !== false ? dirname($real) : getcwd();
+    while (is_string($dir)) {
+        $file = $dir . '/vendor/symfony/var-dumper/VarDumper.php';
+        if (is_file($file)) {
+            return $file;
+        }
+        $parent = dirname($dir);
+        if ($parent === $dir) {
+            return null;
+        }
+        $dir = $parent;
+    }
+    return null;
+}
+
+/**
+ * Sends $vars to devctl, prints them too when "also dump to the page" is on,
+ * and returns what Symfony's dump() returns.
+ */
+function _devctl_dump(array $vars)
+{
+    _devctl_send_dumps($vars);
+    if (_devctl_dump_to_page()) {
+        foreach ($vars as $var) {
+            _devctl_page_dump($var);
+        }
+    }
+    if (!$vars) {
+        return null;
+    }
+    return count($vars) > 1 ? $vars : reset($vars);
+}
+
+function _devctl_page_dump($var): void
+{
+    $cli = in_array(PHP_SAPI, ['cli', 'phpdbg'], true);
+    if (class_exists('Symfony\Component\VarDumper\Cloner\VarCloner')) {
+        $dumper = $cli
+            ? new \Symfony\Component\VarDumper\Dumper\CliDumper()
+            : new \Symfony\Component\VarDumper\Dumper\HtmlDumper();
+        $dumper->dump((new \Symfony\Component\VarDumper\Cloner\VarCloner())->cloneVar($var));
+        return;
+    }
+    ob_start();
+    var_dump($var);
+    $out = (string)ob_get_clean();
+    echo $cli ? $out : '<pre>' . htmlspecialchars($out) . '</pre>';
 }
 
 function _devctl_send_dumps(array $vars): void
 {
     $host   = $_SERVER['HTTP_HOST']     ?? '';
     $file   = $_SERVER['SCRIPT_FILENAME'] ?? '';
-    $trace  = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 20);
+    $trace  = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
 
-    // $trace[1] is the dd()/dump() call site — its 'file' and 'line' are where
-    // the user wrote the call. For Blade templates this is the compiled view cache
-    // file (storage/framework/views/…), which has correct line numbers matching
-    // the source .blade.php. Walk further up only if trace[1] has no file.
-    //
-    // We avoid using trace[2] because for Blade, that frame is
-    // Filesystem::includeFile() — not the user's code.
+    // The source is the first frame outside this file and outside vendor/, so
+    // Laravel's ->dump() / ->dd() helpers and VarDumper::dump() point at the
+    // user's call. For Blade this is the compiled view cache file
+    // (storage/framework/views/...), resolved further below.
     $frame = [];
     $thisFile = __FILE__;
-    for ($i = 1, $n = count($trace); $i < $n; $i++) {
-        $f = $trace[$i];
+    foreach ($trace as $f) {
         $path = $f['file'] ?? '';
         if ($path === '' || $path === $thisFile) {
             continue;
         }
-        $frame = $f;
-        break;
+        if (empty($frame)) {
+            $frame = $f;
+        }
+        if (strpos($path, '/vendor/') === false) {
+            $frame = $f;
+            break;
+        }
     }
     if (empty($frame)) {
         $frame = $trace[0] ?? [];
@@ -87,7 +187,7 @@ function _devctl_send_dumps(array $vars): void
             'name' => basename($source),
         ],
         'host'  => $host,
-        'nodes' => array_map('_devctl_encode_value', $vars),
+        'nodes' => array_map('_devctl_encode_value', array_values($vars)),
     ];
 
     $json    = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

@@ -11,6 +11,8 @@ import (
 
 // writeCLIWrapper writes a shell wrapper that loads the version php.ini and
 // exports the CA bundle so Artisan, Guzzle, and the AWS SDK trust https://*.test.
+// PHPRC gives child processes started with PHP_BINARY (queue:listen, Horizon,
+// Composer scripts) the same php.ini, and with it the dump prepend.
 func writeCLIWrapper(wrapperPath, cliBin, serverRoot string) error {
 	if _, err := os.Stat(cliBin); err != nil {
 		return err
@@ -21,6 +23,7 @@ func writeCLIWrapper(wrapperPath, cliBin, serverRoot string) error {
 		"export SSL_CERT_FILE=" + strconv.Quote(bundlePath) + "\n" +
 		"export CURL_CA_BUNDLE=" + strconv.Quote(bundlePath) + "\n" +
 		"export AWS_CA_BUNDLE=" + strconv.Quote(bundlePath) + "\n" +
+		"export PHPRC=" + strconv.Quote(filepath.Dir(iniPath)) + "\n" +
 		"exec " + strconv.Quote(cliBin) + " -c " + strconv.Quote(iniPath) + " \"$@\"\n"
 	if err := os.MkdirAll(filepath.Dir(wrapperPath), 0755); err != nil {
 		return err

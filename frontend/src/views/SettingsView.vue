@@ -5,6 +5,7 @@ import { Download, ShieldCheck, RotateCw, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import PageHeader from '@/components/layout/PageHeader.vue'
 import { restartDevctl, trustTLS } from '@/lib/api'
@@ -182,7 +183,7 @@ async function trustCert() {
           <CardTitle>PHP Dump Server</CardTitle>
           <CardDescription>TCP listener for dump() / dd() calls.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent class="grid gap-4">
           <div class="grid gap-2 sm:max-w-xs">
             <Label for="dump_tcp_port">TCP port</Label>
             <Input
@@ -192,6 +193,17 @@ async function trustCert() {
               class="font-mono"
               @change="save('dump_tcp_port', store.settings['dump_tcp_port'] ?? '')"
             />
+          </div>
+          <div class="grid gap-1">
+            <div class="flex items-center gap-2">
+              <Checkbox
+                id="dump_to_page"
+                :checked="store.settings['dump_to_page'] === 'true'"
+                @update:checked="(v) => save('dump_to_page', v === true ? 'true' : 'false')"
+              />
+              <Label for="dump_to_page">Also dump to the page</Label>
+            </div>
+            <p class="text-sm text-muted-foreground">Dumps also print in the browser or terminal. Applies to the next request.</p>
           </div>
         </CardContent>
       </Card>

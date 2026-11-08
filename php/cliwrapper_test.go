@@ -36,6 +36,7 @@ func TestWriteCLIWrapper_ExportsCAAndPassesIni(t *testing.T) {
 		"export SSL_CERT_FILE=" + strconv.Quote(bundle),
 		"export CURL_CA_BUNDLE=" + strconv.Quote(bundle),
 		"export AWS_CA_BUNDLE=" + strconv.Quote(bundle),
+		"export PHPRC=" + strconv.Quote(phpDir),
 		"exec " + strconv.Quote(cliBin) + " -c " + strconv.Quote(ini),
 	} {
 		if !strings.Contains(s, want) {

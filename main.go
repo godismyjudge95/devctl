@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -181,7 +182,8 @@ func run() error {
 	// Write prepend.php to disk on every startup — idempotent and harmless.
 	// Must run before WriteConfigs so the file exists when FPM starts.
 	done = step("php prepend")
-	if err := php.InstallPrepend(cfg.ServerRoot); err != nil {
+	dumpToPage, _ := strconv.ParseBool(getSetting(ctx, queries, database, "dump_to_page", "false"))
+	if err := php.InstallPrepend(cfg.ServerRoot, dumpToPage); err != nil {
 		log.Printf("php: install prepend: %v", err)
 	}
 	done()

@@ -7,6 +7,7 @@ import { test, expect } from '@playwright/test'
  *  - The page loads with all expected sections visible.
  *  - The DNS TLD field can be changed and the value persists on re-load.
  *  - The Dump TCP Port field can be changed and the value persists on re-load.
+ *  - The "Also dump to the page" checkbox persists dump_to_page.
  *  - The "Save & Restart" button is present and enabled.
  *
  * NOTE: Tests that change settings restore the original value in a
@@ -131,6 +132,28 @@ test.describe('settings page — field mutations', () => {
     await input.fill(original || '4000')
     await input.dispatchEvent('change')
     await page.waitForTimeout(300)
+  })
+
+  test('dump_to_page — toggle persists and survives a reload', async ({ page }) => {
+    await page.goto(SETTINGS_URL)
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: LOAD_TIMEOUT })
+    await expect(page.getByText('Loading…')).toBeHidden({ timeout: LOAD_TIMEOUT })
+
+    const box = page.getByRole('checkbox', { name: 'Also dump to the page' })
+    await expect(box).not.toBeChecked()
+
+    try {
+      await box.click()
+      await expect
+        .poll(async () => ((await (await page.request.get('/api/settings')).json()) as Record<string, string>)['dump_to_page'])
+        .toBe('true')
+
+      await page.reload()
+      await expect(page.getByText('Loading…')).toBeHidden({ timeout: LOAD_TIMEOUT })
+      await expect(page.getByRole('checkbox', { name: 'Also dump to the page' })).toBeChecked()
+    } finally {
+      await page.request.put('/api/settings', { data: { dump_to_page: 'false' } })
+    }
   })
 
   test('settings inputs retain values after page reload', async ({ page }) => {

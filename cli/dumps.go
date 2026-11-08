@@ -10,7 +10,7 @@ import (
 func init() {
 	Register(&Cmd{
 		Name:        "dumps:list",
-		Description: "List recent php_dd() variable dumps",
+		Description: "List recent variable dumps",
 		Usage:       "[--domain=<domain>]",
 		Flags:       []FlagDef{{Name: "domain", Description: "Filter by site domain"}},
 		Examples: []string{
@@ -74,7 +74,7 @@ func init() {
 	Register(&Cmd{
 		Name:        "dumps:clear",
 		MCP:         MCPConfirm,
-		Description: "Delete all php_dd() dumps",
+		Description: "Delete all dumps",
 		Examples:    []string{"devctl dumps:clear"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
 			if err := c.ClearDumps(); err != nil {
