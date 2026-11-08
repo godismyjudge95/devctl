@@ -25,6 +25,7 @@ import (
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/share"
 	"github.com/danielgormly/devctl/sites"
+	"github.com/danielgormly/devctl/workers"
 )
 
 // Server is the HTTP server that serves the API and embedded frontend.
@@ -39,6 +40,7 @@ type Server struct {
 	caddy       *sites.CaddyClient
 	siteManager *sites.Manager
 	installers  map[string]install.Installer
+	workers     *workers.Manager
 	serverRoot  string // absolute path to the devctl server directory
 	siteUser    string // OS username of the non-root site user (e.g. "daniel")
 	siteHome    string // home directory of the non-root site user (e.g. "/home/daniel")
@@ -80,6 +82,7 @@ func NewServer(
 	caddyClient *sites.CaddyClient,
 	siteManager *sites.Manager,
 	installers map[string]install.Installer,
+	workersMgr *workers.Manager,
 	uiFS embed.FS,
 	serverRoot string,
 	siteUser string,
@@ -98,6 +101,7 @@ func NewServer(
 		caddy:          caddyClient,
 		siteManager:    siteManager,
 		installers:     installers,
+		workers:        workersMgr,
 		serverRoot:     serverRoot,
 		siteUser:       siteUser,
 		siteHome:       siteHome,
@@ -184,6 +188,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/sites/{id}/share", s.handleShareSite)
 	s.mux.HandleFunc("DELETE /api/sites/{id}/share", s.handleUnshareSite)
 	s.mux.HandleFunc("GET /api/shares", s.handleGetShares)
+	// Workers
+	s.mux.HandleFunc("GET /api/workers", s.handleListWorkers)
+	s.mux.HandleFunc("POST /api/workers", s.handleCreateWorker)
+	s.mux.HandleFunc("GET /api/workers/{id}", s.handleGetWorker)
+	s.mux.HandleFunc("DELETE /api/workers/{id}", s.handleDeleteWorker)
+	s.mux.HandleFunc("POST /api/workers/{id}/start", s.workerAction(s.workers.Start))
+	s.mux.HandleFunc("POST /api/workers/{id}/stop", s.workerAction(s.workers.Stop))
+	s.mux.HandleFunc("POST /api/workers/{id}/restart", s.workerAction(s.workers.Restart))
 	// Worktrees
 	s.mux.HandleFunc("GET /api/sites/{id}/branches", s.handleGetSiteBranches)
 	s.mux.HandleFunc("GET /api/sites/{id}/worktree-config", s.handleGetWorktreeConfig)

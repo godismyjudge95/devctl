@@ -17,6 +17,7 @@ import PageHeader from '@/components/layout/PageHeader.vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import SettingRow from '@/components/layout/SettingRow.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
+import SiteWorkers from '@/components/SiteWorkers.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -236,6 +237,8 @@ async function save() {
           </SettingRow>
         </CardContent>
       </Card>
+
+      <SiteWorkers :site-id="site.id" />
 
       <Card v-if="!site.parent_site_id && site.is_git_repo">
         <CardHeader>

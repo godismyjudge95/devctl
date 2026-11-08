@@ -117,6 +117,45 @@ type managedProc struct {
 	//   - for exec services: when cmd.Wait returns (reaping goroutine)
 	// It is non-nil for both kinds so IsRunning / Stop / restartCrashed share one path.
 	done chan struct{}
+
+	startedAt time.Time
+	// failures counts consecutive crashes that each came within stableRun of
+	// their start. It carries over to the restarted process.
+	failures int
+	// retryAt is set when restartCrashed first sees the exit.
+	retryAt time.Time
+}
+
+// exited reports whether the process (or RunFunc) has ended.
+func (p *managedProc) exited() bool {
+	if p.done != nil {
+		select {
+		case <-p.done:
+			return true
+		default:
+			return false
+		}
+	}
+	return p.cmd != nil && p.cmd.ProcessState != nil
+}
+
+// Crash-loop restart policy. Vars so tests can shorten them.
+var (
+	stableRun   = 30 * time.Second
+	backoffBase = 2 * time.Second
+	backoffMax  = time.Minute
+)
+
+// backoff is the extra wait before restarting after the given number of
+// consecutive fast crashes. A single crash restarts on the next tick.
+func backoff(failures int) time.Duration {
+	if failures <= 1 {
+		return 0
+	}
+	if failures > 10 {
+		return backoffMax
+	}
+	return min(backoffBase<<(failures-1), backoffMax)
 }
 
 // ElevatedRunner starts, stops, and inspects services that bind privileged
@@ -211,7 +250,7 @@ func (s *Supervisor) startEmbedded(def Definition) error {
 
 	logW := s.newServiceLogWriter(def)
 
-	proc := &managedProc{def: def, cancel: cancel, done: done}
+	proc := &managedProc{def: def, cancel: cancel, done: done, startedAt: time.Now()}
 	s.procs[def.ID] = proc
 
 	go func() {
@@ -253,10 +292,7 @@ func (s *Supervisor) startProcess(def Definition) error {
 	// survive that. SIGTERM lets the master shut the tree down. Stop() still
 	// force-kills after 10s if the child ignores TERM.
 	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return cmd.Process.Signal(syscall.SIGTERM)
+		return signalProc(cmd, def.ProcessGroup, syscall.SIGTERM)
 	}
 
 	// If ManagedUser is set and differs from the current process user, drop
@@ -278,6 +314,13 @@ func (s *Supervisor) startProcess(def Definition) error {
 				},
 			}
 		}
+	}
+
+	if def.ProcessGroup {
+		if cmd.SysProcAttr == nil {
+			cmd.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		cmd.SysProcAttr.Setpgid = true
 	}
 
 	// Build child env: start from process env, then apply ManagedEnvFile and
@@ -313,7 +356,7 @@ func (s *Supervisor) startProcess(def Definition) error {
 	pw.Close() // parent side no longer needs the write end
 
 	done := make(chan struct{})
-	proc := &managedProc{def: def, cmd: cmd, cancel: cancel, done: done}
+	proc := &managedProc{def: def, cmd: cmd, cancel: cancel, done: done, startedAt: time.Now()}
 	s.procs[def.ID] = proc
 
 	// Open rotating log file for tee if def.Log is set.
@@ -412,6 +455,7 @@ func (s *Supervisor) Stop(id string) error {
 	cancel := p.cancel
 	cmd := p.cmd
 	done := p.done
+	group := p.def.ProcessGroup
 	delete(s.procs, id)
 	s.mu.Unlock()
 
@@ -423,8 +467,8 @@ func (s *Supervisor) Stop(id string) error {
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
-			if cmd != nil && cmd.Process != nil {
-				_ = cmd.Process.Kill()
+			if cmd != nil {
+				_ = signalProc(cmd, group, syscall.SIGKILL)
 			}
 			select {
 			case <-done:
@@ -505,33 +549,68 @@ func (s *Supervisor) Run(ctx context.Context) {
 	}
 }
 
-// restartCrashed finds services that have exited unexpectedly and restarts them.
+// restartCrashed restarts services that exited on their own. Repeated fast
+// crashes wait longer each time (see backoff).
 func (s *Supervisor) restartCrashed() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := time.Now()
 	for id, p := range s.procs {
-		crashed := false
-		if p.done != nil {
-			select {
-			case <-p.done:
-				crashed = true
-			default:
-			}
-		} else if p.cmd != nil && p.cmd.ProcessState != nil {
-			// Legacy path for procs started without a done channel.
-			crashed = true
+		if !p.exited() {
+			continue
 		}
-
-		if crashed {
-			log.Printf("supervisor: %s exited unexpectedly, restarting", id)
-			def := p.def
-			delete(s.procs, id)
-			if err := s.startLocked(def); err != nil {
-				log.Printf("supervisor: restart %s: %v", id, err)
+		if p.retryAt.IsZero() {
+			if now.Sub(p.startedAt) < stableRun {
+				p.failures++
+			} else {
+				p.failures = 1
 			}
+			p.retryAt = now.Add(backoff(p.failures))
+			if p.cmd != nil && p.def.ProcessGroup {
+				// The leader is gone; children it left (vite under npm) would
+				// hold the port the next start needs.
+				_ = signalProc(p.cmd, true, syscall.SIGKILL)
+			}
+			log.Printf("supervisor: %s exited unexpectedly (crash %d), restarting in %s", id, p.failures, p.retryAt.Sub(now).Round(time.Second))
 		}
+		if now.Before(p.retryAt) {
+			continue
+		}
+		def, failures := p.def, p.failures
+		delete(s.procs, id)
+		if err := s.startLocked(def); err != nil {
+			log.Printf("supervisor: restart %s: %v", id, err)
+			continue
+		}
+		s.procs[id].failures = failures
 	}
+}
+
+// Failures returns how many times in a row id crashed soon after it started.
+// It is 0 once the current run has lasted stableRun.
+func (s *Supervisor) Failures(id string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.procs[id]
+	if !ok {
+		return 0
+	}
+	if !p.exited() && time.Since(p.startedAt) >= stableRun {
+		return 0
+	}
+	return p.failures
+}
+
+// signalProc signals the child, or its whole process group when group is set.
+func signalProc(cmd *exec.Cmd, group bool, sig syscall.Signal) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	if group {
+		return syscall.Kill(-cmd.Process.Pid, sig)
+	}
+	return cmd.Process.Signal(sig)
 }
 
 // StopAll stops every managed service. Called on shutdown and before re-exec

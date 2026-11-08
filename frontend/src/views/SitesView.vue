@@ -15,6 +15,7 @@ import PageHeader from '@/components/layout/PageHeader.vue'
 import Surface from '@/components/layout/Surface.vue'
 import SectionHeader from '@/components/layout/SectionHeader.vue'
 import MetaChip from '@/components/layout/MetaChip.vue'
+import SiteWorkerChips from '@/components/SiteWorkerChips.vue'
 import EmptyState from '@/components/layout/EmptyState.vue'
 import SiteShareStatus from '@/components/SiteShareStatus.vue'
 import { useSiteShare } from '@/composables/useSiteShare'
@@ -303,6 +304,7 @@ function frameworkLabel(fw: string): string {
                     <Unlock v-else />
                     {{ site.https ? 'HTTPS' : 'HTTP' }}
                   </MetaChip>
+                  <SiteWorkerChips :site-id="site.id" />
                 </div>
               </TableCell>
 
@@ -412,6 +414,7 @@ function frameworkLabel(fw: string): string {
                 <Unlock v-else />
                 {{ site.https ? 'HTTPS' : 'HTTP' }}
               </MetaChip>
+              <SiteWorkerChips :site-id="site.id" />
               <MetaChip v-if="site.framework">{{ frameworkLabel(site.framework) }}</MetaChip>
               <MetaChip v-if="site.spx_enabled" tone="warning"><Zap />SPX</MetaChip>
               <MetaChip v-if="site.worktree_branch" class="max-w-full">

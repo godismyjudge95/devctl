@@ -40,3 +40,12 @@ CREATE TABLE IF NOT EXISTS php_ini_directives (
     value TEXT NOT NULL,
     PRIMARY KEY (scope, key)
 );
+
+CREATE TABLE IF NOT EXISTS site_workers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id    TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    type       TEXT NOT NULL,
+    command    TEXT NOT NULL DEFAULT '',
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);

@@ -102,6 +102,9 @@ type Definition struct {
 	// ports (80/443 today, 21 later). The unprivileged dashboard daemon does
 	// not exec it. `devctl elevate daemon` does.
 	NeedsElevatedBind bool
+	// ProcessGroup starts the child in its own process group and signals the
+	// whole group, so grandchildren (fnm → npm → vite) stop with it.
+	ProcessGroup bool
 }
 
 // ServiceState is the live status of a service returned by the API.

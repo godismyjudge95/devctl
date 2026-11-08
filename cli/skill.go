@@ -257,6 +257,9 @@ func generateEnvGuide() string {
 	sb.WriteString("## Node\n\n")
 	sb.WriteString("`node`, `npm`, and `npx` in `" + bin + "` use the Node version of the project in the cwd: `.nvmrc`, then `.node-version`, then `package.json` `engines.node`.\n")
 	sb.WriteString("Without a version file they use the newest installed LTS. Install versions with `devctl node:install <version>`. Do not run `nvm use`.\n\n")
+	sb.WriteString("## Workers\n\n")
+	sb.WriteString("devctl keeps queue, horizon, schedule, vite, and custom processes running for a site and restarts them when they crash. ")
+	sb.WriteString("Use `devctl workers:add <domain> queue` instead of a long-running `php artisan queue:work` or `npm run dev` in a shell. Read output with `devctl workers:logs <domain> <type>`.\n\n")
 	sb.WriteString("## Browser TLS\n\n")
 	sb.WriteString("Caddy uses an internal CA. For `https://*.test`, ignore certificate errors.\n\n")
 	sb.WriteString("## New projects\n\n")
@@ -306,7 +309,7 @@ func generateCommandCatalog() string {
 
 	nsOrder := []string{
 		"services", "sites", "php", "logs", "dumps", "requests", "spx", "mail",
-		"dns", "tls", "settings", "helpers", "node", "postgres", "db", "elevate", "doctor", "mcp", "devctl",
+		"dns", "tls", "settings", "helpers", "node", "workers", "postgres", "db", "elevate", "doctor", "mcp", "devctl",
 	}
 	seen := map[string]bool{}
 	var ordered []string

@@ -31,6 +31,10 @@ func StatusStyle(status string) string {
 		return styleWarn.Render("◌ pending")
 	case "warning":
 		return styleWarn.Render("⚠ warning")
+	case "restarting":
+		return styleWarn.Render("↻ restarting")
+	case "failed":
+		return styleErr.Render("✕ failed")
 	default:
 		return styleDim.Render("? " + status)
 	}

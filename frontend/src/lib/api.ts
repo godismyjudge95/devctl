@@ -739,6 +739,45 @@ export interface LogFileInfo {
 
 export const getLogs = () => request<LogFileInfo[]>('GET', '/api/logs')
 export const clearLog = (id: string) => request<void>('DELETE', `/api/logs/${encodeURIComponent(id)}`)
+/** Last bytes of a log file as text; '' when the file does not exist yet. */
+export async function getLogTail(id: string, bytes = 4096): Promise<string> {
+  const res = await fetch(`/api/logs/${encodeURIComponent(id)}/tail?bytes=${bytes}`)
+  if (res.status === 404) return ''
+  if (!res.ok) throw new Error(res.statusText)
+  return res.text()
+}
+
+// --- Workers ---
+export type WorkerType = 'queue' | 'horizon' | 'schedule' | 'vite' | 'custom'
+export const WORKER_TYPES: { type: WorkerType; label: string; runs: string }[] = [
+  { type: 'queue', label: 'Queue', runs: 'php artisan queue:work' },
+  { type: 'horizon', label: 'Horizon', runs: 'php artisan horizon' },
+  { type: 'schedule', label: 'Scheduler', runs: 'php artisan schedule:work' },
+  { type: 'vite', label: 'Vite', runs: 'npm run dev' },
+  { type: 'custom', label: 'Custom', runs: 'any shell command' },
+]
+export type WorkerStatus = 'running' | 'stopped' | 'restarting' | 'failed'
+export interface Worker {
+  id: number
+  site_id: string
+  domain: string
+  type: WorkerType
+  command: string
+  enabled: boolean
+  status: WorkerStatus
+  error?: string
+  crashes: number
+  crash_loop: boolean
+  log_id: string
+  command_line: string
+}
+export type WorkerAction = 'start' | 'stop' | 'restart'
+export const listWorkers = () => request<Worker[]>('GET', '/api/workers')
+export const createWorker = (siteId: string, type: WorkerType, command = '') =>
+  request<Worker>('POST', '/api/workers', { site_id: siteId, type, command })
+export const runWorkerAction = (id: number, action: WorkerAction) =>
+  request<Worker>('POST', `/api/workers/${id}/${action}`)
+export const deleteWorker = (id: number) => request<void>('DELETE', `/api/workers/${id}`)
 
 // --- MaxIO ---
 

@@ -18,3 +18,20 @@ export async function ensureSW(): Promise<ServiceWorkerRegistration | null> {
   }
   return registrationPromise
 }
+
+/** Show a native notification that opens url when clicked. No-op without permission. */
+export async function showNotification(title: string, body: string, tag: string, url: string) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  const options: NotificationOptions = { body, icon: '/logo.png', tag, data: { url } }
+  const reg = await ensureSW()
+  try {
+    if (reg) {
+      await reg.showNotification(title, options)
+      return
+    }
+  } catch {
+    // Fall through to the direct Notification API.
+  }
+  const n = new Notification(title, options)
+  n.onclick = () => { window.focus(); window.location.href = url; n.close() }
+}

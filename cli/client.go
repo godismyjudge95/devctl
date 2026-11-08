@@ -230,6 +230,22 @@ type NodeVersion struct {
 	Sites   []string `json:"sites"`
 }
 
+// Worker mirrors a worker from GET /api/workers.
+type Worker struct {
+	ID          int64  `json:"id"`
+	SiteID      string `json:"site_id"`
+	Domain      string `json:"domain"`
+	Type        string `json:"type"`
+	Command     string `json:"command"`
+	Enabled     bool   `json:"enabled"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
+	Crashes     int    `json:"crashes"`
+	CrashLoop   bool   `json:"crash_loop"`
+	LogID       string `json:"log_id"`
+	CommandLine string `json:"command_line"`
+}
+
 type PHPVersion struct {
 	Version   string       `json:"version"`
 	FPMSocket string       `json:"fpm_socket"`
@@ -448,6 +464,26 @@ func (c *Client) InstallNodeSSE(version string, onOutput func(line string)) erro
 
 func (c *Client) UninstallNode(version string) error {
 	return c.delete("/api/node/versions/" + url.PathEscape(version))
+}
+
+func (c *Client) ListWorkers(siteID string) ([]Worker, error) {
+	var out []Worker
+	return out, c.get("/api/workers?site_id="+url.QueryEscape(siteID), &out)
+}
+
+func (c *Client) AddWorker(siteID, typ, command string) (Worker, error) {
+	var out Worker
+	return out, c.post("/api/workers", map[string]string{"site_id": siteID, "type": typ, "command": command}, &out)
+}
+
+func (c *Client) RemoveWorker(id int64) error {
+	return c.delete(fmt.Sprintf("/api/workers/%d", id))
+}
+
+// WorkerAction calls POST /api/workers/{id}/{action} (start, stop, restart).
+func (c *Client) WorkerAction(id int64, action string) (Worker, error) {
+	var out Worker
+	return out, c.post(fmt.Sprintf("/api/workers/%d/%s", id, action), nil, &out)
 }
 
 func (c *Client) RestartService(id string) error {

@@ -28,6 +28,7 @@ devctl manages Caddy (TLS proxy), a built-in DNS server, PHP-FPM processes, and 
 - [Sites](#sites)
 - [Git Worktrees](#git-worktrees)
 - [Sharing a Site](#sharing-a-site)
+- [Workers](#workers)
 - [PHP Dumps](#php-dumps)
 - [Request Inspector](#request-inspector)
 - [SPX Profiler](#spx-profiler)
@@ -604,6 +605,46 @@ if (str_ends_with($_SERVER['HTTP_X_FORWARDED_HOST'] ?? '', '.trycloudflare.com')
     define('WP_SITEURL', WP_HOME);
 }
 ```
+## Workers
+
+devctl keeps background processes running for each site, like `php artisan queue:work` or `npm run dev` in a terminal you never close. Add them in **Site settings → Workers** or with `devctl workers:add`. The site list shows each worker as a chip with its status and start, stop, and restart buttons.
+
+| Type | Runs | With |
+|---|---|---|
+| `queue` | `artisan queue:work` | the site's PHP version (`{serverRoot}/bin/php8.x`) |
+| `horizon` | `artisan horizon` | the site's PHP version |
+| `schedule` | `artisan schedule:work` | the site's PHP version |
+| `vite` | `npm run dev` | the site's Node version (see [Node.js for each site](#nodejs-for-each-site)) |
+| `custom` | any shell command (`/bin/sh -c`) | `{serverRoot}/bin` first on `PATH`, so `php8.4`, `composer`, `node`, and `npm` work |
+
+A site has at most one worker of each built-in type and any number of custom workers. Every worker runs in the site directory as the site user, under the same supervisor as the managed services:
+
+- **Crash restarts.** A worker that exits is restarted. Repeated crashes soon after start wait longer each time (4 s, 8 s, 16 s, up to 1 min). A run that lasts 30 s resets the count.
+- **Crash alerts.** After 3 crashes in a row the worker shows "crashed N times" and the dashboard sends a browser notification.
+- **Restarts with devctl.** Started workers start again when the daemon starts. Stopped workers stay stopped.
+- **Logs.** Each worker writes `{serverRoot}/logs/<domain>-<type>-<id>.log`, which the **Logs** page lists. Site settings shows the last lines; `devctl workers:logs` prints or follows them.
+- **Process groups.** Stop and restart signal the whole process tree, so `npm` does not leave a Vite server holding its port.
+- **Site removal.** Deleting a site (or its directory) stops and removes its workers.
+
+Restart a worker after you change `.env`, the site PHP version, or the Node version. A queue worker loads your code once.
+
+```sh
+devctl workers:add myapp.test queue
+devctl workers:add myapp.test vite
+devctl workers:add myapp.test custom --command="php8.4 artisan reverb:start"
+devctl workers:list
+devctl workers:restart myapp.test queue
+devctl workers:logs myapp.test vite --follow
+```
+
+### Vite HMR on https sites
+
+`laravel-vite-plugin` writes the dev server URL (for example `http://[::1]:5173`) to `public/hot`, and the `@vite` Blade directive loads scripts from it. On the machine that runs devctl this works from `https://myapp.test`:
+
+- Browsers treat `localhost`, `127.0.0.1`, and `[::1]` as potentially trustworthy (Secure Contexts spec), so an https page may load scripts and open the HMR WebSocket over plain http on loopback. Chrome and Firefox follow this. Safari is not verified.
+- Current `laravel-vite-plugin` releases (checked in 3.2.1) allow CORS from `APP_URL` and any `*.test` origin by default. If the browser console shows a CORS error on an older plugin, set `server: { cors: true }` in `vite.config.js`.
+
+From another computer (the router sends `*.test` to this machine) the browser cannot reach `localhost:5173`. Vite would need TLS on a `*.test` name that Caddy proxies to the dev server. devctl does not add that route yet; it is the "user proxy sites" item that waits for an owner decision. Until then, build the assets (`npm run build`) for remote testing.
 
 ---
 
@@ -766,6 +807,7 @@ devctl fires native desktop notifications when events occur while you are on ano
 |---|---|
 | New dump | Fires when you are not on the Dumps page. Multiple dumps within 1.5 s are collapsed into one count notification. Clicking navigates to that dump. |
 | New email | Fires when you are not on the Mail page. Bursts are collapsed. Clicking navigates to the Mail page. |
+| Worker crash loop | Fires once when a site worker crashes 3 times in a row. Clicking opens the site settings. |
 
 Notification permission is requested automatically on first load. devctl uses the **Service Worker Notification API** when supported, with a direct `Notification` API fallback for browsers without service worker support.
 
@@ -837,6 +879,7 @@ devctl settings:set devctl_port=4001  # change a setting (key=value)
 devctl helpers:list               # list installed CLI helpers
 devctl helpers:install mago       # download mago into the shared bin dir
 devctl node:install 22            # install Node 22 (node/npm/npx follow each site's .nvmrc)
+devctl workers:add myapp.test queue  # keep artisan queue:work running for a site
 devctl php:settings               # show PHP ini settings
 devctl php:set memory_limit=512M  # update a PHP ini setting
 devctl db:connection              # DB settings and URL of the site in the cwd
@@ -898,6 +941,13 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | `node` | `node:list` | List installed Node.js versions and the sites that use each |
 | | `node:install <version>` | Install a Node.js version with fnm (`22`, `20.11.1`, `lts`, `lts/<name>`, `latest`) |
 | | `node:uninstall <version>` | Remove an installed Node.js version |
+| `workers` | `workers:list [domain]` | List site workers and their status |
+| | `workers:add <domain> <type> [--command=...]` | Add a worker (`queue`, `horizon`, `schedule`, `vite`, `custom`) and start it |
+| | `workers:remove <domain> <type\|id>` | Stop a worker and remove it |
+| | `workers:start <domain> <type\|id>` | Start a worker (it starts with devctl again) |
+| | `workers:stop <domain> <type\|id>` | Stop a worker (it stays stopped) |
+| | `workers:restart <domain> <type\|id>` | Restart a worker |
+| | `workers:logs <domain> <type\|id> [--lines=N] [--follow]` | Show or follow a worker log |
 | `php` | `php:versions` | List installed PHP versions and their FPM status |
 | | `php:settings [all\|<version>] [--version=<ver>]` | Show PHP ini settings for all versions or one version |
 | | `php:set <key=value>... [--version=<ver>]` | Update PHP ini settings for all versions or one version |

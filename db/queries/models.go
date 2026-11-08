@@ -49,3 +49,12 @@ type Site struct {
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
+
+type SiteWorker struct {
+	ID        int64     `db:"id" json:"id"`
+	SiteID    string    `db:"site_id" json:"site_id"`
+	Type      string    `db:"type" json:"type"`
+	Command   string    `db:"command" json:"command"`
+	Enabled   int64     `db:"enabled" json:"enabled"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}

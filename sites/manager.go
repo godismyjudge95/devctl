@@ -19,6 +19,14 @@ type Manager struct {
 	db         *dbq.Queries
 	caddy      *CaddyClient
 	serverRoot string
+	// beforeDelete runs before a site row is deleted (stops its workers).
+	beforeDelete func(ctx context.Context, siteID string)
+}
+
+// SetBeforeDelete registers fn to run before every site delete, including
+// worktree removal and pruning of sites whose directory is gone.
+func (m *Manager) SetBeforeDelete(fn func(ctx context.Context, siteID string)) {
+	m.beforeDelete = fn
 }
 
 // NewManager creates a Manager.
@@ -149,6 +157,9 @@ func (m *Manager) Create(ctx context.Context, input CreateSiteInput) (dbq.Site, 
 
 // Delete removes a site from the DB and removes its Caddy vhost.
 func (m *Manager) Delete(ctx context.Context, id string) error {
+	if m.beforeDelete != nil {
+		m.beforeDelete(ctx, id)
+	}
 	if err := m.db.DeleteSite(ctx, id); err != nil {
 		return fmt.Errorf("delete site db: %w", err)
 	}

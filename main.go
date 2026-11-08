@@ -31,6 +31,7 @@ import (
 	"github.com/danielgormly/devctl/selfupdate"
 	"github.com/danielgormly/devctl/services"
 	"github.com/danielgormly/devctl/sites"
+	"github.com/danielgormly/devctl/workers"
 )
 
 // version is set at build time via -ldflags "-X main.version=vX.Y.Z".
@@ -378,7 +379,9 @@ func run() error {
 	// Build before auto-start loops so srv.ServiceDef() can apply DB settings
 	// (e.g. dns port/target-ip) to the definitions used by the supervisor.
 	log.Printf("startup: total init %s — listening on %s", time.Since(t0).Round(time.Millisecond), addr)
-	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr, version)
+	workerManager := workers.NewManager(database, supervisor, cfg.ServerRoot)
+	siteManager.SetBeforeDelete(workerManager.RemoveSite)
+	srv := api.NewServer(database, registry, manager, supervisor, poller, dumpsServer, caddyClient, siteManager, installRegistry, workerManager, uiFS, cfg.ServerRoot, cfg.SiteUser, cfg.SiteHome, addr, version)
 
 	// Auto-start remaining installed managed services (all except caddy, already started).
 	for _, def := range registry.All() {
@@ -409,6 +412,8 @@ func run() error {
 			}
 		}
 	}
+
+	workerManager.StartEnabled(ctx)
 
 	// --- Start background goroutines ---
 	runCtx, cancel := context.WithCancel(context.Background())

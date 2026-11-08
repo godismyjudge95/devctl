@@ -43,7 +43,7 @@ func TestCheckElevateDaemonReusesConnection(t *testing.T) {
 	go srv.Serve(ln)
 	defer srv.Close()
 
-	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, embed.FS{}, root, "", "", "", "test")
+	s := NewServer(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, embed.FS{}, root, "", "", "", "test")
 	for i := 0; i < 5; i++ {
 		if f := s.checkElevateDaemon(context.Background()); f.Severity != doctor.OK {
 			t.Fatalf("run %d: check failed: %+v", i, f)

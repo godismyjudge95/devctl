@@ -11,6 +11,7 @@ import { useMailNotifications } from '@/composables/useMailNotifications'
 import { usePwaInstall } from '@/composables/usePwaInstall'
 import { useUpdateStore } from '@/stores/update'
 import { useHelpersStore } from '@/stores/helpers'
+import { useWorkersStore } from '@/stores/workers'
 import { onMounted, watch, computed, ref } from 'vue'
 import { Settings, Globe, Server, Mail, Bug, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Wrench, Stethoscope, Gauge } from 'lucide-vue-next'
 import AppNav from '@/components/layout/AppNav.vue'
@@ -42,6 +43,7 @@ const sitesStore = useSitesStore()
 const spxStore = useSpxStore()
 const updateStore = useUpdateStore()
 const helpersStore = useHelpersStore()
+const workersStore = useWorkersStore()
 
 const mobileNavOpen = ref(false)
 const updateDialogOpen = ref(false)
@@ -54,6 +56,8 @@ onMounted(() => {
   // Load sites so spxAvailable computed is populated.
   sitesStore.load()
   helpersStore.fetchAll()
+  // Live worker status for the site cards and crash-loop notifications.
+  workersStore.startPolling()
   // Check for a newer devctl release.
   updateStore.checkForUpdate()
   // Mail WS is connected reactively once Mailpit is known to be installed.
