@@ -150,6 +150,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/helpers/{id}/update", s.handleHelperUpdate)
 	s.mux.HandleFunc("DELETE /api/helpers/{id}", s.handleHelperUninstall)
 
+	// Node.js (fnm)
+	s.mux.HandleFunc("GET /api/node", s.handleGetNode)
+	s.mux.HandleFunc("POST /api/node/install", s.handleNodeInstall)
+	s.mux.HandleFunc("DELETE /api/node/versions/{version}", s.handleNodeUninstall)
+
 	// Logs
 	s.mux.HandleFunc("GET /api/logs", s.handleGetLogs)
 	s.mux.HandleFunc("GET /api/logs/{id}/tail", s.handleGetLogTail)
@@ -168,6 +173,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/sites/{id}", s.handleDeleteSite)
 	s.mux.HandleFunc("POST /api/sites/{id}/spx/enable", s.handleSPXEnable)
 	s.mux.HandleFunc("POST /api/sites/{id}/spx/disable", s.handleSPXDisable)
+	s.mux.HandleFunc("PUT /api/sites/{id}/node", s.handleSetSiteNode)
 	// Worktrees
 	s.mux.HandleFunc("GET /api/sites/{id}/branches", s.handleGetSiteBranches)
 	s.mux.HandleFunc("GET /api/sites/{id}/worktree-config", s.handleGetWorktreeConfig)

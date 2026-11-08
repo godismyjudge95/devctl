@@ -34,6 +34,14 @@ export interface Site {
   framework: string
   created_at: string
   updated_at: string
+  node?: SiteNode
+}
+
+/** Node version a site asks for (from its files) and the installed version it runs. */
+export interface SiteNode {
+  version: string   // as written in the file; '' when no file names one
+  file: string      // absolute path of that file
+  resolved: string  // installed version used; '' when none matches
 }
 
 export interface Branch {
@@ -109,6 +117,25 @@ export function updateHelperStream(id: string, callbacks: StreamCallbacks): Abor
   return runServiceStream('POST', `/api/helpers/${id}/update`, callbacks)
 }
 export const uninstallHelper = (id: string) => request<void>('DELETE', `/api/helpers/${id}`)
+
+// --- Node.js ---
+export interface NodeVersion {
+  version: string
+  default: boolean
+  sites: string[]
+}
+export interface NodeState {
+  fnm_installed: boolean
+  versions: NodeVersion[]
+}
+export const getNode = () => request<NodeState>('GET', '/api/node')
+export function installNodeStream(version: string, callbacks: StreamCallbacks): AbortController {
+  return runServiceStream('POST', `/api/node/install?version=${encodeURIComponent(version)}`, callbacks)
+}
+export const uninstallNode = (version: string) =>
+  request<void>('DELETE', `/api/node/versions/${encodeURIComponent(version)}`)
+export const setSiteNode = (id: string, version: string) =>
+  request<SiteNode>('PUT', `/api/sites/${id}/node`, { version })
 
 // --- Doctor ---
 export type DoctorSeverity = 'ok' | 'warn' | 'fail'

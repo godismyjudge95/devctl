@@ -28,7 +28,7 @@ type mcpTool struct {
 var mcpTools = []mcpTool{
 	{"sites", "Local *.test sites: list, details, PHP version, CORS, SPX, git branches and worktrees.", []string{"sites"}},
 	{"services", "Dev services (Valkey, MySQL, PostgreSQL, Mailpit, …): status, start/stop, install, credentials. Also CLI helpers.", []string{"services", "helpers"}},
-	{"php", "PHP versions, ini settings, SPX profiles.", []string{"php", "spx"}},
+	{"php", "PHP versions, ini settings, SPX profiles, Node versions.", []string{"php", "spx", "node"}},
 	{"db", "MySQL and PostgreSQL databases: list, create, drop, copy, import, export, query, site connection.", []string{"db", "postgres"}},
 	{"mail", "Emails caught by Mailpit: list, read, wait for new, links, attachments, delete.", []string{"mail"}},
 	{"logs", "Log files of services, PHP-FPM, and Caddy: list, tail, clear.", []string{"logs"}},

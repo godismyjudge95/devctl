@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Site } from '@/lib/api'
 import { getPHPVersions, detectSite } from '@/lib/api'
 import { useSitesStore } from '@/stores/sites'
+import { useNodeStore } from '@/stores/node'
 import { toast } from 'vue-sonner'
 import { GitFork, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ import EmptyState from '@/components/layout/EmptyState.vue'
 const route = useRoute()
 const router = useRouter()
 const store = useSitesStore()
+const nodeStore = useNodeStore()
 
 const phpVersions = ref<string[]>([])
 const fallbackVersions = ['8.4', '8.3', '8.2', '8.1']
@@ -35,10 +37,25 @@ const form = reactive({
   spx_enabled: false,
   https: true,
   cors: false,
+  node_version: '',
 })
 
 const siteId = computed(() => route.params.id as string)
 const site = computed<Site | undefined>(() => store.sites.find(s => s.id === siteId.value))
+
+const defaultNode = computed(() => nodeStore.versions.find(v => v.default)?.version ?? '')
+const nodeStatus = computed(() => {
+  const n = site.value?.node
+  if (!n?.version) {
+    return defaultNode.value
+      ? `No version file. Uses the default, ${defaultNode.value}.`
+      : 'No version file and no Node version installed.'
+  }
+  const from = n.file.split('/').pop()
+  return n.resolved
+    ? `Runs ${n.resolved} (from ${from}).`
+    : `Node ${n.version} (from ${from}) is not installed. Install it on the Helpers page.`
+})
 
 function hydrate(s: Site) {
   const aliases = (() => {
@@ -54,12 +71,14 @@ function hydrate(s: Site) {
     spx_enabled: s.spx_enabled === 1,
     https: s.https === 1,
     cors: s.cors === 1,
+    node_version: s.node?.version ?? '',
   })
   detectedFramework.value = s.framework ?? ''
 }
 
 onMounted(async () => {
   if (store.sites.length === 0) await store.load()
+  nodeStore.fetchAll().catch(() => {})
   try {
     const data = await getPHPVersions()
     phpVersions.value = data.length > 0 ? data.map((v) => v.version) : fallbackVersions
@@ -107,6 +126,10 @@ async function save() {
     if (spxChanged) {
       await store.toggleSPX(site.value.id, form.spx_enabled)
     }
+    const nodeVersion = form.node_version.trim()
+    if (nodeVersion && nodeVersion !== (site.value.node?.version ?? '')) {
+      await nodeStore.setSiteVersion(site.value.id, nodeVersion)
+    }
     toast.success(`${form.domain} settings saved`)
     router.push('/sites')
   } catch (e: any) {
@@ -138,7 +161,7 @@ async function save() {
       <Card>
         <CardHeader class="border-b">
           <CardTitle>Host</CardTitle>
-          <CardDescription>Domain, document root, and PHP version for this site.</CardDescription>
+          <CardDescription>Domain, document root, and PHP and Node versions for this site.</CardDescription>
         </CardHeader>
         <CardContent class="pb-0 sm:pb-0">
           <SettingRow label="Domain" for="sd-domain">
@@ -170,6 +193,19 @@ async function save() {
                 </SelectItem>
               </SelectContent>
             </Select>
+          </SettingRow>
+          <SettingRow
+            label="Node version"
+            hint="Saving writes .nvmrc. Use 22, 20.11.1, lts/*, or a range like >=20."
+            for="sd-node"
+          >
+            <Input
+              id="sd-node"
+              v-model="form.node_version"
+              :placeholder="defaultNode ? `Default (${defaultNode})` : 'Default'"
+              class="font-mono sm:w-48"
+            />
+            <p data-testid="site-node-status" class="mt-2 text-xs text-muted-foreground">{{ nodeStatus }}</p>
           </SettingRow>
           <SettingRow label="Aliases" hint="Comma-separated extra hostnames." for="sd-aliases">
             <Input id="sd-aliases" v-model="form.aliases" placeholder="www.myapp.test" />

@@ -25,15 +25,51 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { useHelpersStore } from '@/stores/helpers'
+import { useNodeStore } from '@/stores/node'
 
 const store = useHelpersStore()
+const nodeStore = useNodeStore()
 const router = useRouter()
 const pending = ref<Record<string, string>>({})
 
 onMounted(() => {
   store.fetchAll()
+  nodeStore.fetchAll()
 })
+
+const nodeVersionInput = ref('')
+
+async function installNode() {
+  const version = nodeVersionInput.value.trim()
+  if (!version) return
+  try {
+    await nodeStore.install(version)
+    nodeVersionInput.value = ''
+    toast.success(`Node ${version} installed`)
+    store.fetchAll()
+  } catch (e: any) {
+    toast.error(`Failed to install Node ${version}`, { description: e.message })
+  }
+}
+
+const nodeUninstallTarget = ref<string | null>(null)
+
+async function executeNodeUninstall() {
+  const version = nodeUninstallTarget.value
+  if (!version) return
+  nodeUninstallTarget.value = null
+  pending.value[`node:${version}`] = 'uninstall'
+  try {
+    await nodeStore.uninstall(version)
+    toast.success(`Node ${version} uninstalled`)
+  } catch (e: any) {
+    toast.error(`Failed to uninstall Node ${version}`, { description: e.message })
+  } finally {
+    delete pending.value[`node:${version}`]
+  }
+}
 
 async function update(id: string, label: string) {
   pending.value[id] = 'update'
@@ -191,6 +227,83 @@ async function executeUninstall() {
         </Table>
       </Surface>
     </template>
+
+    <Surface data-testid="node-versions">
+      <SectionHeader
+        title="Node.js versions"
+        description="Installed with fnm. Each site uses the version in its .nvmrc, .node-version, or package.json engines.node. node, npm, and npx on PATH follow the project in the current directory."
+      />
+      <div class="space-y-3 border-t border-border px-4 py-4 sm:px-5">
+        <form class="flex flex-wrap items-center gap-2" @submit.prevent="installNode">
+          <Input
+            id="node-install-version"
+            v-model="nodeVersionInput"
+            placeholder="22, lts, or 20.11.1"
+            aria-label="Node version to install"
+            class="font-mono sm:w-56"
+            :disabled="nodeStore.installing"
+          />
+          <Button type="submit" size="sm" :disabled="!nodeVersionInput.trim() || nodeStore.installing">
+            <Loader2 v-if="nodeStore.installing" class="size-3.5 animate-spin" />
+            <Plus v-else class="size-3.5" />
+            Install Node
+          </Button>
+        </form>
+        <pre
+          v-if="nodeStore.installing && nodeStore.installOutput.length"
+          class="max-h-40 overflow-auto rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground"
+        >{{ nodeStore.installOutput.join('') }}</pre>
+
+        <p v-if="!nodeStore.loading && nodeStore.versions.length === 0" class="text-sm text-muted-foreground">
+          No Node versions installed.
+        </p>
+        <ul v-else class="divide-y divide-border rounded-md border border-border">
+          <li
+            v-for="v in nodeStore.versions"
+            :key="v.version"
+            data-testid="node-version-row"
+            class="flex items-center justify-between gap-3 px-3 py-2"
+          >
+            <div class="min-w-0">
+              <p class="flex items-center gap-1.5 font-mono text-sm">
+                {{ v.version }}
+                <Badge v-if="v.default" variant="secondary">default</Badge>
+              </p>
+              <p class="truncate text-xs text-muted-foreground" :title="v.sites.join(', ')">
+                {{ v.sites.length ? v.sites.join(', ') : 'No sites use this version' }}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              :aria-label="`Uninstall Node ${v.version}`"
+              title="Uninstall"
+              class="text-muted-foreground hover:bg-destructive-soft hover:text-destructive-soft-foreground"
+              :disabled="!!pending[`node:${v.version}`]"
+              @click="nodeUninstallTarget = v.version"
+            >
+              <Loader2 v-if="pending[`node:${v.version}`]" class="size-4 animate-spin" />
+              <Trash2 v-else class="size-4" />
+            </Button>
+          </li>
+        </ul>
+      </div>
+    </Surface>
+
+    <AlertDialog :open="!!nodeUninstallTarget" @update:open="v => { if (!v) nodeUninstallTarget = null }">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Uninstall Node {{ nodeUninstallTarget }}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Sites that use this version stop working with node, npm, and npx until you install it again or pick another version.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" @click="executeNodeUninstall">Uninstall</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <AlertDialog :open="!!uninstallTarget" @update:open="v => { if (!v) uninstallTarget = null }">
       <AlertDialogContent>

@@ -29,7 +29,7 @@ func (s *Server) handleGetSites(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, all)
+	writeJSON(w, s.siteViews(all))
 }
 
 func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func (s *Server) handleCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, site)
+	writeJSON(w, s.siteView(site))
 }
 
 func (s *Server) handleGetSite(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +90,7 @@ func (s *Server) handleGetSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "site not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, site)
+	writeJSON(w, s.siteView(site))
 }
 
 func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func (s *Server) handleUpdateSite(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, site)
+	writeJSON(w, s.siteView(site))
 }
 
 func (s *Server) handleDeleteSite(w http.ResponseWriter, r *http.Request) {

@@ -88,6 +88,14 @@ func BinDir(serverRoot string) string {
 	return filepath.Join(serverRoot, "bin")
 }
 
+// NodeDir returns the fnm directory that holds the Node.js versions devctl
+// installs (fnm --fnm-dir).
+//
+//	{serverRoot}/node
+func NodeDir(serverRoot string) string {
+	return filepath.Join(serverRoot, "node")
+}
+
 // CABundlePath returns the combined CA bundle PHP (openssl/curl) uses so
 // HTTPS to *.test hosts signed by Caddy's local CA succeeds.
 //

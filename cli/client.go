@@ -208,6 +208,18 @@ type HelperState struct {
 	UpdateAvailable bool     `json:"update_available"`
 }
 
+// NodeState mirrors GET /api/node.
+type NodeState struct {
+	FnmInstalled bool          `json:"fnm_installed"`
+	Versions     []NodeVersion `json:"versions"`
+}
+
+type NodeVersion struct {
+	Version string   `json:"version"`
+	Default bool     `json:"default"`
+	Sites   []string `json:"sites"`
+}
+
 type PHPVersion struct {
 	Version   string       `json:"version"`
 	FPMSocket string       `json:"fpm_socket"`
@@ -398,6 +410,19 @@ func (c *Client) UpdateHelperSSE(id string, onOutput func(line string)) error {
 
 func (c *Client) UninstallHelper(id string) error {
 	return c.delete("/api/helpers/" + id)
+}
+
+func (c *Client) GetNode() (NodeState, error) {
+	var out NodeState
+	return out, c.get("/api/node", &out)
+}
+
+func (c *Client) InstallNodeSSE(version string, onOutput func(line string)) error {
+	return c.postSSE("/api/node/install?version="+url.QueryEscape(version), "install Node "+version, onOutput)
+}
+
+func (c *Client) UninstallNode(version string) error {
+	return c.delete("/api/node/versions/" + url.PathEscape(version))
 }
 
 func (c *Client) RestartService(id string) error {

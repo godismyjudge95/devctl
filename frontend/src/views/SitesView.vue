@@ -134,6 +134,13 @@ function fullPath(site: Site): string {
   return site.root_path + (site.public_dir ? '/' + site.public_dir : '')
 }
 
+function nodeTitle(site: Site): string {
+  const n = site.node
+  if (!n) return ''
+  const from = n.file.split('/').pop()
+  return n.resolved ? `Runs ${n.resolved} (from ${from})` : `Not installed (from ${from})`
+}
+
 function frameworkLabel(fw: string): string {
   switch (fw) {
     case 'laravel':   return 'Laravel'
@@ -276,8 +283,16 @@ function frameworkLabel(fw: string): string {
 
               <!-- PHP + HTTPS -->
               <TableCell>
-                <div class="flex items-center gap-1.5">
+                <div class="flex flex-wrap items-center gap-1.5">
                   <MetaChip>PHP {{ site.php_version || "—" }}</MetaChip>
+                  <MetaChip
+                    v-if="site.node?.version"
+                    data-testid="site-node"
+                    :tone="site.node.resolved ? 'default' : 'warning'"
+                    :title="nodeTitle(site)"
+                  >
+                    Node {{ site.node.version }}
+                  </MetaChip>
                   <MetaChip :tone="site.https ? 'success' : 'muted'">
                     <Lock v-if="site.https" />
                     <Unlock v-else />
@@ -369,6 +384,14 @@ function frameworkLabel(fw: string): string {
 
             <div class="flex flex-wrap items-center gap-1.5">
               <MetaChip>PHP {{ site.php_version || "—" }}</MetaChip>
+              <MetaChip
+                v-if="site.node?.version"
+                data-testid="site-node"
+                :tone="site.node.resolved ? 'default' : 'warning'"
+                :title="nodeTitle(site)"
+              >
+                Node {{ site.node.version }}
+              </MetaChip>
               <MetaChip :tone="site.https ? 'success' : 'muted'">
                 <Lock v-if="site.https" />
                 <Unlock v-else />

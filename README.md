@@ -94,7 +94,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | Share a site publicly | ✅ | ✅ | ✅ | ❌ |
 | Health checks (`doctor`) | ❌ | ✅ | ✅ | ✅ |
 | AI integration | MCP | MCP | MCP | CLI + skill + MCP |
-| Per-project Node isolation | ❌ | ✅ | tools install | ❌ |
+| Per-project Node isolation | ❌ | ✅ | tools install | ✅ (fnm) |
 | Rootless day-to-day | ✅ | ✅ | ✅ | ✅ |
 | Containers / VM | None | Podman | None | None [^no-containers] |
 
@@ -330,6 +330,23 @@ devctl helpers:available
 devctl helpers:install mago
 devctl helpers:update mago
 devctl helpers:uninstall mago
+```
+
+### Node.js for each site
+
+devctl installs Node.js versions with fnm into `{serverRoot}/node`. Install, list, and remove them on the **Helpers** page or with `devctl node:*`. `node:install` installs fnm first when it is missing.
+
+Each site uses the Node version its own files ask for. devctl reads `.nvmrc`, then `.node-version`, then `package.json` `engines.node`, in the site directory or the nearest parent that has one. Exact versions (`20.11.1`), majors (`22`), `lts/*`, `lts/<name>`, and ranges (`>=20`, `^18.17`) all work. Without a version file a site uses the newest installed LTS. There is no database setting: the file in the project is the source of truth.
+
+The site list and site settings show each site's Node version. Changing it in site settings writes `.nvmrc`.
+
+While a Node version is installed, `{serverRoot}/bin/node`, `npm`, and `npx` are shims. They pick the version for the project in the current directory and run it with `fnm exec`. When the last version is removed, the shims go away and a system Node on `PATH` works again.
+
+```sh
+devctl node:install 22
+devctl node:install lts
+devctl node:list
+devctl node:uninstall v20.11.1
 ```
 
 ---
@@ -763,6 +780,7 @@ devctl settings:get               # show all settings
 devctl settings:set devctl_port=4001  # change a setting (key=value)
 devctl helpers:list               # list installed CLI helpers
 devctl helpers:install mago       # download mago into the shared bin dir
+devctl node:install 22            # install Node 22 (node/npm/npx follow each site's .nvmrc)
 devctl php:settings               # show PHP ini settings
 devctl php:set memory_limit=512M  # update a PHP ini setting
 devctl db:connection              # DB settings and URL of the site in the cwd
@@ -818,6 +836,9 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `helpers:install <id>` | Download and install a helper |
 | | `helpers:update <id>` | Update a helper to the latest version |
 | | `helpers:uninstall <id>` | Remove an installed helper |
+| `node` | `node:list` | List installed Node.js versions and the sites that use each |
+| | `node:install <version>` | Install a Node.js version with fnm (`22`, `20.11.1`, `lts`, `lts/<name>`, `latest`) |
+| | `node:uninstall <version>` | Remove an installed Node.js version |
 | `php` | `php:versions` | List installed PHP versions and their FPM status |
 | | `php:settings [all\|<version>] [--version=<ver>]` | Show PHP ini settings for all versions or one version |
 | | `php:set <key=value>... [--version=<ver>]` | Update PHP ini settings for all versions or one version |

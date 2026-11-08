@@ -19,6 +19,7 @@ The backend is a single Go binary (`main.go`) that runs as a **systemd system se
 | `api/` | HTTP handlers, route registration, SSE, WebSocket upgrade |
 | `services/` | Static service registry, exec manager, status poller, process supervisor |
 | `tools/` | Downloadable CLI helpers (sqlite3, mago, phpantom_lsp, wp, fnm, yq) |
+| `node/` | Node version for each site (`.nvmrc` / `.node-version` / `engines.node`), fnm install dir, `node`/`npm`/`npx` shims. `node.Command(serverRoot, dir, args...)` is the argv that runs a Node command for a site |
 | `internal/githubapi/` | Shared GitHub Releases latest-tag client |
 | `internal/versioncache/` | Shared latest-version cache and update-available comparison |
 | `sites/` | Site CRUD (SQLite), Caddy Admin API client, fsnotify watcher |

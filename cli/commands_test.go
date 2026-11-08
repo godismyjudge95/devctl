@@ -71,6 +71,14 @@ func TestHelpersUninstall_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "helpers:uninstall", wantArgs: true})
 }
 
+func TestNodeList_IsRegistered(t *testing.T) { assertCmd(t, cmdCheck{name: "node:list"}) }
+func TestNodeInstall_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "node:install", wantArgs: true})
+}
+func TestNodeUninstall_IsRegistered(t *testing.T) {
+	assertCmd(t, cmdCheck{name: "node:uninstall", wantArgs: true})
+}
+
 func TestDumpsList_IsRegistered(t *testing.T) {
 	assertCmd(t, cmdCheck{name: "dumps:list", wantFlag: "domain"})
 }

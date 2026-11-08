@@ -24,6 +24,7 @@ import (
 	"github.com/danielgormly/devctl/dumps"
 	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/install"
+	"github.com/danielgormly/devctl/node"
 	"github.com/danielgormly/devctl/paths"
 	"github.com/danielgormly/devctl/php"
 	"github.com/danielgormly/devctl/selfinstall"
@@ -87,6 +88,12 @@ func main() {
 			// Privileged one-shot ops only (must be euid 0). Used by elevate.
 			if err := elevate.RunHelper(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "devctl helper: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "node-shim":
+			if err := node.RunShim(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "devctl: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -235,6 +242,9 @@ func run() error {
 	}
 	if err := install.EnsureClickHouseConfig(cfg.ServerRoot); err != nil {
 		log.Printf("startup: clickhouse config: %v", err)
+	}
+	if err := node.EnsureShims(cfg.ServerRoot); err != nil {
+		log.Printf("startup: node shims: %v", err)
 	}
 	done()
 
