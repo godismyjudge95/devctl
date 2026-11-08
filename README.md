@@ -606,6 +606,7 @@ Every config-enabled service has a file icon in the Services tab that opens a fu
 | Typesense | `typesense.ini` |
 | Mailpit | `config.env` |
 | ClickHouse | `config.xml`, `users.xml` (two tabs) |
+| PostgreSQL | `postgresql.conf`, `pg_hba.conf` (two tabs) |
 | PHP-FPM | `php.ini`, `php-fpm.conf` (two tabs) |
 
 ---

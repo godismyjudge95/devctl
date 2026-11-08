@@ -260,6 +260,7 @@ const CONFIG_PRIMARY_FILE: Record<string, string> = {
   typesense:   'typesense.ini',
   mailpit:     'config.env',
   clickhouse:  'config.xml',
+  postgres:    'postgresql.conf',
 }
 
 function hasConfigEditor(id: string): boolean {

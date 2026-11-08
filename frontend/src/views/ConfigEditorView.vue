@@ -27,6 +27,10 @@ const SERVICE_META: Record<string, ServiceConfigMeta> = {
     { name: 'config.xml', label: 'config.xml' },
     { name: 'users.xml',  label: 'users.xml' },
   ]},
+  'postgres':     { label: 'PostgreSQL',  files: [
+    { name: 'postgresql.conf', label: 'postgresql.conf' },
+    { name: 'pg_hba.conf',     label: 'pg_hba.conf' },
+  ]},
 }
 
 // PHP-FPM services are dynamic (php-fpm-8.3, php-fpm-8.4, etc.)

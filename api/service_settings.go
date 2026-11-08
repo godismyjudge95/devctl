@@ -350,6 +350,13 @@ func serviceConfigFilePath(serverRoot, id, file string) (string, bool) {
 		default:
 			return "", false
 		}
+	case "postgres":
+		switch file {
+		case "postgresql.conf", "pg_hba.conf":
+			return filepath.Join(paths.ServiceDir(serverRoot, "postgres"), "data", file), true
+		default:
+			return "", false
+		}
 	}
 	if strings.HasPrefix(id, "php-fpm-") {
 		ver := strings.TrimPrefix(id, "php-fpm-")
@@ -362,7 +369,7 @@ func serviceConfigFilePath(serverRoot, id, file string) (string, bool) {
 // Supported: php-fpm-* (php.ini, php-fpm.conf), mysql (my.cnf),
 // valkey (valkey.conf), meilisearch (config.toml),
 // typesense (typesense.ini), mailpit (config.env),
-// clickhouse (config.xml, users.xml).
+// clickhouse (config.xml, users.xml), postgres (postgresql.conf, pg_hba.conf).
 func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	file := r.PathValue("file")
@@ -388,7 +395,7 @@ func (s *Server) handleGetServiceConfig(w http.ResponseWriter, r *http.Request) 
 // Supported: php-fpm-* (php.ini, php-fpm.conf), mysql (my.cnf),
 // valkey (valkey.conf), meilisearch (config.toml),
 // typesense (typesense.ini), mailpit (config.env),
-// clickhouse (config.xml, users.xml).
+// clickhouse (config.xml, users.xml), postgres (postgresql.conf, pg_hba.conf).
 func (s *Server) handlePutServiceConfig(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	file := r.PathValue("file")
