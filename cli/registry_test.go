@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -216,4 +217,33 @@ func names(cmds []*Cmd) []string {
 		out[i] = c.Name
 	}
 	return out
+}
+
+func TestSplitGlobalFlags_AnyPosition(t *testing.T) {
+	t.Setenv("DEVCTL_ADDR", "")
+	addr, jsonMode, rest, err := splitGlobalFlags([]string{"--to=a@b.test", "abc", "--json", "--addr", "127.0.0.1:5000", "--format=html"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jsonMode || addr != "127.0.0.1:5000" {
+		t.Errorf("jsonMode=%v addr=%q, want true and 127.0.0.1:5000", jsonMode, addr)
+	}
+	want := []string{"--to=a@b.test", "abc", "--format=html"}
+	if strings.Join(rest, " ") != strings.Join(want, " ") {
+		t.Errorf("rest = %q, want %q", rest, want)
+	}
+}
+
+func TestSplitGlobalFlags_Defaults(t *testing.T) {
+	t.Setenv("DEVCTL_ADDR", "")
+	addr, jsonMode, rest, err := splitGlobalFlags([]string{"-json=false", "-addr=10.0.0.1:4000", "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jsonMode || addr != "10.0.0.1:4000" || len(rest) != 1 || rest[0] != "json" {
+		t.Errorf("got jsonMode=%v addr=%q rest=%q", jsonMode, addr, rest)
+	}
+	if _, _, _, err := splitGlobalFlags([]string{"--addr"}); err == nil {
+		t.Error("--addr without a value: want error")
+	}
 }

@@ -1,10 +1,10 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -96,24 +96,12 @@ func Dispatch(args []string) bool {
 		}
 	}
 
-	// Parse global flags: --addr, --json, --help
-	fs := flag.NewFlagSet("devctl", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	addr := fs.String("addr", addrFromEnv(), "devctl daemon address (default: $DEVCTL_ADDR or 127.0.0.1:4000)")
-	jsonMode := fs.Bool("json", false, "output JSON instead of formatted text")
-
-	// Separate the command name from the rest, then parse flags from the remainder
 	cmdName := token
-	rest := args[1:]
-
-	if err := fs.Parse(rest); err != nil {
-		if err == flag.ErrHelp {
-			return true
-		}
-		PrintErr(fmt.Errorf("%v", err))
+	addr, jsonMode, remaining, err := splitGlobalFlags(args[1:])
+	if err != nil {
+		PrintErr(err)
 		os.Exit(1)
 	}
-	remaining := fs.Args()
 
 	if cmdName == "help" {
 		printGlobalHelp()
@@ -130,8 +118,8 @@ func Dispatch(args []string) bool {
 				return true
 			}
 		}
-		c := NewClient(*addr)
-		if err := cmd.Handler(c, remaining, *jsonMode); err != nil {
+		c := NewClient(addr)
+		if err := cmd.Handler(c, remaining, jsonMode); err != nil {
 			PrintErr(err)
 			os.Exit(1)
 		}
@@ -229,6 +217,40 @@ func printSuggestions(query string, cmds []*Cmd) {
 		}
 		fmt.Fprintln(os.Stderr)
 	}
+}
+
+// splitGlobalFlags pulls --json and --addr out of args wherever they appear
+// and returns the rest untouched, so command flags (mail:list --to=x) and
+// global flags after a positional (mail:get <id> --json) both work.
+func splitGlobalFlags(args []string) (addr string, jsonMode bool, rest []string, err error) {
+	addr = addrFromEnv()
+	for i := 0; i < len(args); i++ {
+		name, value, hasValue := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
+		if !strings.HasPrefix(args[i], "-") {
+			name = ""
+		}
+		switch name {
+		case "json":
+			jsonMode = true
+			if hasValue {
+				if jsonMode, err = strconv.ParseBool(value); err != nil {
+					return "", false, nil, fmt.Errorf("invalid value %q for --json", value)
+				}
+			}
+		case "addr":
+			if !hasValue {
+				if i+1 >= len(args) {
+					return "", false, nil, fmt.Errorf("--addr needs a value")
+				}
+				i++
+				value = args[i]
+			}
+			addr = value
+		default:
+			rest = append(rest, args[i])
+		}
+	}
+	return addr, jsonMode, rest, nil
 }
 
 func addrFromEnv() string {
