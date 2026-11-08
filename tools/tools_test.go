@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/danielgormly/devctl/dist"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -171,8 +172,12 @@ func TestFetchFNMLatestRelease_ParsesTag(t *testing.T) {
 	if rel.Version != "1.39.0" {
 		t.Errorf("Version = %q, want %q", rel.Version, "1.39.0")
 	}
-	if !strings.Contains(rel.DownloadURL, "v1.39.0/fnm-linux.zip") {
-		t.Errorf("DownloadURL = %q, expected v1.39.0/fnm-linux.zip", rel.DownloadURL)
+	a, err := dist.For("fnm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(rel.DownloadURL, "v1.39.0/"+a.File) {
+		t.Errorf("DownloadURL = %q, expected v1.39.0/%s", rel.DownloadURL, a.File)
 	}
 }
 

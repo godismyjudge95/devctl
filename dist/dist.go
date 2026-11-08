@@ -63,7 +63,7 @@ var assetTable = []assetRow{
 	{GOOS: "darwin", GOARCH: "arm64", Name: "mago", Asset: Asset{Token: "aarch64-apple-darwin", File: "mago-apple-darwin.tar.gz"}},
 
 	{GOOS: "linux", GOARCH: "amd64", Name: "fnm", Asset: Asset{Token: "linux", File: "fnm-linux.zip"}},
-	{GOOS: "linux", GOARCH: "arm64", Name: "fnm", Asset: Asset{Token: "linux", File: "fnm-linux.zip"}},
+	{GOOS: "linux", GOARCH: "arm64", Name: "fnm", Asset: Asset{Token: "arm64", File: "fnm-arm64.zip"}},
 	{GOOS: "darwin", GOARCH: "arm64", Name: "fnm", Asset: Asset{Token: "macos", File: "fnm-macos.zip"}},
 
 	{GOOS: "linux", GOARCH: "amd64", Name: "sqlite3", Asset: Asset{Token: "linux-x64", File: "sqlite-tools-linux-x64.zip"}},

@@ -39,6 +39,16 @@ func TestLinuxAmd64ToolURLTokens(t *testing.T) {
 	}
 }
 
+func TestLinuxArm64FNMUsesArm64Build(t *testing.T) {
+	fnm, err := dist.Lookup("linux", "arm64", "fnm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fnm.File != "fnm-arm64.zip" {
+		t.Errorf("linux/arm64 fnm asset = %q, want fnm-arm64.zip", fnm.File)
+	}
+}
+
 func TestDarwinArm64ToolURLTokens(t *testing.T) {
 	yq, err := dist.Lookup("darwin", "arm64", "yq")
 	if err != nil {
