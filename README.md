@@ -411,11 +411,11 @@ The wrappers load that version's `php.ini` and set `SSL_CERT_FILE`, `CURL_CA_BUN
 
 MySQL install writes `{serverRoot}/bin/mysql`, `mysqldump`, and `mysqladmin` wrappers with `MYSQL_HOME` set so they read `{serverRoot}/mysql/my.cnf`. PostgreSQL writes `{serverRoot}/bin/psql`, `pg_dump`, `pg_restore`, `createdb`, and `dropdb` (the `psql` wrapper uses `psql.bin` on Linux and `psql` on macOS). Existing installs receive these wrappers on daemon restart.
 
-### Laravel and Statamic CLIs
+### Laravel installer
 
-When PHP is installed, devctl also runs `composer global require laravel/installer` and `composer global require statamic/cli` as the site user. The binaries land in the Composer global bin directory (`{siteHome}/.config/composer/vendor/bin/` by default).
+When PHP is installed, devctl also runs `composer global require laravel/installer` as the site user, with `{serverRoot}/bin` first on PATH so Composer runs on the devctl `php`. The binary lands in the Composer global bin directory (`~/.config/composer/vendor/bin/` on Linux, `~/.composer/vendor/bin/` on macOS). devctl does not install `statamic/cli`, because its dependencies conflict with the current Laravel installer in the same global Composer project.
 
-devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.zshenv` (zsh) or `.bashrc` / `.bash_profile` / `.profile` (bash). A later install also rewrites leftover PATH blocks in other shell files, so an older sites directory in `~/.profile` is replaced. This means `laravel new`, `statamic new`, and other globally-installed Composer tools are available immediately in a new terminal.
+devctl adds both `{serverRoot}/bin` and the Composer global bin directory to the site user's interactive shell PATH by appending an `export PATH=...` block to `.zshenv` (zsh) or `.bashrc` / `.bash_profile` / `.profile` (bash). A later install also rewrites leftover PATH blocks in other shell files, so an older sites directory in `~/.profile` is replaced. This means `laravel new` and other globally-installed Composer tools are available immediately in a new terminal.
 
 devctl also prepends the Composer global bin directory to PATH for every command it runs internally as the site user, so framework tools are accessible in the context of site commands regardless of the shell configuration.
 
@@ -505,11 +505,11 @@ PHP does not use the OS trust store (the static OpenSSL build looks at `openssl.
 | Template | Options | What runs |
 |---|---|---|
 | Laravel | Starter kit (none, React, Vue, Svelte, Livewire), Pest or PHPUnit, SQLite, MySQL, or PostgreSQL | `laravel new` (with `npm` for a starter kit), then `artisan migrate` for MySQL and PostgreSQL |
-| Statamic | | `statamic new --blank` |
+| Statamic | | `composer create-project statamic/statamic` |
 | WordPress | Admin user, password, and email | `wp core download`, `wp config create`, `wp core install` |
 | Plain PHP | | Writes an `index.php` |
 
-The Laravel installer and the Statamic CLI are the ones devctl installs with PHP. They run as the site user through the devctl `php` wrapper. For MySQL and PostgreSQL, devctl creates a database named after the project (hyphens become underscores). The `.env` gets `APP_URL=https://<name>.test`, the database credentials from the service, Mailpit for mail, and Valkey for Redis (when those services are installed). WordPress keeps its settings in `wp-config.php`.
+The Laravel installer is the one devctl installs with PHP. The installers run as the site user through the devctl `php` wrapper. For MySQL and PostgreSQL, devctl creates a database named after the project (hyphens become underscores). The `.env` gets `APP_URL=https://<name>.test`, the database credentials from the service, Mailpit for mail, and Valkey for Redis (when those services are installed). WordPress keeps its settings in `wp-config.php`.
 
 devctl refuses a name when the directory, the site, or the database already exists. If a step fails, devctl removes the site, the directory, and the database it created. Closing the page or pressing Ctrl+C does not stop a creation that has started.
 

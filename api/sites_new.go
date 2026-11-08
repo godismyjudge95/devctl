@@ -168,12 +168,12 @@ func (s *Server) newSitePHP(version string) (string, error) {
 	return path, nil
 }
 
-// newSiteToolPath is wp in the devctl bin directory, or an installer in the
-// site user's Composer global bin directory.
+// newSiteToolPath is wp or composer in the devctl bin directory, or an
+// installer in the site user's Composer global bin directory.
 func (s *Server) newSiteToolPath(ctx context.Context, tool string) string {
 	binDir := paths.BinDir(s.serverRoot)
-	if tool == newsite.ToolWP {
-		return filepath.Join(binDir, "wp")
+	if tool == newsite.ToolWP || tool == newsite.ToolComposer {
+		return filepath.Join(binDir, tool)
 	}
 	composerBin := filepath.Join(binDir, "composer")
 	return filepath.Join(php.ComposerGlobalBinDir(ctx, composerBin, s.siteUser, s.siteHome), tool)

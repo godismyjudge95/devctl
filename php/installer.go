@@ -118,15 +118,11 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 		fmt.Printf("php: install wp-cli: %v\n", err)
 	}
 
-	// 10. Install Laravel and Statamic CLIs globally via Composer for the site user.
+	// 10. Install the Laravel installer globally via Composer for the site user.
 	composerBinPath := filepath.Join(binDir, "composer")
 	if err := InstallLaravelCLI(ctx, composerBinPath, siteUser, siteHome); err != nil {
 		// Non-fatal — log and continue.
 		fmt.Printf("php: install laravel cli: %v\n", err)
-	}
-	if err := InstallStatamicCLI(ctx, composerBinPath, siteUser, siteHome); err != nil {
-		// Non-fatal — log and continue.
-		fmt.Printf("php: install statamic cli: %v\n", err)
 	}
 
 	return nil
@@ -309,6 +305,13 @@ func InstallComposer(ctx context.Context, binDir string) error {
 	return nil
 }
 
+// composerCmd runs Composer with its own bin dir first on PATH. Composer
+// starts with "#!/usr/bin/env php", and the daemon PATH has no php on macOS
+// or on a Linux without a system PHP.
+func composerCmd(composerBin, args string) string {
+	return "PATH='" + filepath.Dir(composerBin) + "':\"$PATH\" '" + composerBin + "' " + args
+}
+
 // ComposerGlobalBinDir returns the absolute path to the Composer global bin
 // directory for the given user. It runs `composer global config bin-dir
 // --absolute` as siteUser to discover the actual path. If that fails (e.g.
@@ -320,10 +323,11 @@ func ComposerGlobalBinDir(ctx context.Context, composerBin, siteUser, siteHome s
 		return filepath.Join(siteHome, ".config", "composer", "vendor", "bin")
 	}
 	out, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
-		composerBin+" global config bin-dir --absolute")
+		composerCmd(composerBin, "global config bin-dir --absolute"))
 	if err == nil {
-		dir := strings.TrimSpace(out)
-		if dir != "" {
+		// "global" first prints "Changed current directory to ..." on stderr.
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		if dir := strings.TrimSpace(lines[len(lines)-1]); filepath.IsAbs(dir) {
 			return dir
 		}
 	}
@@ -342,27 +346,9 @@ func InstallLaravelCLI(ctx context.Context, composerBin, siteUser, siteHome stri
 		return fmt.Errorf("siteUser and siteHome must be set")
 	}
 	_, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
-		composerBin+" global require laravel/installer --no-interaction --quiet")
+		composerCmd(composerBin, "global require laravel/installer --no-interaction --quiet"))
 	if err != nil {
 		return fmt.Errorf("composer global require laravel/installer: %w", err)
-	}
-	return nil
-}
-
-// InstallStatamicCLI globally installs statamic/cli via Composer as siteUser.
-// The binary lands in the Composer global bin directory (typically
-// {siteHome}/.config/composer/vendor/bin/statamic).
-// composerBin is the absolute path to the Composer binary (e.g. {serverRoot}/bin/composer).
-// It is safe to call on every PHP install — Composer will upgrade if a newer
-// version is available.
-func InstallStatamicCLI(ctx context.Context, composerBin, siteUser, siteHome string) error {
-	if siteUser == "" || siteHome == "" {
-		return fmt.Errorf("siteUser and siteHome must be set")
-	}
-	_, err := runuser.RunAsUserW(ctx, io.Discard, siteUser, siteHome, "",
-		composerBin+" global require statamic/cli --no-interaction --quiet")
-	if err != nil {
-		return fmt.Errorf("composer global require statamic/cli: %w", err)
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package php
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,5 +43,22 @@ func TestProbeBinary_ReportsOtherStartFailures(t *testing.T) {
 	err := probeBinary(context.Background(), bin)
 	if err == nil || strings.Contains(err.Error(), "glibc") || !strings.Contains(err.Error(), "Segmentation fault") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestComposerCmd_FindsDevctlPHPWithoutSystemPHP(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "php"), []byte("#!/bin/sh\necho \"devctl php ran $*\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	composer := filepath.Join(bin, "composer")
+	if err := os.WriteFile(composer, []byte("#!/usr/bin/env php\n<?php\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", composerCmd(composer, "global config bin-dir --absolute"))
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + t.TempDir()}
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "devctl php ran "+composer+" global config bin-dir --absolute") {
+		t.Fatalf("composer did not run under devctl php: %v\n%s", err, out)
 	}
 }

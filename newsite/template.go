@@ -27,7 +27,7 @@ type Option struct {
 // Tool names a program a template runs. The daemon resolves each to a path.
 const (
 	ToolLaravel  = "laravel"
-	ToolStatamic = "statamic"
+	ToolComposer = "composer"
 	ToolWP       = "wp"
 )
 
@@ -80,10 +80,10 @@ var Templates = []Template{
 	{
 		ID:          "statamic",
 		Label:       "Statamic",
-		Description: "A blank Statamic site from the Statamic CLI.",
+		Description: "A blank Statamic site from statamic/statamic with Composer.",
 		Framework:   "statamic",
 		PublicDir:   "public",
-		Tools:       []string{ToolStatamic},
+		Tools:       []string{ToolComposer},
 		steps:       statamicSteps,
 	},
 	{
@@ -138,7 +138,7 @@ func laravelSteps(p *Project) []Step {
 func statamicSteps(p *Project) []Step {
 	return []Step{
 		commandStep("Create the Statamic site", p.SitesRoot,
-			p.Tools[ToolPHP], p.Tools[ToolStatamic], "new", p.Name, "--no-interaction"),
+			p.Tools[ToolPHP], p.Tools[ToolComposer], "create-project", "statamic/statamic", p.Name, "--no-interaction"),
 		writeEnvStep(p),
 	}
 }

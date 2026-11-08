@@ -219,7 +219,7 @@ func newProject(t *testing.T, req Request) *Project {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.Tools = map[string]string{ToolPHP: "/bin/php", ToolLaravel: "/g/laravel", ToolStatamic: "/g/statamic", ToolWP: "/bin/wp"}
+	p.Tools = map[string]string{ToolPHP: "/bin/php", ToolLaravel: "/g/laravel", ToolComposer: "/bin/composer", ToolWP: "/bin/wp"}
 	if p.DB != nil {
 		p.DB.Server = DBServer{Connection: "mysql", Host: "127.0.0.1", Port: "3306", Username: "root", Password: ""}
 	}
@@ -295,7 +295,7 @@ func TestRun_Statamic(t *testing.T) {
 	if _, err := run(p, r); err != nil {
 		t.Fatal(err)
 	}
-	want := "exec " + p.SitesRoot + ": /bin/php /g/statamic new docs --no-interaction"
+	want := "exec " + p.SitesRoot + ": /bin/php /bin/composer create-project statamic/statamic docs --no-interaction"
 	if len(r.log) != 2 || r.log[1] != want {
 		t.Fatalf("calls = %v, want register then %q", r.log, want)
 	}

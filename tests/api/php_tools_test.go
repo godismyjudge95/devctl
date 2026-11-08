@@ -49,32 +49,6 @@ func TestInstallLaravelCLI_CallsComposerGlobalRequire(t *testing.T) {
 	assertExecutable(t, laravelBin)
 }
 
-// TestInstallStatamicCLI_CallsComposerGlobalRequire verifies that
-// InstallStatamicCLI invokes `composer global require statamic/cli` as the
-// site user and that the expected binary exists at the standard Composer
-// global bin path.
-func TestInstallStatamicCLI_CallsComposerGlobalRequire(t *testing.T) {
-	siteUser, siteHome := requireSiteUserT(t)
-	statamicBin := filepath.Join(siteHome, ".config", "composer", "vendor", "bin", "statamic")
-
-	logFile := filepath.Join(siteHome, "composer-statamic-test.log")
-	installComposerStub(t, logFile, statamicBin)
-	t.Cleanup(func() {
-		os.Remove(logFile)
-		os.Remove(statamicBin)
-	})
-
-	if err := php.InstallStatamicCLI(context.Background(), "/usr/local/bin/composer", siteUser, siteHome); err != nil {
-		t.Fatalf("InstallStatamicCLI: %v", err)
-	}
-
-	log := mustReadFile(t, logFile)
-	if !strings.Contains(log, "global require statamic/cli") {
-		t.Errorf("composer stub not called with 'global require statamic/cli'\ngot: %s", log)
-	}
-	assertExecutable(t, statamicBin)
-}
-
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 // requireSiteUserT returns DEVCTL_SITE_USER and its home directory.
