@@ -109,6 +109,27 @@ export function updateHelperStream(id: string, callbacks: StreamCallbacks): Abor
   return runServiceStream('POST', `/api/helpers/${id}/update`, callbacks)
 }
 export const uninstallHelper = (id: string) => request<void>('DELETE', `/api/helpers/${id}`)
+
+// --- Doctor ---
+export type DoctorSeverity = 'ok' | 'warn' | 'fail'
+export interface DoctorCheck {
+  id: string
+  title: string
+  severity: DoctorSeverity
+  message: string
+  details?: string[]
+  remedy?: string
+  fixable: boolean
+}
+export interface DoctorReport {
+  checks: DoctorCheck[]
+}
+export interface DoctorFixReport extends DoctorReport {
+  fixes: { id: string; error?: string }[]
+}
+export const getDoctor = () => request<DoctorReport>('GET', '/api/doctor')
+export const fixDoctor = (ids: string[] = []) =>
+  request<DoctorFixReport>('POST', '/api/doctor/fix', { ids })
 export const startService = (id: string) => request<void>('POST', `/api/services/${id}/start`)
 export const stopService = (id: string) => request<void>('POST', `/api/services/${id}/stop`)
 export const restartService = (id: string) => request<void>('POST', `/api/services/${id}/restart`)

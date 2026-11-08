@@ -12,6 +12,7 @@
 - The config editor now opens PostgreSQL's `postgresql.conf` and `pg_hba.conf` (two tabs). Save & Restart writes the file in `{serverRoot}/postgres/data/` and restarts PostgreSQL.
 - PHP ini settings for each version. The PHP settings panel has a version selector (All versions / 8.3 / 8.4 …) and shows which values differ from all versions. `PUT /api/php/settings?version=8.4` and `devctl php:set memory_limit=1G --version=8.4` set one version. `devctl php:ini:set <all|version> <key> <value>`, `php:ini:unset`, and `php:ini:list` manage any php.ini directive. devctl writes these values in a managed block at the end of each `php.ini`, so your edits elsewhere in the file stay. Saving now restarts the running PHP-FPM pools it affects.
 - Mail CLI: `mail:list` filters (`--to`, `--from`, `--subject`, `--since`), `mail:latest`, `mail:wait` (blocks until a new matching email arrives, exits 1 on timeout), `mail:links`, `mail:get --format=text|html|raw|json`, `mail:attachments`, and `mail:attachment`. `latest` works in place of a message ID.
+- Added `devctl doctor` (exit 1 on failure, `--json`), `devctl doctor:fix`, and a Doctor page in the dashboard. It checks the daemon, elevate daemon, Caddy, ports 80/443, DNS, TLS trust, the PHP CA bundle, PHP-FPM pools, site PHP versions and directories, the shell PATH, service configs, updates, and disk space. Safe fixes run without root; root fixes print the `sudo devctl elevate` command.
 
 ## v0.18.1 — 2026-10-09
 

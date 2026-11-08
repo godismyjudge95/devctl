@@ -231,6 +231,7 @@ func generateEnvGuide() string {
 	sb.WriteString("devctl logs:list\n")
 	sb.WriteString("devctl logs:tail <log-id>\n")
 	sb.WriteString("```\n\n")
+	sb.WriteString("If a `.test` site, PHP, or a service misbehaves, run `devctl doctor` first. `devctl doctor:fix` applies the safe fixes.\n\n")
 	sb.WriteString("Get database and Redis passwords with `devctl services:credentials`.\n")
 	sb.WriteString("Do not invent host, port, or password.\n\n")
 	sb.WriteString("## PHP and Artisan\n\n")
@@ -292,7 +293,7 @@ func generateCommandCatalog() string {
 
 	nsOrder := []string{
 		"services", "sites", "php", "logs", "dumps", "spx", "mail",
-		"dns", "tls", "settings", "helpers", "postgres", "db", "elevate", "devctl",
+		"dns", "tls", "settings", "helpers", "postgres", "db", "elevate", "doctor", "devctl",
 	}
 	seen := map[string]bool{}
 	var ordered []string

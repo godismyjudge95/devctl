@@ -21,6 +21,7 @@ const routes = [
   '/helpers',
   '/helpers/install',
   '/settings',
+  '/doctor',
   // iframe-heavy views — assert wrapper renders, not iframe content
   '/mail',
   '/spx',

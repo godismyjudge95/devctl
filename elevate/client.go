@@ -60,6 +60,24 @@ func (c *DaemonClient) IsRunning(id string) bool {
 	return body.Running
 }
 
+// Ping reports whether the elevate daemon answers on its control socket.
+func (c *DaemonClient) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://elevate/services", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("elevate daemon: %w", err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("elevate daemon: %s", resp.Status)
+	}
+	return nil
+}
+
 func (c *DaemonClient) post(path string) error {
 	resp, err := c.http.Post("http://elevate"+path, "application/json", nil)
 	if err != nil {

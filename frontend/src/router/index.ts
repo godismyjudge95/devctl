@@ -16,6 +16,7 @@ import LogsView from '@/views/LogsView.vue'
 import ConfigEditorView from '@/views/ConfigEditorView.vue'
 import DatabasesView from '@/views/DatabasesView.vue'
 import MaxIOView from '@/views/MaxIOView.vue'
+import DoctorView from '@/views/DoctorView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,6 +40,7 @@ const router = createRouter({
     { path: '/helpers',   component: HelpersView },
     { path: '/helpers/install', component: HelperInstallView },
     { path: '/settings',  component: SettingsView },
+    { path: '/doctor',    component: DoctorView },
   ],
 })
 

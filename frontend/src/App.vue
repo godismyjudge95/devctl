@@ -12,7 +12,7 @@ import { usePwaInstall } from '@/composables/usePwaInstall'
 import { useUpdateStore } from '@/stores/update'
 import { useHelpersStore } from '@/stores/helpers'
 import { onMounted, watch, computed, ref } from 'vue'
-import { Settings, Globe, Server, Mail, Bug, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Wrench } from 'lucide-vue-next'
+import { Settings, Globe, Server, Mail, Bug, Menu, Activity, ScrollText, Database, HardDrive, ArrowUpCircle, Wrench, Stethoscope } from 'lucide-vue-next'
 import AppNav from '@/components/layout/AppNav.vue'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -160,6 +160,7 @@ const allNavItems = [
   { path: '/databases', label: 'Databases', icon: Database,   group: 'Tools' },
   { path: '/maxio',     label: 'Storage',   icon: HardDrive,  group: 'Tools', requiresMaxIO: true },
   { path: '/helpers',   label: 'Helpers',   icon: Wrench,     group: 'System' },
+  { path: '/doctor',    label: 'Doctor',    icon: Stethoscope, group: 'System' },
   { path: '/settings',  label: 'Settings',  icon: Settings,   group: 'System' },
 ]
 

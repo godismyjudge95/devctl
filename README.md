@@ -91,7 +91,7 @@ How devctl compares to [Laravel Herd](https://herd.laravel.com), [Lerd](https://
 | SPX profiler | ✅ (macOS) | ✅ | ❌ | ✅ |
 | Git worktrees | ✅ (Workspaces) | ✅ | ❌ | ✅ |
 | Share a site publicly | ✅ | ✅ | ✅ | ❌ |
-| Health checks (`doctor`) | ❌ | ✅ | ✅ | ❌ |
+| Health checks (`doctor`) | ❌ | ✅ | ✅ | ✅ |
 | AI integration | MCP | MCP | MCP | CLI + skill |
 | Per-project Node isolation | ❌ | ✅ | tools install | ❌ |
 | Rootless day-to-day | ✅ | ✅ | ✅ | ✅ |
@@ -712,6 +712,8 @@ devctl dumps:list                 # list recent php_dd() dumps
 devctl spx:profiles               # list recent SPX profiler captures
 sudo devctl elevate trust         # trust Caddy's internal CA (privileged)
 devctl elevate:status             # show elevate targets
+devctl doctor                     # check the environment (exit 1 on failure)
+devctl doctor:fix                 # apply the safe, unprivileged fixes
 devctl devctl:update              # check for devctl updates and apply
 devctl devctl:skill               # generate an OpenCode CLI skill file
 ```
@@ -790,6 +792,8 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | `elevate` | `elevate [target]` | Grant OS privileges: `trust`, `resolver`, `ports`, `install` (requires sudo) |
 | | `unelevate [target]` | Reverse elevate targets (requires sudo) |
 | | `elevate:status` | Show which elevate targets are configured |
+| `doctor` | `doctor` | Check daemon, elevate daemon, Caddy, ports, DNS, TLS trust, PHP, sites, PATH, configs, updates, and disk space. Exits 1 when a check fails |
+| | `doctor:fix [check-id...]` | Apply the safe, unprivileged fixes, then re-check. Root fixes print the `sudo devctl elevate …` command |
 | `settings` | `settings:get` | Show all devctl settings |
 | | `settings:set <key=value>...` | Update devctl settings |
 | `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |

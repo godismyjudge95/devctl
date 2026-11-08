@@ -15,6 +15,7 @@ import (
 	"github.com/danielgormly/devctl/database"
 	dbq "github.com/danielgormly/devctl/db/queries"
 	"github.com/danielgormly/devctl/dumps"
+	"github.com/danielgormly/devctl/elevate"
 	"github.com/danielgormly/devctl/install"
 	"github.com/danielgormly/devctl/internal/versioncache"
 	"github.com/danielgormly/devctl/php"
@@ -57,6 +58,9 @@ type Server struct {
 	phpManifest   *php.ReleaseManifest
 
 	dbPool *database.Pool
+
+	// elevateClient is shared so doctor pings reuse one keep-alive connection.
+	elevateClient *elevate.DaemonClient
 }
 
 // NewServer creates and configures the HTTP server.
@@ -97,6 +101,7 @@ func NewServer(
 		versions:    versioncache.New(),
 		selfVersion: selfVersion,
 		dbPool:         database.NewPool(),
+		elevateClient:  elevate.NewDaemonClient(serverRoot),
 	}
 	s.registerRoutes()
 	return s
@@ -250,6 +255,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/maxio/buckets/{bucket}/visibility", s.handleGetMaxIOBucketVisibility)
 	s.mux.HandleFunc("PUT /api/maxio/buckets/{bucket}/visibility", s.handlePutMaxIOBucketVisibility)
 	s.mux.HandleFunc("/api/maxio/s3/", s.handleMaxIOS3Proxy)
+
+	// Doctor
+	s.mux.HandleFunc("GET /api/doctor", s.handleGetDoctor)
+	s.mux.HandleFunc("POST /api/doctor/fix", s.handleDoctorFix)
 
 	// Self-update
 	s.mux.HandleFunc("GET /api/self/update/status", s.handleGetSelfUpdateStatus)
