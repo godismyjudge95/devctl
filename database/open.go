@@ -98,20 +98,27 @@ func openMySQL(cfg Config, pool *Pool) (Engine, error) {
 	if port == "" {
 		port = "3306"
 	}
-	params := "/?parseTime=true&charset=utf8mb4&loc=UTC&timeout=5s&readTimeout=30s&writeTimeout=30s"
-	tcpDSN := user + ":" + cfg.Password + "@tcp(" + net.JoinHostPort(host, port) + ")" + params
-	dsn := tcpDSN
+	params := "?parseTime=true&charset=utf8mb4&loc=UTC&timeout=5s&readTimeout=30s&writeTimeout=30s"
+	tcpAddr := "@tcp(" + net.JoinHostPort(host, port) + ")/"
+	addr := tcpAddr
 	if cfg.Socket != "" {
-		dsn = user + ":" + cfg.Password + "@unix(" + cfg.Socket + ")" + params
+		addr = "@unix(" + cfg.Socket + ")/"
 	}
-	db, err := pool.SQL("mysql", dsn)
+	db, err := pool.SQL("mysql", user+":"+cfg.Password+addr+params)
 	if err != nil && cfg.Socket != "" {
-		db, err = pool.SQL("mysql", tcpDSN)
+		addr = tcpAddr
+		db, err = pool.SQL("mysql", user+":"+cfg.Password+addr+params)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mysql: %w", err)
 	}
-	return &sqlEngine{kind: "mysql", db: db}, nil
+	openDB := func(ctx context.Context, database string) (*sql.DB, error) {
+		if err := validateIdent(database); err != nil {
+			return nil, err
+		}
+		return pool.SQL("mysql", user+":"+cfg.Password+addr+database+params)
+	}
+	return &sqlEngine{kind: "mysql", db: db, openDB: openDB}, nil
 }
 
 func openPostgres(cfg Config, pool *Pool) (Engine, error) {

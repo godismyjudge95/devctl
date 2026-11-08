@@ -63,7 +63,7 @@ func (e *sqlEngine) Close() error {
 func (e *sqlEngine) dollar() bool { return e.kind == "postgres" }
 
 func (e *sqlEngine) conn(ctx context.Context, database string) (*sql.DB, error) {
-	if e.kind == "postgres" && e.openDB != nil && database != "" {
+	if (e.kind == "postgres" || e.kind == "mysql") && e.openDB != nil && database != "" {
 		return e.openDB(ctx, database)
 	}
 	if e.kind == "sqlite" {
