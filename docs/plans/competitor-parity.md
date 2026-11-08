@@ -1,6 +1,6 @@
 # Competitor parity plan
 
-Status: approved by the owner on 2026-11-06. Phases 0 to 3 are done on `main` (2026-11-08). Item 4.1 has a feasibility note (`service-instances-note.md`) that recommends to stop. D1 and D2 still wait for an owner decision.
+Status: approved by the owner on 2026-11-06. Phases 0 to 3 are done on `main` (2026-11-08). Item 4.1 has a feasibility note (`service-instances-note.md`) that recommends to stop. D1 (user proxy sites) is done (owner approved 2026-11-08). D2 still waits for an owner decision.
 
 Open after the build:
 
