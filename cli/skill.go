@@ -243,6 +243,13 @@ func generateEnvGuide() string {
 	sb.WriteString("## Database, Redis, WordPress\n\n")
 	sb.WriteString("Use `" + bin + "/mysql`, `" + bin + "/psql`, and `" + bin + "/wp`.\n")
 	sb.WriteString("Redis CLI is `valkey-cli`. `redis-cli` exists only if that symlink is present.\n\n")
+	sb.WriteString("In a site directory, `devctl db:connection` prints the site database from its `.env`.\n")
+	sb.WriteString("`db:*` commands take `<engine> <name>`. In a site directory both default to `DB_CONNECTION` and `DB_DATABASE`.\n\n")
+	sb.WriteString("```sh\n")
+	sb.WriteString("devctl db:query \"SELECT COUNT(*) FROM users\" --json\n")
+	sb.WriteString("devctl db:export > dump.sql\n")
+	sb.WriteString("devctl db:import mysql shop dump.sql.gz --create\n")
+	sb.WriteString("```\n\n")
 	sb.WriteString("## Browser TLS\n\n")
 	sb.WriteString("Caddy uses an internal CA. For `https://*.test`, ignore certificate errors.\n\n")
 	sb.WriteString("## Worktrees\n\n")
@@ -285,7 +292,7 @@ func generateCommandCatalog() string {
 
 	nsOrder := []string{
 		"services", "sites", "php", "logs", "dumps", "spx", "mail",
-		"dns", "tls", "settings", "helpers", "postgres", "elevate", "devctl",
+		"dns", "tls", "settings", "helpers", "postgres", "db", "elevate", "devctl",
 	}
 	seen := map[string]bool{}
 	var ordered []string

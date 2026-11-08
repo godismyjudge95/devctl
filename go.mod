@@ -8,6 +8,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/mattn/go-isatty v0.0.20
 	github.com/miekg/dns v1.1.72
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/ulikunitz/xz v0.5.15
@@ -27,7 +28,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect

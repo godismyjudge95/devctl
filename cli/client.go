@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -773,6 +775,146 @@ func (c *Client) EnsurePostgresExtensions() (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+type DBEngine struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Installed bool   `json:"installed"`
+	Running   bool   `json:"running"`
+}
+
+type DBCatalog struct {
+	Name   string `json:"name"`
+	System bool   `json:"system"`
+}
+
+type DBColumn struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// DBQueryResult keeps cells as raw JSON so large integers and JSON columns
+// print exactly as the engine returned them.
+type DBQueryResult struct {
+	Columns      []DBColumn          `json:"columns"`
+	Rows         [][]json.RawMessage `json:"rows"`
+	RowsAffected int64               `json:"rows_affected"`
+	Limited      bool                `json:"limited"`
+	DurationMS   int64               `json:"duration_ms"`
+	Statement    string              `json:"statement"`
+}
+
+type DBImportResult struct {
+	Status  string `json:"status"`
+	Bytes   int64  `json:"bytes"`
+	Created bool   `json:"created"`
+}
+
+func dbPath(engine, name string) string {
+	return "/api/databases/" + url.PathEscape(engine) + "/databases/" + url.PathEscape(name)
+}
+
+func (c *Client) ListDBEngines() ([]DBEngine, error) {
+	var out struct {
+		Engines []DBEngine `json:"engines"`
+	}
+	err := c.get("/api/databases", &out)
+	return out.Engines, err
+}
+
+func (c *Client) ListDatabases(engine string) ([]DBCatalog, error) {
+	var out struct {
+		Databases []DBCatalog `json:"databases"`
+	}
+	err := c.get("/api/databases/"+url.PathEscape(engine)+"/databases", &out)
+	return out.Databases, err
+}
+
+func (c *Client) CreateDatabase(engine, name string) error {
+	return c.post("/api/databases/"+url.PathEscape(engine)+"/databases", map[string]string{"name": name}, nil)
+}
+
+func (c *Client) DropDatabase(engine, name string) error {
+	return c.delete(dbPath(engine, name))
+}
+
+func (c *Client) DuplicateDatabase(engine, from, to string) error {
+	return c.postTimeout("/api/databases/"+url.PathEscape(engine)+"/databases/duplicate",
+		map[string]string{"from": from, "to": to}, nil, 10*time.Minute)
+}
+
+func (c *Client) QueryDatabase(engine, name, sql string, limit int) (DBQueryResult, error) {
+	var out DBQueryResult
+	err := c.postTimeout("/api/databases/"+url.PathEscape(engine)+"/query",
+		map[string]any{"database": name, "sql": sql, "limit": limit}, &out, 2*time.Minute)
+	return out, err
+}
+
+// streamClient has no timeout: an import or export runs as long as the dump
+// takes, and c.http gives up after 15 s.
+func (c *Client) streamClient() *http.Client {
+	return &http.Client{Transport: c.http.Transport}
+}
+
+// ImportDatabase streams body (plain or gzip SQL) into the database. With
+// create, the daemon creates a missing database first.
+func (c *Client) ImportDatabase(engine, name string, body io.Reader, create bool) (DBImportResult, error) {
+	var out DBImportResult
+	path := dbPath(engine, name) + "/import"
+	if create {
+		path += "?create=1"
+	}
+	req, err := http.NewRequest(http.MethodPost, c.base+path, body)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/sql")
+	resp, err := c.streamClient().Do(req)
+	if err != nil {
+		return out, fmt.Errorf("POST %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return out, apiError(resp)
+	}
+	err = json.NewDecoder(resp.Body).Decode(&out)
+	return out, err
+}
+
+// ExportDatabase copies a full SQL dump to w. The daemon aborts the
+// connection when the engine fails mid-dump, so any read error means the
+// dump in w is incomplete.
+func (c *Client) ExportDatabase(engine, name string, w io.Writer) (int64, error) {
+	path := dbPath(engine, name) + "/export"
+	resp, err := c.streamClient().Get(c.base + path)
+	if err != nil {
+		return 0, fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return 0, apiError(resp)
+	}
+	n, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return n, fmt.Errorf("export of %s/%s failed after %s: %w", engine, name, formatBytes(n), err)
+	}
+	return n, nil
+}
+
+// apiError returns the daemon's {"error": "..."} message, or the raw body.
+func apiError(resp *http.Response) error {
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	var body struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(b, &body) == nil && body.Error != "" {
+		return errors.New(body.Error)
+	}
+	if msg := strings.TrimSpace(string(b)); msg != "" {
+		return errors.New(msg)
+	}
+	return errors.New(resp.Status)
 }
 
 // FormatAddress formats a MailAddress for display.

@@ -700,6 +700,8 @@ devctl helpers:list               # list installed CLI helpers
 devctl helpers:install mago       # download mago into the shared bin dir
 devctl php:settings               # show PHP ini settings
 devctl php:set memory_limit=512M  # update a PHP ini setting
+devctl db:connection              # DB settings and URL of the site in the cwd
+devctl db:export > dump.sql       # dump the site database (from its .env)
 devctl dns:status                 # check systemd-resolved DNS setup
 devctl dumps:list                 # list recent php_dd() dumps
 devctl spx:profiles               # list recent SPX profiler captures
@@ -749,6 +751,14 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `php:set <key=value>...` | Update PHP ini settings |
 | `postgres` | `postgres:extensions` | List managed PostgreSQL extensions and status |
 | | `postgres:extensions:ensure` | Install missing extension files and wire SQL objects |
+| `db` | `db:list [engine]` | List databases on one engine, or on every running engine |
+| | `db:create <engine> <name>` | Create a database |
+| | `db:drop <engine> <name> [--force]` | Drop a database. Asks first; needs `--force` when stdin is not a terminal. System databases are refused |
+| | `db:duplicate <engine> <src> <dst>` | Copy a database (schema and data) |
+| | `db:import <engine> <name> <file\|-> [--create]` | Stream a `.sql` or `.sql.gz` dump (or stdin) into MySQL or PostgreSQL |
+| | `db:export <engine> <name> [file]` | Full `mysqldump` / `pg_dump` to a file, or to stdout without one |
+| | `db:query <engine> <name> <sql> [--limit=N]` | Run SQL and print a table (`--json` for rows) |
+| | `db:connection [domain]` | Show a site's database connection and URL from its `.env` |
 | `logs` | `logs:list` | List available log files |
 | | `logs:tail <id> [--bytes=N] [--follow]` | Show the tail of a log file; `--follow` streams live |
 | | `logs:clear <id>` | Clear (truncate) a log file |
@@ -771,6 +781,8 @@ devctl devctl:skill               # generate an OpenCode CLI skill file
 | | `settings:set <key=value>...` | Update devctl settings |
 | `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |
 | | `devctl:skill` | Generate the agent skill and refresh the `<devctl>` block in AGENTS.md |
+
+In a site directory, `db:*` commands default `<engine>` and `<name>` to `DB_CONNECTION` and `DB_DATABASE` in the site `.env`. Engine names follow Laravel too: `pgsql` means `postgres`, and `mariadb` uses the MySQL server. `devctl db:query "SELECT 1"` runs against the site database; `devctl db:query mysql shop "SELECT 1"` names one. Import and export stream the dump, so file size does not change memory use, and show progress on a terminal. A failed export leaves no partial file.
 
 ### OpenCode integration
 

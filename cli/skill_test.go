@@ -96,6 +96,7 @@ func TestWriteSkill_ContentContainsAllNamespaces(t *testing.T) {
 		"## dns: commands",
 		"## tls: commands",
 		"## settings: commands",
+		"## db: commands",
 		"## devctl: commands",
 	}
 	for _, section := range wantSections {
