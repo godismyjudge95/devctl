@@ -34,7 +34,7 @@ func (s *Server) handleGetPHPVersions(w http.ResponseWriter, r *http.Request) {
 	if versions == nil {
 		versions = []php.Version{}
 	}
-	s.enrichPHPVersions(versions)
+	s.enrichPHPVersions(r.Context(), versions)
 	writeJSON(w, versions)
 }
 
@@ -67,7 +67,7 @@ func (s *Server) handleInstallPHP(w http.ResponseWriter, r *http.Request) {
 	if versions == nil {
 		versions = []php.Version{}
 	}
-	s.enrichPHPVersions(versions)
+	s.enrichPHPVersions(r.Context(), versions)
 	go s.refreshPHPLatestManifest(context.Background())
 	writeJSON(w, versions)
 }
@@ -168,9 +168,14 @@ func (s *Server) phpFPMServiceDef(ver string) services.Definition {
 	}
 }
 
-func (s *Server) enrichPHPVersions(versions []php.Version) {
+func (s *Server) enrichPHPVersions(ctx context.Context, versions []php.Version) {
 	manifest := s.GetPHPLatestManifest()
+	ds, err := listPHPIniDirectives(ctx, s.queries)
+	if err != nil {
+		log.Printf("php: list ini directives: %v", err)
+	}
 	for i, v := range versions {
+		versions[i].Xdebug = php.XdebugStatusFor(v.Version, s.serverRoot, php.EffectiveDirectives(ds, v.Version))
 		id := php.FPMServiceID(v.Version)
 		if s.supervisor.IsRunning(id) {
 			versions[i].Status = string(services.StatusRunning)

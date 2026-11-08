@@ -138,3 +138,50 @@ test.describe('services settings — PHP version scope', () => {
     }
   })
 })
+
+test.describe('services settings — PHP Xdebug', () => {
+  type Xdebug = { available: boolean, enabled: boolean, mode: string }
+  type Version = { version: string, xdebug: Xdebug }
+
+  async function firstVersion(request: import('@playwright/test').APIRequestContext) {
+    const versions = await (await request.get('/api/php/versions')).json() as Version[]
+    return versions[0]
+  }
+
+  test('reports Xdebug as not available when the PHP build has no xdebug.so', async ({ page, request }) => {
+    const v = await firstVersion(request)
+    if (!v || v.xdebug.available) {
+      test.skip()
+      return
+    }
+    await page.goto(`/services/php-fpm-${v.version}/settings`)
+    await expect(page.getByText(`Xdebug (PHP ${v.version})`)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('Not available in this PHP build.')).toBeVisible()
+    await expect(page.getByTestId('xdebug-state')).toHaveText('Off')
+    await expect(page.getByRole('button', { name: 'Turn on Xdebug' })).toHaveCount(0)
+  })
+
+  test('turns Xdebug on and off for one version', async ({ page, request }) => {
+    const v = await firstVersion(request)
+    if (!v || !v.xdebug.available) {
+      test.skip()
+      return
+    }
+    const wasEnabled = v.xdebug.enabled
+    try {
+      if (wasEnabled) await request.put(`/api/php/versions/${v.version}/xdebug`, { data: { enabled: false } })
+      await page.goto(`/services/php-fpm-${v.version}/settings`)
+      await expect(page.getByTestId('xdebug-state')).toHaveText('Off', { timeout: 10_000 })
+
+      await page.getByRole('button', { name: 'Turn on Xdebug' }).click()
+      await expect(page.getByTestId('xdebug-state')).toHaveText('On (debug)', { timeout: 15_000 })
+      expect((await firstVersion(request)).xdebug).toMatchObject({ enabled: true, mode: 'debug' })
+
+      await page.getByRole('button', { name: 'Turn off Xdebug' }).click()
+      await expect(page.getByTestId('xdebug-state')).toHaveText('Off', { timeout: 15_000 })
+      expect((await firstVersion(request)).xdebug.enabled).toBe(false)
+    } finally {
+      await request.put(`/api/php/versions/${v.version}/xdebug`, { data: { enabled: wasEnabled, mode: v.xdebug.mode } })
+    }
+  })
+})

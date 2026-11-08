@@ -13,6 +13,10 @@
 # and overwrites PHP_VERSION; the added-patch script fixes that after extract.
 # pcov.enabled defaults to 0.
 #
+# xdebug: spc's "pie" source takes the first packagist version, which is now
+# 3.6.0alpha1 (PHP >= 8.2). Pin the 3.5.3 PECL release (PHP 8.0-8.5). macOS
+# builds it with --build-shared=xdebug. Static musl Linux cannot load it.
+#
 # macos clang 21: Apple clang 21 (Xcode 26 / macos-26) defaults to C23. PHP
 # 8.0/8.1 libbcmath still uses K&R parameter lists, which C23 dropped. Append
 # -std=gnu17 to the macOS PHP EXTRA_CFLAGS so the make stays on gnu17.
@@ -77,6 +81,11 @@ replace_once(
     "pcov extract into php-src/ext",
     '    "pcov": {\n        "type": "url",\n        "url": "https://pecl.php.net/get/pcov",\n        "filename": "pcov.tgz",',
     '    "pcov": {\n        "type": "url",\n        "url": "https://pecl.php.net/get/pcov",\n        "path": "php-src/ext/pcov",\n        "filename": "pcov.tgz",',
+)
+replace_once(
+    "xdebug 3.5.3 pin",
+    '    "xdebug": {\n        "type": "pie",\n        "repo": "xdebug/xdebug",',
+    '    "xdebug": {\n        "type": "url",\n        "url": "https://pecl.php.net/get/xdebug-3.5.3.tgz",\n        "filename": "xdebug-3.5.3.tgz",',
 )
 replace_once(
     "swoole v6.2.3 pin",

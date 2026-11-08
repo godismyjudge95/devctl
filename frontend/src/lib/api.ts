@@ -436,10 +436,17 @@ export const mailHtmlUrl = (id: string) => `/api/mail/view/${id}.html`
 export const mailPartUrl = (id: string, partID: string) => `/api/mail/api/v1/message/${id}/part/${partID}`
 
 // --- PHP ---
+export interface XdebugStatus {
+  available: boolean
+  enabled: boolean
+  mode: string
+}
+
 export interface PHPVersion {
   version: string
   fpm_socket: string
   status: 'running' | 'stopped' | 'unknown'
+  xdebug: XdebugStatus
 }
 
 export interface PHPSettings {
@@ -460,6 +467,8 @@ export const stopPHPVersion = (ver: string) =>
   request<void>('POST', `/api/php/versions/${ver}/stop`)
 export const restartPHPVersion = (ver: string) =>
   request<void>('POST', `/api/php/versions/${ver}/restart`)
+export const setPHPXdebug = (ver: string, enabled: boolean, mode?: string) =>
+  request<XdebugStatus>('PUT', `/api/php/versions/${ver}/xdebug`, { enabled, mode: mode ?? '' })
 // scope is 'all' or a PHP version; overrides lists the keys set in that scope.
 export interface PHPSettingsView extends PHPSettings {
   scope: string

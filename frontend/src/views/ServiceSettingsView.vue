@@ -12,7 +12,7 @@ import {
 import {
   getServiceSettings, putServiceSettings,
   detectDNSIP, setupSystemDNS, teardownSystemDNS,
-  getPHPVersions, getPHPSettings, setPHPSettings, unsetPHPIni,
+  getPHPVersions, getPHPSettings, setPHPSettings, unsetPHPIni, setPHPXdebug,
 } from '@/lib/api'
 import type {
   MailpitServiceSettings,
@@ -20,6 +20,7 @@ import type {
   MeilisearchServiceSettings,
   PHPSettings,
   PHPSettingsView,
+  XdebugStatus,
   DNSServiceSettings,
   PostgresServiceSettings,
   PostgresExtensionStatus,
@@ -71,6 +72,14 @@ const phpVersions = ref<string[]>([])
 const phpForm = ref<PHPSettings>({ memory_limit: '', upload_max_filesize: '', post_max_size: '', max_execution_time: '' })
 const phpLoaded = ref<PHPSettingsView | null>(null)
 const phpGlobal = ref<PHPSettingsView | null>(null)
+const phpPageVersion = computed(() => serviceId.value.replace('php-fpm-', ''))
+const xdebug = ref<XdebugStatus | null>(null)
+const xdebugBusy = ref(false)
+const xdebugHint = computed(() => {
+  if (!xdebug.value) return undefined
+  if (!xdebug.value.available) return 'Not available in this PHP build.'
+  return `Debugging starts only when the request has the XDEBUG_SESSION cookie (browser extension). Restarts only PHP ${phpPageVersion.value} FPM.`
+})
 const meilisearchEnv = ref('')
 const meilisearchArgs = ref('')
 const dnsPort = ref('')
@@ -114,6 +123,19 @@ async function resetPHPSetting(key: PHPSettingKey) {
   }
 }
 
+async function toggleXdebug() {
+  if (!xdebug.value) return
+  xdebugBusy.value = true
+  try {
+    xdebug.value = await setPHPXdebug(phpPageVersion.value, !xdebug.value.enabled)
+    toast.success(`Xdebug ${xdebug.value.enabled ? 'on' : 'off'} for PHP ${phpPageVersion.value}`)
+  } catch (e: any) {
+    toast.error('Failed to change Xdebug', { description: e.message })
+  } finally {
+    xdebugBusy.value = false
+  }
+}
+
 watch(phpScope, () => {
   loadPHPSettings().catch((e: any) => toast.error('Failed to load settings', { description: e.message }))
 })
@@ -122,7 +144,9 @@ async function loadSettings() {
   loading.value = true
   try {
     if (isPHPFPM(serviceId.value)) {
-      phpVersions.value = (await getPHPVersions()).map(v => v.version)
+      const versions = await getPHPVersions()
+      phpVersions.value = versions.map(v => v.version)
+      xdebug.value = versions.find(v => v.version === phpPageVersion.value)?.xdebug ?? null
       await loadPHPSettings()
       return
     }
@@ -325,6 +349,28 @@ onMounted(loadSettings)
           </div>
         </SettingRow>
       </div>
+      <template v-if="xdebug">
+        <SectionHeader :title="`Xdebug (PHP ${phpPageVersion})`" description="Applies at once. Off means Xdebug is not loaded." />
+        <div class="px-4 pb-1 sm:px-5">
+          <SettingRow label="Step debugger" :hint="xdebugHint">
+            <div class="flex flex-wrap items-center gap-2">
+              <Badge data-testid="xdebug-state" :variant="xdebug.enabled ? 'success' : 'secondary'">
+                {{ xdebug.enabled ? `On (${xdebug.mode})` : 'Off' }}
+              </Badge>
+              <Button
+                v-if="xdebug.available || xdebug.enabled"
+                variant="outline"
+                size="sm"
+                :disabled="xdebugBusy"
+                @click="toggleXdebug"
+              >
+                <Loader2 v-if="xdebugBusy" class="size-3.5 animate-spin" />
+                {{ xdebug.enabled ? 'Turn off Xdebug' : 'Turn on Xdebug' }}
+              </Button>
+            </div>
+          </SettingRow>
+        </div>
+      </template>
     </Surface>
 
     <Surface v-else-if="isMySQL(serviceId)">

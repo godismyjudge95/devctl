@@ -207,9 +207,16 @@ type HelperState struct {
 }
 
 type PHPVersion struct {
-	Version   string `json:"version"`
-	FPMSocket string `json:"fpm_socket"`
-	Status    string `json:"status"`
+	Version   string       `json:"version"`
+	FPMSocket string       `json:"fpm_socket"`
+	Status    string       `json:"status"`
+	Xdebug    XdebugStatus `json:"xdebug"`
+}
+
+type XdebugStatus struct {
+	Available bool   `json:"available"`
+	Enabled   bool   `json:"enabled"`
+	Mode      string `json:"mode"`
 }
 
 type PHPSettings struct {
@@ -529,6 +536,14 @@ func (c *Client) SetPHPIni(scope, key, value string) (PHPIniDirective, error) {
 
 func (c *Client) UnsetPHPIni(scope, key string) error {
 	return c.delete("/api/php/ini/" + url.PathEscape(scope) + "/" + url.PathEscape(key))
+}
+
+// SetPHPXdebug turns Xdebug on or off for one PHP version. mode "" means
+// the daemon default.
+func (c *Client) SetPHPXdebug(version string, enabled bool, mode string) (XdebugStatus, error) {
+	var out XdebugStatus
+	body := map[string]any{"enabled": enabled, "mode": mode}
+	return out, c.put("/api/php/versions/"+url.PathEscape(version)+"/xdebug", body, &out)
 }
 
 func (c *Client) EnableSPX(siteID string) error {

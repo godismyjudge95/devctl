@@ -33,8 +33,9 @@ type ReleaseManifest struct {
 }
 
 type ReleaseAssets struct {
-	CLI string `json:"cli"`
-	FPM string `json:"fpm"`
+	CLI    string `json:"cli"`
+	FPM    string `json:"fpm"`
+	Xdebug string `json:"xdebug,omitempty"`
 }
 
 type githubRelease struct {
@@ -340,8 +341,11 @@ func assetURLsForMinorOn(ctx context.Context, minor, platform string) (cliURL, f
 		return "", "", nil, fmt.Errorf("php %s is not available for %s in release %s (available: %s)",
 			minor, platform, manifest.ReleaseTag, strings.Join(sortedAssetMinorsFor(manifest, platform), ", "))
 	}
-	base := githubDownloadBase() + "/" + manifest.ReleaseTag + "/"
-	return base + assets.CLI, base + assets.FPM, manifest, nil
+	return releaseAssetURL(manifest.ReleaseTag, assets.CLI), releaseAssetURL(manifest.ReleaseTag, assets.FPM), manifest, nil
+}
+
+func releaseAssetURL(tag, name string) string {
+	return githubDownloadBase() + "/" + tag + "/" + name
 }
 
 func sortedAssetMinors(manifest *ReleaseManifest) []string {

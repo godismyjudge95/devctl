@@ -257,9 +257,14 @@ jobs:
           if [ "${{ matrix.minor }}" = "8.0" ]; then
             IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
           fi
+          EXTS="${{ steps.exts.outputs.list }}"
+          # Static musl Linux cannot dlopen, so only macOS ships xdebug.so.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            EXTS="${EXTS},xdebug"
+          fi
           ${{ matrix.spc }} download \
             --with-php=${{ matrix.patch }} \
-            --for-extensions=${{ steps.exts.outputs.list }} \
+            --for-extensions="$EXTS" \
             --ignore-cache-sources="$IGNORE_CACHE" \
             --retry=5
 
@@ -277,10 +282,15 @@ jobs:
         working-directory: spc
         run: |
           set -euo pipefail
+          SHARED=()
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            SHARED=(--build-shared=xdebug)
+          fi
           ${{ matrix.spc }} build \
             ${{ steps.exts.outputs.list }} \
             --build-cli \
             --build-fpm \
+            "${SHARED[@]}" \
             --with-added-patch=config/spc-pcov-static.php
 
           mkdir -p ../tmp_dist ../tmp_meta
@@ -334,13 +344,27 @@ jobs:
             done
           fi
 
+          XDEBUG_FIELD=""
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            XDEBUG_ASSET="php-${{ matrix.minor }}-xdebug-${{ matrix.platform }}.so"
+            test -f buildroot/modules/xdebug.so
+            cp buildroot/modules/xdebug.so "../tmp_dist/${XDEBUG_ASSET}"
+            "$CLI" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -m | grep -ixq xdebug || {
+              echo "xdebug.so does not load into the built PHP" >&2
+              "$CLI" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -v >&2
+              exit 1
+            }
+            XDEBUG_FIELD=",
+            \"xdebug\": \"${XDEBUG_ASSET}\""
+          fi
+
           cat > "../tmp_meta/${{ matrix.minor }}-${{ matrix.platform }}.json" <<EOF
           {
             "minor": "${{ matrix.minor }}",
             "patch": "${PHP_PATCH}",
             "platform": "${{ matrix.platform }}",
             "cli": "php-${{ matrix.minor }}-cli-${{ matrix.platform }}",
-            "fpm": "php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"
+            "fpm": "php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"${XDEBUG_FIELD}
           }
           EOF
 
@@ -368,6 +392,7 @@ jobs:
           files: |
             tmp_dist/php-${{ matrix.minor }}-cli-${{ matrix.platform }}
             tmp_dist/php-${{ matrix.minor }}-fpm-${{ matrix.platform }}
+            tmp_dist/php-${{ matrix.minor }}-xdebug-${{ matrix.platform }}.so
 
   # ── Legacy PHP 7.0 / 7.2 / 7.4 ────────────────────────────────────────────
   # Modern static-php-cli (main) applies PHP 8+ Alpine/libxml patches that break
@@ -605,10 +630,10 @@ jobs:
           linux_rows = [r for r in rows if r['platform'] == 'linux-x86_64']
           platform_assets = {}
           for row in rows:
-              platform_assets.setdefault(row['platform'], {})[row['minor']] = {
-                  'cli': row['cli'],
-                  'fpm': row['fpm'],
-              }
+              entry = {'cli': row['cli'], 'fpm': row['fpm']}
+              if row.get('xdebug'):
+                  entry['xdebug'] = row['xdebug']
+              platform_assets.setdefault(row['platform'], {})[row['minor']] = entry
 
           shipped = sorted({(r['platform'], r['minor']) for r in rows})
           manifest = {

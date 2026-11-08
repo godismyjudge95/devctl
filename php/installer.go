@@ -49,7 +49,7 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 	//    not hold the conventional socket path we're about to use.
 	disableSystemFPM(ctx, ver)
 
-	cliURL, fpmURL, _, err := AssetURLsForMinor(ctx, ver)
+	cliURL, fpmURL, manifest, err := AssetURLsForMinor(ctx, ver)
 	if err != nil {
 		return fmt.Errorf("php %s: resolve release assets: %w", ver, err)
 	}
@@ -68,6 +68,10 @@ func Install(ctx context.Context, ver string, serverRoot string, siteUser string
 	}
 	if err := os.Chmod(cliBin, 0755); err != nil {
 		return fmt.Errorf("php %s: chmod cli: %w", ver, err)
+	}
+
+	if err := installXdebug(ctx, manifest, ver, serverRoot, phpPlatformToken()); err != nil {
+		return fmt.Errorf("php %s: download xdebug: %w", ver, err)
 	}
 
 	// 5. Symlink CLI binary into {serverRoot}/bin/php{ver}.
@@ -141,6 +145,21 @@ func Uninstall(ctx context.Context, ver string, serverRoot string) error {
 	}
 
 	return nil
+}
+
+// installXdebug downloads xdebug.so when the release ships one for this
+// platform. Otherwise it removes an old copy, so XdebugStatus.Available always
+// describes the installed build.
+func installXdebug(ctx context.Context, manifest *ReleaseManifest, ver, serverRoot, platform string) error {
+	dest := XdebugPath(ver, serverRoot)
+	assets, _ := manifest.Lookup(ver, platform)
+	if assets.Xdebug == "" {
+		if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return curlDownload(ctx, releaseAssetURL(manifest.ReleaseTag, assets.Xdebug), dest)
 }
 
 func installPHPBinary(ctx context.Context, url, dest, binName string) error {

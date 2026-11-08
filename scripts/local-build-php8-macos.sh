@@ -215,7 +215,7 @@ if [[ "$SKIP_DOWNLOAD" -eq 0 ]]; then
   fi
   run ./bin/spc download \
     --with-php="$PATCH" \
-    --for-extensions="$PHP8_EXTS" \
+    --for-extensions="${PHP8_EXTS},xdebug" \
     --ignore-cache-sources="$IGNORE_CACHE" \
     --retry=5
 else
@@ -249,7 +249,7 @@ if [[ "$WIPE_BUILD" -eq 1 ]]; then
 fi
 
 echo "==> building PHP $PATCH (cli + fpm)"
-BUILD_ARGS=("$PHP8_EXTS" --build-cli --build-fpm --with-added-patch=config/spc-pcov-static.php)
+BUILD_ARGS=("$PHP8_EXTS" --build-cli --build-fpm --build-shared=xdebug --with-added-patch=config/spc-pcov-static.php)
 if [[ "$DEBUG" -eq 1 ]]; then
   BUILD_ARGS+=(--debug)
 fi
@@ -260,11 +260,14 @@ run mkdir -p "$OUT_DIR"
 
 CLI_OUT="${OUT_DIR}/php-${MINOR}-cli-macos-aarch64"
 FPM_OUT="${OUT_DIR}/php-${MINOR}-fpm-macos-aarch64"
+XDEBUG_OUT="${OUT_DIR}/php-${MINOR}-xdebug-macos-aarch64.so"
 
 test -x buildroot/bin/php
 test -x buildroot/bin/php-fpm
+test -f buildroot/modules/xdebug.so
 cp -f buildroot/bin/php "$CLI_OUT"
 cp -f buildroot/bin/php-fpm "$FPM_OUT"
+cp -f buildroot/modules/xdebug.so "$XDEBUG_OUT"
 chmod 755 "$CLI_OUT" "$FPM_OUT"
 
 echo "==> smoke test"
@@ -301,10 +304,16 @@ if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
     exit 1
   }
 fi
+"$CLI_OUT" -n -d zend_extension="$XDEBUG_OUT" -m | grep -ixq xdebug || {
+  echo "xdebug.so does not load into the built PHP" >&2
+  "$CLI_OUT" -n -d zend_extension="$XDEBUG_OUT" -v >&2
+  exit 1
+}
 
 echo
-echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx loaded)"
+echo "OK: PHP ${PHP_PATCH_GOT} (mysqli, sodium, spx loaded; xdebug.so loads)"
 echo "  cli: $CLI_OUT"
 echo "  fpm: $FPM_OUT"
+echo "  xdebug: $XDEBUG_OUT"
 echo
 echo "Tip: re-run with --wipe-build (and usually --skip-download) after a failed compile."

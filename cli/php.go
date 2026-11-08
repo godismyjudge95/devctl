@@ -45,7 +45,7 @@ func init() {
 		Flags:       []FlagDef{{Name: "version", Description: "Same as the version argument"}},
 		Examples:    []string{"devctl php:settings", "devctl php:settings 8.4", "devctl php:settings --version=8.4 --json"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
-			pos, ver, j, err := splitPHPArgs(args, true)
+			pos, ver, j, err := splitPHPArgs(args, "version")
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ func init() {
 			"devctl php:set memory_limit=1G --version=8.4",
 		},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
-			pos, ver, j, err := splitPHPArgs(args, true)
+			pos, ver, j, err := splitPHPArgs(args, "version")
 			if err != nil {
 				return err
 			}
@@ -117,7 +117,7 @@ func init() {
 		Args:        []ArgDef{{Name: "scope", Description: "Only show directives for all versions (all) or one version (e.g. 8.4)", Optional: true}},
 		Examples:    []string{"devctl php:ini:list", "devctl php:ini:list 8.4", "devctl php:ini:list --json"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
-			pos, _, j, err := splitPHPArgs(args, false)
+			pos, _, j, err := splitPHPArgs(args, "")
 			if err != nil {
 				return err
 			}
@@ -161,7 +161,7 @@ func init() {
 			"devctl php:ini:set all error_reporting 'E_ALL & ~E_DEPRECATED'",
 		},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
-			pos, _, j, err := splitPHPArgs(args, false)
+			pos, _, j, err := splitPHPArgs(args, "")
 			if err != nil {
 				return err
 			}
@@ -191,7 +191,7 @@ func init() {
 		},
 		Examples: []string{"devctl php:ini:unset all display_errors", "devctl php:ini:unset 8.4 memory_limit"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
-			pos, _, j, err := splitPHPArgs(args, false)
+			pos, _, j, err := splitPHPArgs(args, "")
 			if err != nil {
 				return err
 			}
@@ -206,6 +206,49 @@ func init() {
 				return nil
 			}
 			PrintOK(fmt.Sprintf("Removed %s (%s). Running PHP-FPM pools were restarted.", pos[1], pos[0]))
+			return nil
+		},
+	})
+
+	Register(&Cmd{
+		Name:        "php:xdebug",
+		Description: "Turn Xdebug on or off for one PHP version (restarts only that FPM pool)",
+		Usage:       "<version> on|off [--mode=<modes>]",
+		Args: []ArgDef{
+			{Name: "version", Description: "PHP version (e.g. 8.4)"},
+			{Name: "state", Description: "on or off"},
+		},
+		Flags: []FlagDef{{Name: "mode", Default: "debug", Description: "xdebug.mode when turning on: one or more of develop, coverage, debug, gcstats, profile, trace (comma-separated)"}},
+		Examples: []string{
+			"devctl php:xdebug 8.4 on",
+			"devctl php:xdebug 8.4 on --mode=debug,develop",
+			"devctl php:xdebug 8.4 off --json",
+		},
+		Handler: func(c *Client, args []string, jsonMode bool) error {
+			pos, mode, j, err := splitPHPArgs(args, "mode")
+			if err != nil {
+				return err
+			}
+			if len(pos) != 2 || (pos[1] != "on" && pos[1] != "off") {
+				return fmt.Errorf("usage: devctl php:xdebug <version> on|off [--mode=debug]")
+			}
+			ver, on := pos[0], pos[1] == "on"
+			if !on && mode != "" {
+				return fmt.Errorf("--mode applies only to on")
+			}
+			st, err := c.SetPHPXdebug(ver, on, mode)
+			if err != nil {
+				return err
+			}
+			if jsonMode || j {
+				PrintJSON(st)
+				return nil
+			}
+			if st.Enabled {
+				PrintOK(fmt.Sprintf("Xdebug on for PHP %s (mode %s). It starts on a trigger such as the XDEBUG_SESSION cookie.", ver, st.Mode))
+			} else {
+				PrintOK(fmt.Sprintf("Xdebug off for PHP %s.", ver))
+			}
 			return nil
 		},
 	})
@@ -234,32 +277,34 @@ func printPHPSettings(s PHPSettings) {
 	}
 }
 
-// splitPHPArgs takes --version and --json out of args. Flags may come before
-// or after positionals, and "--" ends flags. Only "--" prefixes count as
-// flags, so values such as -1 stay positional.
-func splitPHPArgs(args []string, withVersion bool) (pos []string, version string, jsonFlag bool, err error) {
+// splitPHPArgs takes --json and the value flag named valueFlag (none when
+// "") out of args. Flags may come before or after positionals, and "--" ends
+// flags. Only "--" prefixes count as flags, so values such as -1 stay
+// positional.
+func splitPHPArgs(args []string, valueFlag string) (pos []string, value string, jsonFlag bool, err error) {
+	flag := "--" + valueFlag
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--":
-			return append(pos, args[i+1:]...), version, jsonFlag, nil
+			return append(pos, args[i+1:]...), value, jsonFlag, nil
 		case a == "--json":
 			jsonFlag = true
-		case withVersion && strings.HasPrefix(a, "--version="):
-			version = strings.TrimPrefix(a, "--version=")
-		case withVersion && a == "--version":
+		case valueFlag != "" && strings.HasPrefix(a, flag+"="):
+			value = strings.TrimPrefix(a, flag+"=")
+		case valueFlag != "" && a == flag:
 			if i+1 >= len(args) {
-				return nil, "", false, fmt.Errorf("--version needs a value")
+				return nil, "", false, fmt.Errorf("%s needs a value", flag)
 			}
 			i++
-			version = args[i]
+			value = args[i]
 		case strings.HasPrefix(a, "--"):
 			return nil, "", false, fmt.Errorf("unknown flag %s", a)
 		default:
 			pos = append(pos, a)
 		}
 	}
-	return pos, version, jsonFlag, nil
+	return pos, value, jsonFlag, nil
 }
 
 // parseKV parses a slice of "key=value" strings into a map.

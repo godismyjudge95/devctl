@@ -369,6 +369,8 @@ The **PHP settings** panel in the dashboard edits `memory_limit`, `upload_max_fi
 
 Any other php.ini directive can be set from the CLI with `devctl php:ini:set <all|version> <key> <value>`. devctl stores these values in its database and writes them in a managed block at the end of each `php.ini` (last assignment wins). Edits elsewhere in `php.ini` stay. Do not edit inside the block, because devctl rewrites it.
 
+**Xdebug** is turned on and off for one PHP version at a time: the Xdebug row on a PHP-FPM settings page, or `devctl php:xdebug 8.4 on|off [--mode=debug,develop]`. Only that version's FPM pool restarts. devctl writes `zend_extension`, `xdebug.mode` (default `debug`), and `xdebug.start_with_request = trigger` into the managed block, so a debug session starts only when the browser extension sets the `XDEBUG_SESSION` cookie. Off removes the extension, so normal requests pay nothing. Other `xdebug.*` directives you set with `php:ini:set` stay. Xdebug needs a PHP build that ships `xdebug.so`: macOS builds from the first PHP binaries release after this change. Linux PHP is a static musl build that cannot load extensions, so the toggle reports "not available in this PHP build" there.
+
 ### Config editor
 
 Click the file icon on any PHP-FPM row in the Services tab to open the full-screen config editor. PHP-FPM shows two tabs — `php.ini` and `php-fpm.conf` — switchable without leaving the editor.
@@ -717,6 +719,7 @@ devctl php:set memory_limit=512M  # update a PHP ini setting
 devctl db:connection              # DB settings and URL of the site in the cwd
 devctl db:export > dump.sql       # dump the site database (from its .env)
 devctl php:ini:set 8.4 opcache.jit tracing  # set any php.ini directive for one version
+devctl php:xdebug 8.4 on           # Xdebug for PHP 8.4 (trigger mode, restarts that pool)
 devctl dns:status                 # check systemd-resolved DNS setup
 devctl dumps:list                 # list recent dumps
 devctl spx:profiles               # list recent SPX profiler captures
@@ -770,6 +773,7 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `php:ini:list [all\|<version>]` | List the php.ini directives devctl manages |
 | | `php:ini:set <all\|version> <key> <value>` | Set a php.ini directive for all versions or one version |
 | | `php:ini:unset <all\|version> <key>` | Remove a php.ini directive that devctl manages |
+| | `php:xdebug <version> on\|off [--mode=<modes>]` | Turn Xdebug on or off for one PHP version (restarts only that FPM pool) |
 | `postgres` | `postgres:extensions` | List managed PostgreSQL extensions and status |
 | | `postgres:extensions:ensure` | Install missing extension files and wire SQL objects |
 | `db` | `db:list [engine]` | List databases on one engine, or on every running engine |
