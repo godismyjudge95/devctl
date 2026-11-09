@@ -536,10 +536,10 @@ func (s *Server) handleAddDBColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Database string              `json:"database"`
-		Schema   string              `json:"schema"`
-		Table    string              `json:"table"`
-		Column   database.ColumnDef  `json:"column"`
+		Database string             `json:"database"`
+		Schema   string             `json:"schema"`
+		Table    string             `json:"table"`
+		Column   database.ColumnDef `json:"column"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, "invalid json", http.StatusBadRequest)

@@ -66,4 +66,3 @@ func TestStop_SendsSIGTERM(t *testing.T) {
 		t.Fatal("child still running after Stop")
 	}
 }
-

@@ -12,9 +12,9 @@ import (
 )
 
 type sqlEngine struct {
-	kind   string
-	db     *sql.DB
-	openDB func(ctx context.Context, database string) (*sql.DB, error)
+	kind      string
+	db        *sql.DB
+	openDB    func(ctx context.Context, database string) (*sql.DB, error)
 	files     []SQLiteFile // sqlite only
 	sqliteDir string
 	owned     bool // close db on Close()
@@ -388,7 +388,11 @@ func (e *sqlEngine) sqliteStructure(ctx context.Context, conn *sql.DB, table str
 		return err
 	}
 	defer idxRows.Close()
-	type idxRow struct{ name string; unique bool; origin string }
+	type idxRow struct {
+		name   string
+		unique bool
+		origin string
+	}
 	var idxs []idxRow
 	for idxRows.Next() {
 		var seq int

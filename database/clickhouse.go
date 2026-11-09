@@ -44,9 +44,9 @@ func openClickHouse(cfg Config) (Engine, error) {
 	return e, nil
 }
 
-func (e *clickhouseEngine) Kind() string          { return "clickhouse" }
-func (e *clickhouseEngine) Caps() Capabilities    { return clickhouseCaps() }
-func (e *clickhouseEngine) Close() error          { return nil }
+func (e *clickhouseEngine) Kind() string       { return "clickhouse" }
+func (e *clickhouseEngine) Caps() Capabilities { return clickhouseCaps() }
+func (e *clickhouseEngine) Close() error       { return nil }
 
 func (e *clickhouseEngine) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.base+"/ping", nil)
@@ -77,10 +77,10 @@ type chJSON struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
 	} `json:"meta"`
-	Data         []map[string]any `json:"data"`
-	Rows         int              `json:"rows"`
-	RowsBeforeLimit int           `json:"rows_before_limit_at_least"`
-	Statistics   struct {
+	Data            []map[string]any `json:"data"`
+	Rows            int              `json:"rows"`
+	RowsBeforeLimit int              `json:"rows_before_limit_at_least"`
+	Statistics      struct {
 		Elapsed float64 `json:"elapsed"`
 	} `json:"statistics"`
 }

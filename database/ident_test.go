@@ -68,11 +68,11 @@ func TestValidateIdent(t *testing.T) {
 func TestFirstSQLKeyword(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"SELECT 1":            "SELECT",
-		"  insert into t":     "INSERT",
+		"SELECT 1":                               "SELECT",
+		"  insert into t":                        "INSERT",
 		"\nWith x AS (SELECT 1) SELECT * FROM x": "WITH",
-		"show databases":      "SHOW",
-		"":                    "",
+		"show databases":                         "SHOW",
+		"":                                       "",
 	}
 	for in, want := range cases {
 		if got := firstSQLKeyword(in); got != want {

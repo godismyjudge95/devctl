@@ -7,20 +7,20 @@ import (
 
 // Capabilities describes what the UI may offer for an engine.
 type Capabilities struct {
-	CreateDatabase bool `json:"create_database"`
-	DropDatabase   bool `json:"drop_database"`
-	CreateTable    bool `json:"create_table"`
-	DropTable      bool `json:"drop_table"`
-	Truncate           bool `json:"truncate"`
-	RowEdit            bool `json:"row_edit"`
-	RowInsert          bool `json:"row_insert"`
-	Schemas            bool `json:"schemas"`
-	RenameDatabase     bool `json:"rename_database"`
-	DuplicateDatabase  bool `json:"duplicate_database"`
-	RenameTable        bool `json:"rename_table"`
-	DuplicateTable     bool `json:"duplicate_table"`
-	AlterTable         bool `json:"alter_table"`
-	ImportExport       bool `json:"import_export"`
+	CreateDatabase    bool `json:"create_database"`
+	DropDatabase      bool `json:"drop_database"`
+	CreateTable       bool `json:"create_table"`
+	DropTable         bool `json:"drop_table"`
+	Truncate          bool `json:"truncate"`
+	RowEdit           bool `json:"row_edit"`
+	RowInsert         bool `json:"row_insert"`
+	Schemas           bool `json:"schemas"`
+	RenameDatabase    bool `json:"rename_database"`
+	DuplicateDatabase bool `json:"duplicate_database"`
+	RenameTable       bool `json:"rename_table"`
+	DuplicateTable    bool `json:"duplicate_table"`
+	AlterTable        bool `json:"alter_table"`
+	ImportExport      bool `json:"import_export"`
 }
 
 // EngineInfo is a connection the dashboard can open.
@@ -43,27 +43,27 @@ type DatabaseInfo struct {
 
 // TableInfo is a table or view.
 type TableInfo struct {
-	Name     string `json:"name"`
-	Schema   string `json:"schema,omitempty"`
-	Type     string `json:"type"` // table | view
-	Rows     *int64 `json:"rows,omitempty"`
-	Engine   string `json:"engine,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Name      string `json:"name"`
+	Schema    string `json:"schema,omitempty"`
+	Type      string `json:"type"` // table | view
+	Rows      *int64 `json:"rows,omitempty"`
+	Engine    string `json:"engine,omitempty"`
+	Comment   string `json:"comment,omitempty"`
 	Collation string `json:"collation,omitempty"`
 	Internal  bool   `json:"internal"`
 }
 
 // Column describes a table column.
 type Column struct {
-	Name         string  `json:"name"`
-	Type         string  `json:"type"`
-	Nullable     bool    `json:"nullable"`
-	Default      *string `json:"default"`
-	Key          string  `json:"key,omitempty"`
-	Extra        string  `json:"extra,omitempty"`
-	Comment      string  `json:"comment,omitempty"`
-	PrimaryKey   bool    `json:"primary_key"`
-	AutoIncrement bool   `json:"auto_increment"`
+	Name          string  `json:"name"`
+	Type          string  `json:"type"`
+	Nullable      bool    `json:"nullable"`
+	Default       *string `json:"default"`
+	Key           string  `json:"key,omitempty"`
+	Extra         string  `json:"extra,omitempty"`
+	Comment       string  `json:"comment,omitempty"`
+	PrimaryKey    bool    `json:"primary_key"`
+	AutoIncrement bool    `json:"auto_increment"`
 }
 
 // Index describes a table index.
@@ -77,9 +77,9 @@ type Index struct {
 
 // TableStructure is the Data / Structure tab payload.
 type TableStructure struct {
-	Columns  []Column `json:"columns"`
-	Indexes  []Index  `json:"indexes"`
-	CreateSQL string  `json:"create_sql,omitempty"`
+	Columns    []Column `json:"columns"`
+	Indexes    []Index  `json:"indexes"`
+	CreateSQL  string   `json:"create_sql,omitempty"`
 	PrimaryKey []string `json:"primary_key"`
 }
 
@@ -130,12 +130,12 @@ type QueryResult struct {
 
 // Config is how an engine is opened.
 type Config struct {
-	Kind     string
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Socket   string
+	Kind      string
+	Host      string
+	Port      string
+	User      string
+	Password  string
+	Socket    string
 	Path      string // sqlite file or sqlite files root
 	Files     []SQLiteFile
 	SQLiteDir string

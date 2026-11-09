@@ -161,9 +161,9 @@ func TestSQLiteDatabaseCRUD(t *testing.T) {
 
 	rowsBody := httpGet(t, "/api/databases/sqlite/rows?database=dbbrowser-test&table=users")
 	var rows struct {
-		Total      int             `json:"total"`
-		PrimaryKey []string        `json:"primary_key"`
-		Rows       [][]any         `json:"rows"`
+		Total      int              `json:"total"`
+		PrimaryKey []string         `json:"primary_key"`
+		Rows       [][]any          `json:"rows"`
 		Columns    []map[string]any `json:"columns"`
 	}
 	if err := json.Unmarshal(rowsBody, &rows); err != nil {

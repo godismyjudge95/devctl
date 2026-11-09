@@ -459,7 +459,7 @@ func TestWriteSkill_FileOwnedBySudoUser(t *testing.T) {
 	}
 
 	for _, check := range []struct {
-		label string
+		label  string
 		target string
 	}{
 		{"file", path},
