@@ -258,11 +258,20 @@ jobs:
           if [ "${{ matrix.minor }}" = "8.0" ]; then
             IGNORE_CACHE="${IGNORE_CACHE},libxml2,libxslt,icu,imagemagick,ext-imagick"
           fi
-          ./bin/spc download \
-            --with-php=${{ matrix.patch }} \
-            --for-extensions="${{ steps.exts.outputs.list }},xdebug" \
-            --ignore-cache-sources="$IGNORE_CACHE" \
-            --retry=5
+          # GitHub release downloads sometimes return 504 for minutes. Retry the
+          # whole step. --no-alt: a failed pinned source (ICU 70.1 for 8.0) must
+          # fail, not fall back to spc's newest version.
+          for attempt in 1 2 3; do
+            ./bin/spc download \
+              --with-php=${{ matrix.patch }} \
+              --for-extensions="${{ steps.exts.outputs.list }},xdebug" \
+              --ignore-cache-sources="$IGNORE_CACHE" \
+              --no-alt \
+              --retry=5 && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "download attempt $attempt failed; retrying in 120s" >&2
+            sleep 120
+          done
 
       - name: Neutralize PHP 8.0 zstd/brotli stubs
         if: matrix.build == 'compile' && matrix.minor == '8.0'
@@ -500,15 +509,22 @@ jobs:
           LIBICONV_URL="https://ftpmirror.gnu.org/libiconv/libiconv-1.19.tar.gz"
           # PHP 7.0 mbregex breaks on newest oniguruma (incomplete php_mb_regex_t)
           ONIG_URL="https://github.com/kkos/oniguruma/releases/download/v6.9.4/onig-6.9.4.tar.gz"
-          ./bin/spc-alpine-docker download \
-            --with-php=${{ matrix.php }} \
-            --for-extensions=${{ steps.exts.outputs.list }} \
-            --custom-url "openssl:${OPENSSL_URL}" \
-            --custom-url "curl:${CURL_URL}" \
-            --custom-url "libiconv:${LIBICONV_URL}" \
-            --custom-url "onig:${ONIG_URL}" \
-            --ignore-cache-sources=php-src,openssl,curl,libiconv,onig \
-            --retry=5
+          # GitHub release downloads sometimes return 504 for minutes. Retry the
+          # whole step.
+          for attempt in 1 2 3; do
+            ./bin/spc-alpine-docker download \
+              --with-php=${{ matrix.php }} \
+              --for-extensions=${{ steps.exts.outputs.list }} \
+              --custom-url "openssl:${OPENSSL_URL}" \
+              --custom-url "curl:${CURL_URL}" \
+              --custom-url "libiconv:${LIBICONV_URL}" \
+              --custom-url "onig:${ONIG_URL}" \
+              --ignore-cache-sources=php-src,openssl,curl,libiconv,onig \
+              --retry=5 && break
+            [ "$attempt" = 3 ] && exit 1
+            echo "download attempt $attempt failed; retrying in 120s" >&2
+            sleep 120
+          done
 
       - name: Build PHP CLI and FPM
         working-directory: spc
