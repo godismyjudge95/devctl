@@ -221,7 +221,7 @@ Old `pg-extensions-*` releases must stay published. Installed devctl versions do
 - [ ] Read the full Completed section of `TODO.md` and draft release notes from it
 - [ ] Clear all items from the Completed section of `TODO.md`
 - [ ] Remove stale backlog items if needed
-- [ ] `git add TODO.md && git commit -m "chore: prepare vX.Y.Z release"`
+- [ ] `git add TODO.md CHANGELOG.md && git commit -m "chore: prepare vX.Y.Z release"` (CHANGELOG: `## Unreleased` becomes `## vX.Y.Z — date`)
 - [ ] `git tag vX.Y.Z && git push origin main vX.Y.Z`
 - [ ] `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /tmp/release-notes.md` — `release.yml` attaches `devctl-linux-x86_64` and `devctl-macos-aarch64` automatically
 
