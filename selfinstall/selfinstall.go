@@ -156,8 +156,10 @@ func Run(args []string) error {
 			fmt.Println(" 10. systemctl enable --now devctl")
 		}
 		fmt.Println()
-		fmt.Println("  Then (optional): sudo devctl elevate ports  (macOS 80/443)")
-		fmt.Println("                  sudo devctl elevate trust / resolver")
+		if runtime.GOOS == "darwin" {
+			fmt.Println("  Then: sudo devctl elevate ports  (Caddy needs it to listen on 80 and 443)")
+		}
+		fmt.Println("  Then (optional): sudo devctl elevate trust / resolver")
 		fmt.Println()
 		fmt.Print("Proceed? [y/N] ")
 		if !confirm(r) {
@@ -302,6 +304,9 @@ func Run(args []string) error {
 	fmt.Println(" active ✓")
 	fmt.Println()
 	fmt.Println("devctl is running. Open http://127.0.0.1:4000")
+	if runtime.GOOS == "darwin" {
+		fmt.Println("Next: sudo devctl elevate ports  (Caddy needs it to listen on 80 and 443)")
+	}
 	fmt.Println()
 
 	// --- Optional: install OpenCode skill ---

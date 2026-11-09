@@ -81,7 +81,7 @@ func (c *DaemonClient) Ping(ctx context.Context) error {
 func (c *DaemonClient) post(path string) error {
 	resp, err := c.http.Post("http://elevate"+path, "application/json", nil)
 	if err != nil {
-		return fmt.Errorf("elevate daemon: %w (is `devctl elevate daemon` running?)", err)
+		return fmt.Errorf("elevate daemon: %w (run: sudo devctl elevate ports)", err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
