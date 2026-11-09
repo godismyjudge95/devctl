@@ -20,7 +20,8 @@ OUT="$(mkdir -p "${2:?out-dir}" && cd "$2" && pwd)"
 PG_MAJOR="${PG_VERSION%%.*}"
 ASSET="pg-extensions-pg${PG_VERSION}-${PLATFORM}.tar.gz"
 
-WORK="$(mktemp -d)"
+# pg_config reports resolved paths (/private/var on macOS). Match them.
+WORK="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
@@ -111,6 +112,17 @@ make -C pgvector install PG_CONFIG="$PG_CONFIG" OPTFLAGS="" ${MAKE_ARGS[@]+"${MA
 echo "==> TimescaleDB ${TIMESCALEDB_VERSION}"
 fetch "https://github.com/timescale/timescaledb/archive/refs/tags/${TIMESCALEDB_VERSION}.tar.gz" timescaledb.tar.gz
 mkdir timescaledb && tar -xzf timescaledb.tar.gz -C timescaledb --strip-components=1
+if grep -q "Percona Server" "$("$PG_CONFIG" --includedir-server)/pg_config.h"; then
+  # Percona adds RelFileLocator *old_rlocator to index_create for pg_tde.
+  # Its own callers pass NULL when they create a new index. Upstream
+  # TimescaleDB calls the community signature, so add that argument.
+  compat=timescaledb/src/compat/compat.h
+  n="$(grep -cE '^[[:space:]]+constraintId\)$' "$compat")"
+  awk -v n="$n" '/^[[:space:]]+constraintId\)$/ { c++; if (c == n) sub(/constraintId\)$/, "constraintId, NULL)") } { print }' \
+    "$compat" >"$compat.new"
+  mv "$compat.new" "$compat"
+  grep -q 'constraintId, NULL)' "$compat"
+fi
 (
   cd timescaledb
   # USE_OPENSSL=OFF: no libssl dependency. OpenSSL only serves telemetry.
@@ -138,6 +150,7 @@ STAGE="$WORK/stage"
 mkdir -p "$STAGE/lib" "$STAGE/extension"
 rel_pkglib="${PKGLIBDIR#"$BUILD_PG"/}"
 rel_ext="${EXTDIR#"$BUILD_PG"/}"
+case "$rel_pkglib$rel_ext" in /*) echo "pg_config paths are outside $BUILD_PG" >&2; exit 1 ;; esac
 (cd "$BUILD_PG" && find . -newer "$WORK/marker" \( -type f -o -type l \)) | sed 's#^\./##' | while read -r f; do
   case "$f" in
     "$rel_pkglib"/*) dest="$STAGE/lib/${f#"$rel_pkglib"/}" ;;
