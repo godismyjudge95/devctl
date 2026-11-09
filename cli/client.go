@@ -876,6 +876,12 @@ func (c *Client) GetSelfUpdateStatus() (SelfUpdateStatus, error) {
 	return out, c.get("/api/self/update/status", &out)
 }
 
+// CheckSelfUpdate asks the daemon to look up the latest release now.
+func (c *Client) CheckSelfUpdate() (SelfUpdateStatus, error) {
+	var out SelfUpdateStatus
+	return out, c.post("/api/self/update/check", nil, &out)
+}
+
 // ApplySelfUpdateSSE POSTs to /api/self/update/apply and streams the SSE
 // response. For each "output" event, onOutput is called with the text payload.
 // Returns nil on a "done" event, or an error on an "error" event or unexpected

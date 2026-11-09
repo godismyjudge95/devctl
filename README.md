@@ -981,7 +981,8 @@ sudo devctl elevate trust         # trust Caddy's internal CA (privileged)
 devctl elevate:status             # show elevate targets
 devctl doctor                     # check the environment (exit 1 on failure)
 devctl doctor:fix                 # apply the safe, unprivileged fixes
-devctl devctl:update              # check for devctl updates and apply
+devctl devctl:update              # check GitHub now for a newer devctl and install it
+devctl devctl:update --check      # only check; install nothing
 devctl devctl:skill               # generate an OpenCode CLI skill file
 devctl mcp:install                # print the MCP config for Claude Code, Cursor, OpenCode, Zed, VS Code
 ```
@@ -1088,7 +1089,7 @@ devctl mcp:install                # print the MCP config for Claude Code, Cursor
 | | `settings:set <key=value>...` | Update devctl settings |
 | `mcp` | `mcp` | Run the MCP server on stdio (started by the agent app) |
 | | `mcp:install [--client=…] [--write]` | Print the MCP config for Claude Code, Cursor, OpenCode, Zed, and VS Code. `--write` adds it to their config files |
-| `devctl` | `devctl:update` | Check for a newer devctl release and update if one is available |
+| `devctl` | `devctl:update [--check]` | Check GitHub now for a newer devctl release and install it. `--check` only reports |
 | | `devctl:skill` | Generate the agent skill and refresh the `<devctl>` block in AGENTS.md |
 
 In a site directory, `db:*` commands default `<engine>` and `<name>` to `DB_CONNECTION` and `DB_DATABASE` in the site `.env`. Engine names follow Laravel too: `pgsql` means `postgres`, and `mariadb` uses the MySQL server. `devctl db:query "SELECT 1"` runs against the site database; `devctl db:query mysql shop "SELECT 1"` names one. Import and export stream the dump, so file size does not change memory use, and show progress on a terminal. A failed export leaves no partial file.

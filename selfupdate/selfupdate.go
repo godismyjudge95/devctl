@@ -8,16 +8,15 @@ package selfupdate
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
 
+	"github.com/danielgormly/devctl/internal/githubapi"
 	"github.com/danielgormly/devctl/internal/httplog"
 )
 
@@ -26,52 +25,18 @@ const (
 	downloadTimeout = 10 * time.Minute
 )
 
-// githubAPIBase and githubDownloadBase are vars so they can be overridden in
-// tests (via DEVCTL_GITHUB_API_BASE and DEVCTL_GITHUB_DOWNLOAD_BASE env vars
-// checked at call-time, or by setting the vars directly in the test binary).
-var (
-	GithubAPIBase      = "https://api.github.com"
-	GithubDownloadBase = "https://github.com/godismyjudge95/devctl/releases/download"
-)
+// GithubDownloadBase is a var so tests can point downloads at a fake server.
+var GithubDownloadBase = "https://github.com/godismyjudge95/devctl/releases/download"
 
-// LatestVersion queries the GitHub Releases API and returns the latest release
-// tag for devctl (e.g. "v0.3.0"). Returns ("", nil) if the version cannot be
-// determined.
+// LatestVersion returns the latest devctl release tag (e.g. "v0.3.0"). When
+// the GitHub API rate-limits, it reads the tag from the releases/latest
+// redirect.
 func LatestVersion(ctx context.Context) (string, error) {
-	url := GithubAPIBase + "/repos/" + githubRepo + "/releases/latest"
-
-	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, "GET", url, nil)
+	tag, err := githubapi.LatestTag(ctx, githubRepo)
 	if err != nil {
-		return "", fmt.Errorf("selfupdate: build request: %w", err)
+		return "", fmt.Errorf("selfupdate: %w", err)
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "devctl/1")
-
-	done := httplog.LogGitHubRequestStart(req.Method, url)
-	resp, err := http.DefaultClient.Do(req)
-	done(resp, err)
-	if err != nil {
-		return "", fmt.Errorf("selfupdate: github api: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("selfupdate: github api: HTTP %d", resp.StatusCode)
-	}
-
-	var payload struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("selfupdate: decode response: %w", err)
-	}
-	if payload.TagName == "" {
-		return "", fmt.Errorf("selfupdate: empty tag_name in response")
-	}
-	return payload.TagName, nil
+	return tag, nil
 }
 
 // releaseAssetName is the GitHub release asset for this GOOS.

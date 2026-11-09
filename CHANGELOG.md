@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: `devctl devctl:update` printed "Version check not yet complete" until the daily 3am check ran. It now asks GitHub at once (`POST /api/self/update/check`), and falls back to the `releases/latest` redirect when the API rate-limits. `devctl devctl:update --check` only reports a newer release.
+
 ## v0.19.1 — 2026-11-09
 
 - Fixed: devctl did not offer a PHP update when the newest PHP binaries release rebuilt the same patch. Installs from before `php-binaries-20261109.1` (macOS builds without `xdebug.so`, static musl Linux builds) now show an update; it installs the new build and its `xdebug.so`.

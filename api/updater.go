@@ -70,6 +70,19 @@ func (s *Server) handleGetSelfUpdateStatus(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// handleCheckSelfUpdate asks GitHub for the latest release now, stores it,
+// and returns the same body as GET /api/self/update/status. The daily check
+// runs only at 3am, so a manual check must not depend on it.
+func (s *Server) handleCheckSelfUpdate(w http.ResponseWriter, r *http.Request) {
+	latest, err := selfupdate.LatestVersion(r.Context())
+	if err != nil {
+		writeError(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	s.SetSelfLatestVersion(latest)
+	s.handleGetSelfUpdateStatus(w, r)
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/self/update/apply  (SSE stream)
 // ---------------------------------------------------------------------------

@@ -1,26 +1,30 @@
 package cli
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"os"
+)
 
 func init() {
 	Register(&Cmd{
 		Name:        "devctl:update",
 		MCP:         MCPHidden,
 		Description: "Check for a newer devctl release and update if one is available",
-		Examples:    []string{"devctl devctl:update", "devctl devctl:update --json"},
+		Usage:       "[--check]",
+		Flags:       []FlagDef{{Name: "check", Default: "false", Description: "Only check for a newer release. Do not install it"}},
+		Examples:    []string{"devctl devctl:update", "devctl devctl:update --check", "devctl devctl:update --json"},
 		Handler: func(c *Client, args []string, jsonMode bool) error {
-			status, err := c.GetSelfUpdateStatus()
-			if err != nil {
+			fs := flag.NewFlagSet("devctl:update", flag.ContinueOnError)
+			fs.SetOutput(os.Stderr)
+			checkOnly := fs.Bool("check", false, "only check for a newer release")
+			if err := fs.Parse(args); err != nil {
 				return err
 			}
 
-			if status.LatestVersion == "" {
-				if jsonMode {
-					PrintJSON(map[string]string{"status": "unknown", "message": "version check not yet complete, try again in a moment"})
-					return nil
-				}
-				fmt.Println(styleDim.Render("Version check not yet complete — try again in a moment."))
-				return nil
+			status, err := c.CheckSelfUpdate()
+			if err != nil {
+				return err
 			}
 
 			if !status.UpdateAvailable {
@@ -29,6 +33,15 @@ func init() {
 					return nil
 				}
 				PrintOK("Already up to date (" + status.CurrentVersion + ")")
+				return nil
+			}
+
+			if *checkOnly {
+				if jsonMode {
+					PrintJSON(map[string]any{"status": "update_available", "current_version": status.CurrentVersion, "latest_version": status.LatestVersion})
+					return nil
+				}
+				fmt.Printf("devctl %s is available (installed: %s). Run devctl devctl:update to install it.\n", styleBold.Render(status.LatestVersion), styleDim.Render(status.CurrentVersion))
 				return nil
 			}
 

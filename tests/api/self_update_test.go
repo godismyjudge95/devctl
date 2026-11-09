@@ -4,6 +4,7 @@ package apitest
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,6 +21,27 @@ func TestSelfUpdate_Status(t *testing.T) {
 	}
 	t.Logf("current_version=%q latest_version=%q update_available=%v",
 		status.CurrentVersion, status.LatestVersion, status.UpdateAvailable)
+}
+
+// TestSelfUpdate_CheckFetchesLatestNow verifies that POST /api/self/update/check
+// looks up the latest release at once (the daily check runs only at 3am) and
+// that GET /api/self/update/status then reports the same version.
+func TestSelfUpdate_CheckFetchesLatestNow(t *testing.T) {
+	body, code := httpPost(t, "/api/self/update/check", nil)
+	if code != http.StatusOK {
+		t.Fatalf("check: expected 200, got %d: %s", code, body)
+	}
+	checked := decodeJSON[selfUpdateStatus](t, body)
+	if !strings.HasPrefix(checked.LatestVersion, "v") {
+		t.Fatalf("check: latest_version = %q, want a release tag", checked.LatestVersion)
+	}
+	if checked.UpdateAvailable != (checked.LatestVersion != checked.CurrentVersion) {
+		t.Errorf("check: update_available = %v for current %q, latest %q", checked.UpdateAvailable, checked.CurrentVersion, checked.LatestVersion)
+	}
+	status := decodeJSON[selfUpdateStatus](t, httpGet(t, "/api/self/update/status"))
+	if status.LatestVersion != checked.LatestVersion {
+		t.Errorf("status latest_version = %q, want %q from the check", status.LatestVersion, checked.LatestVersion)
+	}
 }
 
 // TestSelfUpdate_UpdateAvailableFlag verifies that injecting a fake latest

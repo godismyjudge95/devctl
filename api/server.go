@@ -91,28 +91,28 @@ func NewServer(
 	selfVersion string,
 ) *Server {
 	s := &Server{
-		db:             db,
-		queries:        dbq.New(db),
-		registry:       registry,
-		manager:        manager,
-		supervisor:     supervisor,
-		poller:         poller,
-		dumps:          dumpsServer,
-		caddy:          caddyClient,
-		siteManager:    siteManager,
-		installers:     installers,
-		workers:        workersMgr,
-		serverRoot:     serverRoot,
-		siteUser:       siteUser,
-		siteHome:       siteHome,
-		devctlAddr:     devctlAddr,
-		mux:         http.NewServeMux(),
-		uiFS:        uiFS,
-		versions:    versioncache.New(),
-		selfVersion: selfVersion,
-		dbPool:         database.NewPool(),
-		elevateClient:  elevate.NewDaemonClient(serverRoot),
-		shares:         share.NewManager(share.Cloudflared(filepath.Join(paths.BinDir(serverRoot), "cloudflared"), dist.HTTPSPort())),
+		db:            db,
+		queries:       dbq.New(db),
+		registry:      registry,
+		manager:       manager,
+		supervisor:    supervisor,
+		poller:        poller,
+		dumps:         dumpsServer,
+		caddy:         caddyClient,
+		siteManager:   siteManager,
+		installers:    installers,
+		workers:       workersMgr,
+		serverRoot:    serverRoot,
+		siteUser:      siteUser,
+		siteHome:      siteHome,
+		devctlAddr:    devctlAddr,
+		mux:           http.NewServeMux(),
+		uiFS:          uiFS,
+		versions:      versioncache.New(),
+		selfVersion:   selfVersion,
+		dbPool:        database.NewPool(),
+		elevateClient: elevate.NewDaemonClient(serverRoot),
+		shares:        share.NewManager(share.Cloudflared(filepath.Join(paths.BinDir(serverRoot), "cloudflared"), dist.HTTPSPort())),
 	}
 	s.registerRoutes()
 	return s
@@ -301,6 +301,7 @@ func (s *Server) registerRoutes() {
 
 	// Self-update
 	s.mux.HandleFunc("GET /api/self/update/status", s.handleGetSelfUpdateStatus)
+	s.mux.HandleFunc("POST /api/self/update/check", s.handleCheckSelfUpdate)
 	s.mux.HandleFunc("POST /api/self/update/apply", s.handleApplySelfUpdate)
 
 	// /_testing/ — debug/test endpoints. Only registered when DEVCTL_TESTING=true.
