@@ -377,6 +377,16 @@ while true; do
   sleep 1; ELAPSED=$((ELAPSED + 1))
 done
 
+# Sites discovered before PHP was installed (no artifact cache) have no PHP
+# version. Give them the newest installed one.
+PHP_LATEST=$(incus exec "$CONTAINER" -- \
+  sh -c "curl -sf http://127.0.0.1:4000/api/php/versions | jq -r '[.[].version] | sort_by(split(\".\") | map(tonumber)) | last // empty'" 2>/dev/null || true)
+if [[ -n "$PHP_LATEST" ]]; then
+  for domain in $(incus exec "$CONTAINER" -- sh -c "curl -sf http://127.0.0.1:4000/api/sites | jq -r '.[] | select(.php_version==\"\" and .root_path!=\"\") | .domain'" 2>/dev/null); do
+    incus exec "$CONTAINER" -- /usr/local/bin/devctl sites:php "$domain" "$PHP_LATEST" >/dev/null && info "Set ${domain} to PHP ${PHP_LATEST}."
+  done
+fi
+
 # ─── Install optional services ────────────────────────────────────────────────
 # Running: Valkey/Redis, Mailpit, MySQL, Meilisearch, MaxIO
 # Not installed (shown as installable): PostgreSQL, Typesense, Reverb

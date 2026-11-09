@@ -331,14 +331,17 @@ func (s *Server) checkSitePHP(ctx context.Context) doctor.Finding {
 	}
 	var bad []string
 	for _, site := range sites {
-		if !installed[site.PhpVersion] {
-			bad = append(bad, fmt.Sprintf("%s uses PHP %q", site.Domain, site.PhpVersion))
+		switch {
+		case site.PhpVersion == "":
+			bad = append(bad, site.Domain+" has no PHP version")
+		case !installed[site.PhpVersion]:
+			bad = append(bad, fmt.Sprintf("%s uses PHP %s", site.Domain, site.PhpVersion))
 		}
 	}
 	if len(bad) == 0 {
 		return doctor.Okf("%d sites checked", len(sites))
 	}
-	f := doctor.Failf("devctl sites:php <domain> <installed version>", "%d sites use a PHP version that is not installed", len(bad))
+	f := doctor.Failf("devctl sites:php <domain> <installed version>", "%d sites have no installed PHP version", len(bad))
 	f.Details = bad
 	return f
 }
