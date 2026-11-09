@@ -56,10 +56,12 @@ https://github.com/godismyjudge95/devctl/compare/vPREV...vNEW
 
 After drafting the release notes, **remove all items from the Completed section** of `TODO.md`, leaving the section header empty. Also remove any stale/abandoned items from the backlog if they are no longer relevant.
 
+In `CHANGELOG.md`, rename `## Unreleased` to `## vNEW — YYYY-MM-DD` and add an empty `## Unreleased` above it. Commit `CHANGELOG.md` with `TODO.md`.
+
 Commit the result:
 
 ```sh
-git add TODO.md
+git add TODO.md CHANGELOG.md
 git commit -m "chore: prepare vX.Y.Z release"
 ```
 

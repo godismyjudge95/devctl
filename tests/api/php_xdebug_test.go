@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgormly/devctl/php"
 )
@@ -134,4 +135,33 @@ func TestPHPXdebug_RejectsBadInput(t *testing.T) {
 			t.Errorf("PUT %s %v: %d %s, want %d", c.path, c.body, status, body, c.want)
 		}
 	}
+}
+
+// A release that rebuilds the same patch with xdebug.so (php-binaries-20261109.1)
+// must still be offered as an update to an install that lacks xdebug.so.
+func TestPHPServiceUpdate_RestoresMissingXdebug(t *testing.T) {
+	so := php.XdebugPath("8.4", phpTestServerRoot())
+	if _, err := os.Stat(so); err != nil {
+		t.Skip("PHP 8.4 is not installed from a release that ships xdebug.so")
+	}
+	if err := os.Remove(so); err != nil {
+		t.Fatal(err)
+	}
+	pollUpdateAvailable(t, "php-fpm-8.4", true, 30*time.Second)
+	if v := phpVersionInfo(t, "8.4"); v.Xdebug.Available {
+		t.Errorf("xdebug available with no xdebug.so: %+v", v.Xdebug)
+	}
+
+	result := httpSSE(t, "POST", "/api/services/php-fpm-8.4/update", 5*time.Minute)
+	if result.LastEvent != "done" {
+		t.Fatalf("update php 8.4: last event = %q, want done; data=%s", result.LastEvent, result.LastData)
+	}
+	if _, err := os.Stat(so); err != nil {
+		t.Fatalf("update did not restore xdebug.so: %v", err)
+	}
+	pollUpdateAvailable(t, "php-fpm-8.4", false, 30*time.Second)
+	if v := phpVersionInfo(t, "8.4"); !v.Xdebug.Available {
+		t.Errorf("xdebug not available after update: %+v", v.Xdebug)
+	}
+	pollServiceStatus(t, "php-fpm-8.4", "running", 30*time.Second)
 }

@@ -17,7 +17,7 @@ type Version struct {
 	Status        string       `json:"status"`           // "running" | "stopped" | "unknown"
 	PatchVersion  string       `json:"patch_version"`    // e.g. "8.3.22"
 	LatestVersion string       `json:"latest_version"`   // e.g. "8.3.23"
-	UpdateAvail   bool         `json:"update_available"` // true when PatchVersion != LatestVersion
+	UpdateAvail   bool         `json:"update_available"` // see UpdateAvailable
 	Xdebug        XdebugStatus `json:"xdebug"`
 }
 

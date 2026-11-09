@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed: devctl did not offer a PHP update when the newest PHP binaries release rebuilt the same patch. Installs from before `php-binaries-20261109.1` (macOS builds without `xdebug.so`, static musl Linux builds) now show an update; it installs the new build and its `xdebug.so`.
+- Fixed: a fresh macOS install did not say that Caddy needs `sudo devctl elevate ports`. The install output now says it, and the Caddy start error names that command.
+
+## v0.19.0 — 2026-11-09
+
 - Fixed: macOS MySQL install now puts `mysql`, `mysqldump`, and `mysqladmin` on PATH (same `MYSQL_HOME` wrappers as Linux). Existing installs pick this up on daemon restart.
 - Fixed: macOS PostgreSQL now puts `psql` on PATH. The wrapper looked only for Percona's `psql.bin`; EDB ships `psql`.
 - PATH setup now rewrites leftover `export PATH` blocks in other shell files (for example `~/.profile` from an older sites directory).

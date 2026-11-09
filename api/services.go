@@ -664,7 +664,7 @@ func (s *Server) enrichStates(states []services.ServiceState) []services.Service
 			if manifest != nil && manifest.PHPVersions != nil {
 				if latest := manifest.PHPVersions[minor]; latest != "" {
 					st.LatestVersion = latest
-					if st.Version != "" && st.Version != latest {
+					if php.UpdateAvailable(minor, st.Version, s.serverRoot, manifest) {
 						st.UpdateAvailable = true
 					}
 				}
@@ -778,12 +778,16 @@ func (s *Server) handlePHPServiceUpdate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	latest := manifest.PHPVersions[ver]
-	if current == latest {
+	if !php.UpdateAvailable(ver, current, s.serverRoot, manifest) {
 		sendSSE(w, flusher, "done", map[string]string{"status": "ok"})
 		return
 	}
 
-	sendSSE(w, flusher, "output", fmt.Sprintf("Updating PHP %s from %s to %s\n", ver, current, latest))
+	if current == latest {
+		sendSSE(w, flusher, "output", fmt.Sprintf("Installing the newest PHP %s build (%s, adds Xdebug)\n", ver, latest))
+	} else {
+		sendSSE(w, flusher, "output", fmt.Sprintf("Updating PHP %s from %s to %s\n", ver, current, latest))
+	}
 	// Stop FPM before replacing binaries so workers are not mid-request and
 	// the running executable is not held open (curl ETXTBSY / exit 23).
 	id := php.FPMServiceID(ver)

@@ -187,7 +187,7 @@ func (s *Server) enrichPHPVersions(ctx context.Context, versions []php.Version) 
 		}
 		if manifest != nil && manifest.PHPVersions != nil {
 			versions[i].LatestVersion = manifest.PHPVersions[v.Version]
-			versions[i].UpdateAvail = versions[i].PatchVersion != "" && versions[i].LatestVersion != "" && versions[i].PatchVersion != versions[i].LatestVersion
+			versions[i].UpdateAvail = php.UpdateAvailable(v.Version, versions[i].PatchVersion, s.serverRoot, manifest)
 		}
 	}
 }

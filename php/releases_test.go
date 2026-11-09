@@ -612,3 +612,44 @@ func TestNewGitHubRequest_SetsBearerToken(t *testing.T) {
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
+
+func TestUpdateAvailable(t *testing.T) {
+	root := t.TempDir()
+	m := &ReleaseManifest{
+		PHPVersions: map[string]string{"8.4": "8.4.23", "7.4": "7.4.33"},
+		PlatformAssets: map[string]map[string]ReleaseAssets{
+			"linux-x86_64": {
+				"8.4": {CLI: "c", FPM: "f", Xdebug: "php-8.4-xdebug-linux-x86_64.so"},
+				"7.4": {CLI: "c", FPM: "f"},
+			},
+		},
+	}
+	if err := os.MkdirAll(PHPDir("8.4", root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, minor, patch string
+		xdebugInstalled    bool
+		m                  *ReleaseManifest
+		want               bool
+	}{
+		{"newer patch", "8.4", "8.4.22", true, m, true},
+		{"same patch, release adds xdebug", "8.4", "8.4.23", false, m, true},
+		{"same patch, xdebug installed", "8.4", "8.4.23", true, m, false},
+		{"same patch, release has no xdebug", "7.4", "7.4.33", false, m, false},
+		{"unknown installed patch", "8.4", "", false, m, false},
+		{"no manifest", "8.4", "8.4.22", false, nil, false},
+	}
+	for _, c := range cases {
+		so := XdebugPath(c.minor, root)
+		_ = os.Remove(so)
+		if c.xdebugInstalled {
+			if err := os.WriteFile(so, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := updateAvailableOn(c.minor, c.patch, root, "linux-x86_64", c.m); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

@@ -304,6 +304,28 @@ func phpPlatformToken() string {
 	return a.Token
 }
 
+// UpdateAvailable reports whether the newest release has something the
+// installed minor lacks: a different patch, or an xdebug.so that this install
+// does not have (a rebuild with the same patch, such as the Linux glibc builds).
+func UpdateAvailable(minor, installedPatch, serverRoot string, m *ReleaseManifest) bool {
+	return updateAvailableOn(minor, installedPatch, serverRoot, phpPlatformToken(), m)
+}
+
+func updateAvailableOn(minor, installedPatch, serverRoot, platform string, m *ReleaseManifest) bool {
+	if m == nil || installedPatch == "" || m.PHPVersions[minor] == "" {
+		return false
+	}
+	if m.PHPVersions[minor] != installedPatch {
+		return true
+	}
+	a, ok := m.Lookup(minor, platform)
+	if !ok || a.Xdebug == "" {
+		return false
+	}
+	_, err := os.Stat(XdebugPath(minor, serverRoot))
+	return os.IsNotExist(err)
+}
+
 // Lookup returns CLI/FPM asset names for minor on platform.
 // New manifests use platform_assets. Old manifests only fill assets (linux).
 func (m *ReleaseManifest) Lookup(minor, platform string) (ReleaseAssets, bool) {
