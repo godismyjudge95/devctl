@@ -14,40 +14,12 @@ Commit all files to the repo BUT DO NOT PUSH
 
 # Feature ideas (notes from Yerd / Lerd comparison)
 
-Keep browser UI + static binaries + CLI/skill. Do not add MCP or a tray/desktop shell as primary UX.
+Keep browser UI + static binaries + CLI/skill (+ the MCP server). Do not add a tray/desktop shell as primary UX.
 Competitor clones (optional): `/tmp/yerd`, `/tmp/lerd`.
-
-## Doctor
-
-**Intent:** Unified health checks with actionable fixes — system (CA, DNS/resolved, ports, PHP, Caddy, services) and optional per-site (env/key, composer, DB presence, PHP range). Dashboard Doctor page + `devctl doctor` / `devctl doctor fix` + skill-friendly JSON.
-
-**References:**
-- Yerd diagnostics guide (status, doctor, doctor fix, GUI Doctor page): https://yerd.app/guide/diagnostics
-- Yerd diagnostics CLI: https://yerd.app/reference/cli/diagnostics
-- Lerd `lerd doctor` / troubleshooting: https://lerd.sh/troubleshooting
-- Lerd command reference (doctor, status, check, bug-report): https://lerd.sh/reference/commands
-
----
-
-## Public share via cloudflared
-
-**Intent:** One-click / one-command public URL for a site using Cloudflare Tunnel (quick `*.trycloudflare.com` first; named tunnels later if useful). Manage cloudflared as a downloaded static binary under server root — same pattern as other tools/services.
-
-**References:**
-- Yerd sharing (cloudflared quick + named tunnels): https://yerd.app/guide/sharing
-- Yerd tunnel CLI: https://yerd.app/reference/cli/tunnel
-- Lerd `lerd share` (ngrok / cloudflared / Expose / SSH — we only want cloudflared): https://lerd.sh/reference/commands
-- Lerd LAN share is separate (local network only): https://lerd.sh/usage/lan-sharing
-
-**Notes:** Outbound-only; opt-in per site; stop/status in UI + CLI. No ngrok account dependency.
-
----
 
 ## Generic reverse proxy / path rules
 
-**Intent:** Let users (and services) map:
-1. Whole host → local upstream (`something.test` → `http://127.0.0.1:PORT`)
-2. Path prefix on a site → upstream (same-origin websockets, e.g. `app.test/app` → Reverb)
+**Intent:** Let users (and services) map a path prefix on a site → upstream (same-origin websockets, e.g. `app.test/app` → Reverb). Whole-host proxy sites (`something.test` → `http://127.0.0.1:PORT`) shipped in v0.19.0.
 
 Implemented via Caddy Admin API routes, not a second proxy.
 
@@ -140,23 +112,6 @@ Detect installed services (MySQL, Postgres, Valkey, Mailpit, Meili, Typesense, M
 **Notes:** Don’t clobber user-installed clients without consent (Lerd prompts when shadowing). Shims should default to loopback + devctl credentials when no `-h` is passed.
 
 ---
-
-## Workers (Laravel queue/scheduler + WordPress wp-cron prefills)
-
-**Intent:** Supervised **per-site workers** from the dashboard/CLI — start/stop/restart, logs, failed state, heal. Ship prefills:
-- Laravel: `queue:work` (and optionally Horizon later), `schedule:work`
-- WordPress: `wp cron event run` / loop equivalent for pseudo-cron
-
-**References:**
-- Lerd framework workers overview: https://lerd.sh/usage/framework-workers
-- Lerd queue workers: https://lerd.sh/usage/queue-workers
-- Lerd worker heal: https://lerd.sh/usage/worker-heal
-- Lerd idle-suspend (optional later — battery-friendly multi-site): https://lerd.sh/usage/idle-suspend
-- Lerd WordPress notes (custom workers e.g. `wp cron event run`): https://lerd.sh/getting-started/wordpress
-- Lerd schedule/queue CLI surface: https://lerd.sh/reference/commands
-
-**Notes:** Native process supervision under the site user (not containers). Reverb may stay a shared managed service *or* become a per-site worker later — decide when implementing. Prefer prefills + custom command over a full YAML framework store on day one.
-
 
 # Completed
 
