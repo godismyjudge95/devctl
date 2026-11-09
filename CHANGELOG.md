@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.19.1 — 2026-11-09
+
 - Fixed: devctl did not offer a PHP update when the newest PHP binaries release rebuilt the same patch. Installs from before `php-binaries-20261109.1` (macOS builds without `xdebug.so`, static musl Linux builds) now show an update; it installs the new build and its `xdebug.so`.
 - Fixed: a fresh macOS install did not say that Caddy needs `sudo devctl elevate ports`. The install output now says it, and the Caddy start error names that command.
 
