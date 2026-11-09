@@ -30,7 +30,7 @@ jobs:
   # SQLITE_ENABLE_COLUMN_METADATA.
   # Linux rows link glibc (and libstdc++) dynamically and everything else
   # statically, so the binaries can load the xdebug.so built next to them.
-  # They need the glibc of the ubuntu-24.04 runner (2.39) or newer.
+  # They need glibc 2.38 or newer (the highest GLIBC_ symbol version they use).
   # Prove 8.x compiles locally with scripts/local-build-php8.sh (Linux) or
   # scripts/local-build-php8-macos.sh (macOS) before tagging.
   package:

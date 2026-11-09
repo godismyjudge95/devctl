@@ -38,7 +38,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ubuntu-24.04 sets the glibc floor (2.39), the same as the PHP builds.
+          # ubuntu-24.04 sets the glibc floor (2.38 in use), the same as the PHP builds.
           - os: ubuntu-24.04
             platform: linux-x86_64
           - os: ubuntu-24.04-arm

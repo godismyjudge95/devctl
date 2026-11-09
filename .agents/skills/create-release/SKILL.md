@@ -152,7 +152,15 @@ gh release create "$PHP_TAG" \
   --notes "Updated to static-php-cli main as of $(date +%Y-%m-%d); <describe what changed>"
 ```
 
-`build-php.yml` fires automatically (the tag starts with `php-binaries`). It builds Linux 7.x plus Linux and macOS 8.0–8.5 in parallel (same custom 8.x extension set: mysqli/sodium/spx/pcov; 8.2+ also swoole). macOS 7.x is not built. Every 8.x row also builds `xdebug.so` (`--build-shared=xdebug`, Xdebug pinned to 3.5.3 in `patch-spc-for-php8.sh`) and fails if it does not load into the built CLI and FPM. Linux 8.x rows run spc natively on `ubuntu-24.04` with `SPC_LIBC=glibc`: glibc and libstdc++ link dynamically, everything else statically, and the binaries need glibc 2.39 or newer (Ubuntu 24.04+, Debian 13+). The Linux rows fail if a binary needs a shared library other than glibc, libstdc++, libgcc_s, or zlib, and log the highest `GLIBC_` symbol version they need. Do not move the Linux rows to a newer runner without accepting a higher glibc floor. Linux 7.x stays static musl (spc 2.3.0, Alpine) without Xdebug. The job attaches the binaries plus `php-binaries.json`.
+`build-php.yml` fires automatically (the tag starts with `php-binaries`). It builds Linux 7.x plus Linux and macOS 8.0–8.5 in parallel (same custom 8.x extension set: mysqli/sodium/spx/pcov; 8.2+ also swoole). macOS 7.x is not built. Every 8.x row also builds `xdebug.so` (`--build-shared=xdebug`, Xdebug pinned to 3.5.3 in `patch-spc-for-php8.sh`) and fails if it does not load into the built CLI and FPM. Linux 8.x rows run spc natively on `ubuntu-24.04` with `SPC_LIBC=glibc`: glibc and libstdc++ link dynamically, everything else statically, and the binaries need glibc 2.38 or newer (Ubuntu 24.04+, Debian 13+). The Linux rows fail if a binary needs a shared library other than glibc, libstdc++, libgcc_s, or zlib, and log the highest `GLIBC_` symbol version they need. Do not move the Linux rows to a newer runner without accepting a higher glibc floor. Linux 7.x stays static musl (spc 2.3.0, Alpine) without Xdebug. The job attaches the binaries plus `php-binaries.json`.
+
+If no `build-php.yml` run starts within a few minutes of publishing (this happened for `php-binaries-20261109.1`), start it on the tag. A manual run on a `php-binaries-*` ref uploads to that release and writes the manifest:
+
+```sh
+gh workflow run build-php.yml --ref "$PHP_TAG"
+```
+
+Before tagging, prove the workflow with a manual run on main (`gh workflow run build-php.yml --ref main`). That run builds every row and uploads nothing. GitHub release downloads sometimes return 504 for minutes. The download steps retry three times, and the 8.x download uses `--no-alt` so a failed pinned source (ICU 70.1, libevent 2.1.12) fails the row instead of being replaced by spc's newest version. Rerun a row that still fails on 504.
 
 ### 2.4 Verify
 
