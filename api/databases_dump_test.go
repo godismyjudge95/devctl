@@ -83,7 +83,7 @@ func TestRunImport_LargeGzipDumpKeepsHeapFlat(t *testing.T) {
 		}
 	}()
 
-	n, err := runImport(shell("cat >/dev/null"), gzipPipe(newSQLStream(size)))
+	n, err := runImport(shell("cat >/dev/null"), gzipPipe(newSQLStream(size)), false)
 	close(stop)
 	<-done
 	if err != nil {
@@ -110,7 +110,7 @@ func TestRunImport_EngineReceivesSQLText(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := shell(`grep -q "CREATE TABLE t" || { echo "engine did not get SQL text" >&2; exit 1; }`)
-			n, err := runImport(cmd, body)
+			n, err := runImport(cmd, body, false)
 			if err != nil {
 				t.Fatalf("runImport: %v", err)
 			}
@@ -123,7 +123,7 @@ func TestRunImport_EngineReceivesSQLText(t *testing.T) {
 
 func TestRunImport_ReturnsEngineStderr(t *testing.T) {
 	cmd := shell(`cat >/dev/null; echo "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax" >&2; exit 1`)
-	_, err := runImport(cmd, strings.NewReader("SELEC 1;\n"))
+	_, err := runImport(cmd, strings.NewReader("SELEC 1;\n"), false)
 	if err == nil || !strings.Contains(err.Error(), "ERROR 1064") {
 		t.Fatalf("want engine stderr in error, got %v", err)
 	}
@@ -133,7 +133,7 @@ func TestRunImport_EngineExitsBeforeBodyEnds(t *testing.T) {
 	cmd := shell(`head -c 10 >/dev/null; echo "psql:<stdin>:1: ERROR:  syntax error" >&2; exit 3`)
 	errc := make(chan error, 1)
 	go func() {
-		_, err := runImport(cmd, newSQLStream(32<<20))
+		_, err := runImport(cmd, newSQLStream(32<<20), false)
 		errc <- err
 	}()
 	select {
@@ -153,7 +153,7 @@ func TestRunImport_CorruptGzipFails(t *testing.T) {
 	zw.Close()
 	truncated := gz.Bytes()[:gz.Len()/2]
 
-	_, err := runImport(shell("cat >/dev/null"), bytes.NewReader(truncated))
+	_, err := runImport(shell("cat >/dev/null"), bytes.NewReader(truncated), false)
 	if err == nil || !strings.Contains(err.Error(), "read dump") {
 		t.Fatalf("truncated gzip: want a read dump error, got %v", err)
 	}

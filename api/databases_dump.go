@@ -136,7 +136,7 @@ func (s *Server) importDatabase(r *http.Request) (importResult, error) {
 	kind, name := r.PathValue("engine"), r.PathValue("name")
 	create, _ := strconv.ParseBool(r.URL.Query().Get("create"))
 	return importInto(eng, name, create, func() (int64, error) {
-		return runImport(s.dumpCommand(r.Context(), kind, tool.importCmd, name), r.Body)
+		return runImport(s.dumpCommand(r.Context(), kind, tool.importCmd, name), r.Body, kind == "postgres")
 	})
 }
 
@@ -184,7 +184,7 @@ func databaseExists(eng database.Engine, name string) (bool, error) {
 // runImport pipes body into cmd's stdin, un-gzipping it when it starts with
 // the gzip magic bytes. It returns the number of SQL bytes sent. On failure
 // the error carries the engine's stderr.
-func runImport(cmd *exec.Cmd, body io.Reader) (int64, error) {
+func runImport(cmd *exec.Cmd, body io.Reader, postgres bool) (int64, error) {
 	src, err := sqlReader(body)
 	if err != nil {
 		return 0, err
@@ -192,6 +192,9 @@ func runImport(cmd *exec.Cmd, body io.Reader) (int64, error) {
 	in := &countingReader{r: src}
 	stderr := &tailBuffer{max: 16 << 10}
 	cmd.Stdin = in
+	if postgres {
+		cmd.Stdin = newPgIdempotentServers(in)
+	}
 	cmd.Stdout = io.Discard
 	cmd.Stderr = stderr
 	err = cmd.Run()
