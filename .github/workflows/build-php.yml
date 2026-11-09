@@ -341,7 +341,9 @@ jobs:
           cp buildroot/modules/xdebug.so "../tmp_dist/${XDEBUG_ASSET}"
           FPM="../tmp_dist/php-${{ matrix.minor }}-fpm-${{ matrix.platform }}"
           for bin in "$CLI" "$FPM"; do
-            "$bin" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -m | grep -ixq xdebug || {
+            # Capture first: with pipefail, grep -q exiting early gives php SIGPIPE.
+            XMODS=$("$bin" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -m)
+            echo "$XMODS" | grep -ixq xdebug || {
               echo "xdebug.so does not load into $bin" >&2
               "$bin" -n -d zend_extension="$PWD/../tmp_dist/${XDEBUG_ASSET}" -v >&2
               exit 1

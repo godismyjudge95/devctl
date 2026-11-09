@@ -339,7 +339,8 @@ if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
 fi
 
 for bin in "$CLI_OUT" "$FPM_OUT"; do
-  box "$bin" -n -d zend_extension="$XDEBUG_OUT" -m | grep -ixq xdebug || {
+  XMODS=$(box "$bin" -n -d zend_extension="$XDEBUG_OUT" -m)
+  echo "$XMODS" | grep -ixq xdebug || {
     echo "xdebug.so does not load into $bin" >&2
     box "$bin" -n -d zend_extension="$XDEBUG_OUT" -v >&2
     exit 1

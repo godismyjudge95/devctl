@@ -304,7 +304,8 @@ if [[ "$MINOR" != "8.1" && "$MINOR" != "8.0" ]]; then
     exit 1
   }
 fi
-"$CLI_OUT" -n -d zend_extension="$XDEBUG_OUT" -m | grep -ixq xdebug || {
+XMODS=$("$CLI_OUT" -n -d zend_extension="$XDEBUG_OUT" -m)
+echo "$XMODS" | grep -ixq xdebug || {
   echo "xdebug.so does not load into the built PHP" >&2
   "$CLI_OUT" -n -d zend_extension="$XDEBUG_OUT" -v >&2
   exit 1
