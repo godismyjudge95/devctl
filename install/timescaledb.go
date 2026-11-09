@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/danielgormly/devctl/internal/runuser"
 )
 
 // TimescaleDB Community Edition (with the TSL library: compression,
@@ -157,34 +155,4 @@ func containsFold(list []string, name string) bool {
 		}
 	}
 	return false
-}
-
-// ensureTimescaleExtension creates the timescaledb extension in the default
-// postgres database when the server is up and the files are installed.
-// Returns (false, nil) when the server is not ready yet (caller may retry).
-// Safe to call repeatedly. No-op when files are missing.
-func ensureTimescaleExtension(pgDir, siteUser, siteHome string) (ready bool, err error) {
-	if !isTimescaleInstalled(pgDir) {
-		return true, nil
-	}
-	dataDir := filepath.Join(pgDir, "data")
-	if !fileExists(filepath.Join(dataDir, "PG_VERSION")) {
-		return true, nil
-	}
-
-	// Socket lives in /tmp by default for the Percona tarball — use TCP + password.
-	readyCmd := fmt.Sprintf("%s %s/bin/pg_isready -h 127.0.0.1 -p 5432 -q", postgresLibEnvAssign(pgDir), pgDir)
-	if _, err := runShell(context.Background(), readyCmd); err != nil {
-		return false, nil // server not up — caller may retry
-	}
-
-	sql := `CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;`
-	cmd := fmt.Sprintf(
-		`PGPASSWORD=%q %s %q -h 127.0.0.1 -p 5432 -U %q -d postgres -v ON_ERROR_STOP=1 -c %q`,
-		postgresDevPassword, postgresLibEnvAssign(pgDir), postgresPSQLBin(pgDir), postgresSuperuser, sql,
-	)
-	if out, err := runuser.RunAsUserW(context.Background(), io.Discard, siteUser, siteHome, "", cmd); err != nil {
-		return true, fmt.Errorf("postgres: CREATE EXTENSION timescaledb: %w\n%s", err, out)
-	}
-	return true, nil
 }
