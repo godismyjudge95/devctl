@@ -167,8 +167,10 @@ shlib=so
 # Each library may only link the OS, or libraries next to PostgreSQL.
 for lib in "$STAGE"/lib/*."$shlib"; do
   if [ "$OS" = darwin ]; then
-    self="$(otool -D "$lib" | tail -n +2)"
-    for dep in $(otool -L "$lib" | tail -n +2 | awk '{print $1}'); do
+    # EDB flags build universal binaries: otool prints one "path (architecture
+    # x):" heading per slice. Headings end with a colon.
+    self="$(otool -D "$lib" | awk '!/:$/' | head -1)"
+    for dep in $(otool -L "$lib" | awk '!/:$/ {print $1}' | sort -u); do
       [ "$dep" = "$self" ] && continue
       case "$dep" in
         */*) ;;
