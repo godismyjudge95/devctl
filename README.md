@@ -500,6 +500,8 @@ PHP does not use the OS trust store (the static OpenSSL build looks at `openssl.
 
 **New site** on the Sites page (or `devctl sites:new`) creates a project in the sites directory and serves it at `https://<name>.test` in one step. Progress streams to the page or the terminal.
 
+![New site wizard](docs/screenshot-new-project.png)
+
 | Template | Options | What runs |
 |---|---|---|
 | Laravel | Starter kit (none, React, Vue, Svelte, Livewire), Pest or PHPUnit, SQLite, MySQL, or PostgreSQL | `laravel new` (with `npm` for a starter kit), then `artisan migrate` for MySQL and PostgreSQL |
@@ -760,6 +762,10 @@ No browser extension, no Xdebug, no configuration required.
 ## Request Inspector
 
 The **Requests** page shows each PHP request, `php artisan` command, and queued job as one unit: SQL queries (SQL, bindings, duration, and the app file and line that ran them), dumps, logs, exceptions, dispatched jobs, cache hits and misses, outgoing HTTP calls, and rendered views. You do not change app code. Click a `file:line` to open it in your editor.
+
+![Requests page listing requests, a job, and a command with N+1, duplicate, and slow flags](docs/screenshot-requests.png)
+
+![Request detail with an N+1 query flagged at its file and line](docs/screenshot-request-detail.png)
 
 devctl flags these problems:
 
@@ -1245,11 +1251,17 @@ The dashboard is fully responsive. On narrow viewports the sidebar collapses int
   <img src="docs/screenshot-mobile-maxio.png" width="200" alt="MaxIO on mobile">
   <img src="docs/screenshot-mobile-databases.png" width="200" alt="Databases explorer on mobile">
   <img src="docs/screenshot-mobile-helpers.png" width="200" alt="Helpers catalog on mobile">
+  <img src="docs/screenshot-mobile-requests.png" width="200" alt="Requests on mobile">
+  <img src="docs/screenshot-mobile-request-detail.png" width="200" alt="Request detail on mobile">
+  <img src="docs/screenshot-mobile-new-project.png" width="200" alt="New site wizard on mobile">
+  <img src="docs/screenshot-mobile-doctor.png" width="200" alt="Doctor on mobile">
 </p>
 
 Additional screenshots:
 
 ![Settings page](docs/screenshot-settings.png)
+
+![Doctor page with failed, warning, and passed checks](docs/screenshot-doctor.png)
 
 ---
 
