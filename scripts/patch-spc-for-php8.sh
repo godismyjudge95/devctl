@@ -17,6 +17,12 @@
 # 3.6.0alpha1 (PHP >= 8.2). Pin the 3.5.3 PECL release (PHP 8.0-8.5). Every
 # 8.x row builds it with --build-shared=xdebug (Linux links glibc to load it).
 #
+# embed check: --build-shared turns on the embed SAPI, and spc then links a
+# test program against libphp.a. On macOS that link fails (php_embed_init and
+# other libphp symbols are undefined). devctl does not ship libphp.a, and
+# build-php.yml checks that xdebug.so loads into the shipped CLI and FPM, so
+# skip spc's embed check.
+#
 # macos clang 21: Apple clang 21 (Xcode 26 / macos-26) defaults to C23. PHP
 # 8.0/8.1 libbcmath still uses K&R parameter lists, which C23 dropped. Append
 # -std=gnu17 to the macOS PHP EXTRA_CFLAGS so the make stays on gnu17.
@@ -118,6 +124,24 @@ elif old not in text:
 else:
     path.write_text(text.replace(old, new, 1))
     print("applied macos gnu17 EXTRA_CFLAGS")
+PY
+
+BUILDER_BASE="${SPC_DIR}/src/SPC/builder/unix/UnixBuilderBase.php"
+python3 - "$BUILDER_BASE" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+old = "        // sanity check for embed\n        if (($build_target & BUILD_TARGET_EMBED) === BUILD_TARGET_EMBED) {"
+new = "        // sanity check for embed\n        if (false && ($build_target & BUILD_TARGET_EMBED) === BUILD_TARGET_EMBED) {"
+if new in text:
+    print("embed sanity check skip already applied")
+elif old not in text:
+    raise SystemExit("patch-spc-for-php8: could not find embed sanity check in UnixBuilderBase.php")
+else:
+    path.write_text(text.replace(old, new, 1))
+    print("applied embed sanity check skip")
 PY
 
 python3 - "$EXT" <<'PY'
