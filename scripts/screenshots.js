@@ -194,6 +194,28 @@ const PAGES = [
     desktop: "screenshot-helpers.png",
     mobile:  "screenshot-mobile-helpers.png",
   },
+  {
+    route:   "/requests",
+    desktop: "screenshot-requests.png",
+    mobile:  "screenshot-mobile-requests.png",
+  },
+  {
+    // The N+1 order list unit seeded by demo.sh.
+    route:   "/requests/a1f3c9d2e4b56701",
+    desktop: "screenshot-request-detail.png",
+    mobile:  "screenshot-mobile-request-detail.png",
+  },
+  {
+    route:   "/sites/new-project",
+    desktop: "screenshot-new-project.png",
+    mobile:  "screenshot-mobile-new-project.png",
+  },
+  {
+    route:   "/doctor",
+    desktop: "screenshot-doctor.png",
+    mobile:  "screenshot-mobile-doctor.png",
+    extraWait: 2000,
+  },
 ];
 
 // ─── Main ─────────────────────────────────────────────────────────────────────

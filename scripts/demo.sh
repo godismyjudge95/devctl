@@ -227,6 +227,7 @@ Environment=HOME=/home/testuser
 Environment=DEVCTL_SITE_USER=testuser
 Environment=DEVCTL_SERVER_ROOT=${SERVER_ROOT}
 Environment=DEVCTL_TESTING=true
+${DEVCTL_GITHUB_TOKEN:+Environment=DEVCTL_GITHUB_TOKEN=${DEVCTL_GITHUB_TOKEN}}
 
 [Install]
 WantedBy=multi-user.target
@@ -545,6 +546,60 @@ try:
     print(f"    Sent {len(dumps)} TCP dumps.")
 except Exception as e:
     print(f"    Warning: could not send TCP dumps: {e}")
+
+# ── Request inspector ─────────────────────────────────────────────────────────
+# The PHP agent sends one JSON "unit" frame per request, job, or command to the
+# dump port. Seed a few with the problems the inspector flags.
+print("  Seeding request inspector units...")
+LARAVEL = "/home/testuser/ddev/sites/laravel"
+
+def q(sql, binding, line, ms=0.4, t=1.0, file="app/Http/Controllers/OrderController.php"):
+    return {"kind": "query", "t": t, "sql": sql, "bindings": [binding], "ms": ms, "conn": "mysql",
+            "caller": {"file": f"{LARAVEL}/{file}", "line": line}}
+
+def unit(rid, meta, events, end):
+    return [
+        {"v": 1, "type": "unit", "rid": rid, "seq": 0, "final": False, "meta": meta, "events": events},
+        {"v": 1, "type": "unit", "rid": rid, "seq": 1, "final": True, "meta": end, "events": []},
+    ]
+
+user_q = "select * from `users` where `users`.`id` = ? limit 1"
+units = [
+    unit("a1f3c9d2e4b56701", {"kind": "http", "method": "GET", "url": "https://laravel.test/orders", "host": "laravel.test", "route": "orders.index"},
+         [q("select * from `orders` order by `created_at` desc limit 25", None, 18, 2.1, 0.8)]
+         + [q(user_q, i, 31, 0.3, 1.0 + i * 0.4) for i in range(1, 9)]
+         + [{"kind": "log", "t": 6.2, "level": "info", "message": "Rendered orders.index"}],
+         {"kind": "http", "host": "laravel.test", "status": 200, "duration_ms": 48.6, "memory_peak": 8388608}),
+    unit("b7e2d4c1a9f03852", {"kind": "http", "method": "POST", "url": "https://laravel.test/checkout", "host": "laravel.test", "route": "checkout.store"},
+         [q("select * from `carts` where `session_id` = ? limit 1", "c0ffee", 22, 0.6, 0.5, "app/Http/Controllers/CheckoutController.php"),
+          q("select sum(`price` * `qty`) as aggregate from `cart_items` where `cart_id` = ?", 42, 27, 1840.0, 1.2, "app/Http/Controllers/CheckoutController.php"),
+          {"kind": "http", "t": 1845.0, "method": "POST", "url": "https://api.stripe.test/v1/payment_intents", "status": 200, "ms": 312.0},
+          {"kind": "log", "t": 2160.0, "level": "warning", "message": "Payment intent created after retry"}],
+         {"kind": "http", "host": "laravel.test", "status": 201, "duration_ms": 2174.3, "memory_peak": 14680064}),
+    unit("c4a8b2e6f1d07934", {"kind": "http", "method": "GET", "url": "https://statamic.test/blog/hello-world", "host": "statamic.test"},
+         [{"kind": "log", "t": 3.0, "level": "debug", "message": "Stache warmed"}],
+         {"kind": "http", "host": "statamic.test", "status": 200, "duration_ms": 22.9, "memory_peak": 6291456}),
+    unit("d9c1e5a3b7f24016", {"kind": "job", "job": "App\\Jobs\\SendOrderConfirmation", "host": "laravel.test"},
+         [q("select * from `orders` where `id` = ? limit 1", 1042, 19, 0.5, 0.4, "app/Jobs/SendOrderConfirmation.php"),
+          q("select * from `orders` where `id` = ? limit 1", 1042, 24, 0.4, 0.9, "app/Jobs/SendOrderConfirmation.php")],
+         {"kind": "job", "host": "laravel.test", "duration_ms": 61.0}),
+    unit("e2b6f8d4c3a19057", {"kind": "command", "command": "migrate --seed", "host": "laravel.test"},
+         [q("create table `invoices` (`id` bigint unsigned not null auto_increment primary key)", None, 14, 12.4, 2.0, "database/migrations/2026_10_01_000000_create_invoices_table.php")],
+         {"kind": "command", "host": "laravel.test", "duration_ms": 412.0}),
+]
+
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(5)
+    s.connect(("127.0.0.1", 9912))
+    for frames in units:
+        for f in frames:
+            s.sendall(json.dumps(f).encode() + b"\n")
+        time.sleep(0.05)
+    s.close()
+    print(f"    Sent {len(units)} inspector units.")
+except Exception as e:
+    print(f"    Warning: could not send inspector units: {e}")
 
 # ── Mail ──────────────────────────────────────────────────────────────────────
 print("  Seeding mail messages...")

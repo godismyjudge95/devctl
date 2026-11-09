@@ -1,0 +1,45 @@
+name: Screenshots
+
+# Runs `make demo` (scripts/demo.sh) in an Incus container on an x86_64
+# runner and uploads docs/screenshot-*.png. Use it from macOS, where Incus
+# does not exist. Commit the downloaded files into docs/.
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Incus
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends incus jq
+          sudo incus admin init --minimal
+          # Docker sets the FORWARD policy to DROP, which cuts the Incus bridge off.
+          sudo iptables -P FORWARD ACCEPT
+
+      - name: Build devctl
+        run: make build
+
+      - name: Seed the demo container and take screenshots
+        env:
+          DEVCTL_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sudo env PATH="$PATH" DEVCTL_GITHUB_TOKEN="$DEVCTL_GITHUB_TOKEN" bash scripts/demo.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: docs/screenshot-*.png
