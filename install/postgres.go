@@ -102,8 +102,8 @@ func postgresPSQLBin(pgDir string) string {
 // siteUser (PostgreSQL refuses to start as root), and runs postgres as a
 // supervised child process of devctl with privilege drop via ManagedUser.
 //
-// TimescaleDB Community Edition is installed alongside Postgres by extracting
-// packagecloud .deb packages into lib/ and share/extension/ (no APT).
+// TimescaleDB, pgvector, and pg_clickhouse come from the devctl pg-extensions
+// release bundle (see pg_extensions_bundle.go). Nothing is compiled.
 //
 // No APT packages for PostgreSQL itself — only libreadline-dev is installed as
 // a system library required by the tarball. No systemd unit.
@@ -307,6 +307,8 @@ func (p *PostgresInstaller) UpdateW(ctx context.Context, w io.Writer) error {
 	if err := extractPercona(tmpTar, subtree, pgDir); err != nil {
 		return fmt.Errorf("postgres: update extract: %w", err)
 	}
+	// The vendor archive overwrites vector.so. Reinstall the extension bundle.
+	_ = os.Remove(pgExtensionsStampPath(pgDir))
 
 	// Re-transfer ownership so the new files are also owned by the site user.
 	if p.siteUser != "" {
@@ -608,14 +610,13 @@ func EnsurePostgresConfig(serverRoot, siteUser string) error {
 	}
 	siteHome := lookupHome(siteUser)
 	env := ExtensionEnv{ServerRoot: serverRoot, SiteUser: siteUser, SiteHome: siteHome}
-	// One-shot migration: rebuild Percona's -march=native vector.so. Failure is
+	// One-shot migration to the current extension bundle. It replaces Percona's
+	// -march=native vector.so and older deb or source builds. Failure is
 	// deferred until after role/wire so startup still configures the rest;
 	// postgres:extensions:ensure can retry.
-	var pgvectorMigrateErr error
-	if fileExists(filepath.Join(pgDir, "lib", "vector.so")) && !isPgvectorPortable(pgDir) {
-		if err := installPgvectorPortable(context.Background(), io.Discard, pgDir); err != nil {
-			pgvectorMigrateErr = fmt.Errorf("postgres: pgvector portable rebuild: %w", err)
-		}
+	var bundleErr error
+	if !pgExtensionsBundleCurrent(pgDir) {
+		bundleErr = installPgExtensionsBundle(context.Background(), io.Discard, pgDir)
 	}
 	// Preloads for extensions already present (no network/compile on the happy path).
 	for _, ext := range managedPostgresExtensions() {
@@ -629,15 +630,15 @@ func EnsurePostgresConfig(serverRoot, siteUser string) error {
 		}
 	}
 	if !fileExists(filepath.Join(pgDir, "data", "PG_VERSION")) {
-		return pgvectorMigrateErr
+		return bundleErr
 	}
 	if err := ensurePostgresRoleAndPassword(pgDir, siteUser, siteHome); err != nil {
 		return err
 	}
 	// CREATE EXTENSION / FDW only when the server is already up.
 	_, err := WireManagedPostgresExtensions(context.Background(), env)
-	if pgvectorMigrateErr != nil {
-		return pgvectorMigrateErr
+	if bundleErr != nil {
+		return bundleErr
 	}
 	return err
 }

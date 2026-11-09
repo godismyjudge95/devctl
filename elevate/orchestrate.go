@@ -371,7 +371,7 @@ func elevateInstall(facts Facts, w io.Writer) error {
 	}
 	if runtime.GOOS == "linux" {
 		fmt.Fprintf(w, "    installing allowlisted apt packages (best-effort)\n")
-		_ = RunHelperSelf(w, w, "apt-install", "libnss3-tools", "libreadline-dev", "libnuma1", "build-essential")
+		_ = RunHelperSelf(w, w, "apt-install", "libnss3-tools", "libreadline-dev", "libnuma1")
 	}
 	// trust + resolver after service is up (CA may need Caddy).
 	// Caller may re-run elevate for trust after Caddy is ready.

@@ -1002,7 +1002,7 @@ func (c *Client) ListPostgresExtensions() ([]PostgresExtensionStatus, error) {
 }
 
 // EnsurePostgresExtensions calls POST /api/postgres/extensions/ensure.
-// Uses a long timeout because compiling pg_clickhouse can take several minutes.
+// Uses a long timeout because the extension download can be slow.
 func (c *Client) EnsurePostgresExtensions() (map[string]any, error) {
 	var out map[string]any
 	long := &http.Client{Timeout: 15 * time.Minute}

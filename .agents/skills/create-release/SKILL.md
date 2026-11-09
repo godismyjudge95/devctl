@@ -1,6 +1,6 @@
 ---
 name: create-release
-description: Full workflow for tagging and publishing a devctl release and/or a PHP binaries release — versioning, release note generation from TODO.md, clearing TODO.md completed items, and the exact git/GitHub CLI steps for each release type.
+description: Full workflow for tagging and publishing a devctl release, a PHP binaries release, or a Postgres extensions release — versioning, release note generation from TODO.md, clearing TODO.md completed items, and the exact git/GitHub CLI steps for each release type.
 license: MIT
 compatibility: opencode
 metadata:
@@ -9,14 +9,15 @@ metadata:
 
 ## Overview
 
-There are two independent release types in this repo:
+There are three independent release types in this repo:
 
 | Release type | Tag format | GitHub Actions triggered | Binary attached |
 |---|---|---|---|
 | devctl binary | `v1.2.3` | `release.yml` | `devctl-linux-x86_64` and `devctl-macos-aarch64` |
 | PHP binaries | `php-binaries-YYYYMMDD.N` | `build-php.yml` | `php-{ver}-{cli,fpm}-linux-x86_64` for 7.0–8.5, `php-{ver}-{cli,fpm}-macos-aarch64` for 8.0–8.5, plus `php-binaries.json` |
+| Postgres extensions | `pg-extensions-YYYYMMDD.N` | `build-pg-extensions.yml` | `pg-extensions-pg{PG}-{linux-x86_64,linux-aarch64,macos-aarch64}.tar.gz` |
 
-They are fully independent — you can do either or both. PHP binaries now use unique immutable tags, and devctl discovers the newest `php-binaries-*` release plus its `php-binaries.json` manifest at install/update time.
+They are independent — you can do either or both. PHP binaries now use unique immutable tags, and devctl discovers the newest `php-binaries-*` release plus its `php-binaries.json` manifest at install/update time.
 
 ---
 
@@ -179,6 +180,28 @@ Test that the manifest URL resolves correctly:
 ```sh
 curl -sIL "https://github.com/godismyjudge95/devctl/releases/download/${PHP_TAG}/php-binaries.json" | grep -i "content-length\|location\|HTTP/"
 ```
+
+---
+
+## 3. Postgres Extensions Release
+
+TimescaleDB, pgvector, and pg_clickhouse ship prebuilt so users need no compiler, cmake, git, or Xcode Command Line Tools. Cut a new release when `postgresVersion`, `timescaledbVersion`, `pgvectorVersion`, or `pgClickhouseVersion` changes.
+
+1. Change the versions in the `env:` block of `build-pg-extensions.yml` and in the Go constants together. `TestPgExtensionsWorkflowVersionsMatch` fails when they differ.
+2. Run the workflow by hand first: `gh workflow run build-pg-extensions.yml --ref main`. Each job builds against the vendor PostgreSQL, checks that the libraries link only OS libraries or libraries PostgreSQL ships, and runs `CREATE EXTENSION` for all three in a fresh PostgreSQL. Fix failures before you tag.
+3. Tag and publish. Use `--latest=false`, because self-update reads `/releases/latest`:
+
+```sh
+PG_EXT_TAG="pg-extensions-$(date +%Y%m%d).1"
+git tag "$PG_EXT_TAG" && git push origin "$PG_EXT_TAG"
+gh release create "$PG_EXT_TAG" --latest=false \
+  --title "Postgres Extensions — ${PG_EXT_TAG}" \
+  --notes "PostgreSQL <PG>, TimescaleDB <ver>, pgvector <ver>, pg_clickhouse <ver>"
+```
+
+4. When the run attaches the three files, set `pgExtensionsReleaseTag` in `install/pg_extensions_bundle.go` and `PG_EXTENSIONS_TAG` in `scripts/download-artifacts.sh` to the new tag, then ship a devctl release. devctl reinstalls the bundle at the next start because the stamp no longer matches.
+
+Old `pg-extensions-*` releases must stay published. Installed devctl versions download the tag they pin.
 
 ---
 

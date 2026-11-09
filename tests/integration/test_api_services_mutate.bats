@@ -505,10 +505,10 @@ load setup
   container_exec test -f "${SERVER_ROOT}/postgres/share/extension/timescaledb.control"
 }
 
-@test "postgres: pgvector portable stamp present" {
+@test "postgres: extension bundle stamp present" {
   container_exec test -f "${SERVER_ROOT}/postgres/lib/vector.so"
   container_exec test -f "${SERVER_ROOT}/postgres/share/extension/vector.control"
-  container_exec grep -qx "0.8.2" "${SERVER_ROOT}/postgres/lib/.devctl-pgvector-portable"
+  container_exec grep -q "^pg-extensions-" "${SERVER_ROOT}/postgres/lib/.devctl-pg-extensions"
 }
 
 @test "postgres: shared_preload_libraries includes timescaledb" {

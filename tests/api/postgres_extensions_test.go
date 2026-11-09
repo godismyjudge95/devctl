@@ -57,8 +57,8 @@ func TestPostgresExtensions_SettingsEndpoint(t *testing.T) {
 	}
 }
 
-// TestPostgresExtensions_PgvectorPortable ensures postgres install/ensure rebuilds
-// pgvector with OPTFLAGS="" and reports it ready (no SQL wire required).
+// TestPostgresExtensions_PgvectorPortable ensures postgres install/ensure puts
+// the portable pgvector build in place and reports it ready (no SQL wire required).
 func TestPostgresExtensions_PgvectorPortable(t *testing.T) {
 	const installTimeout = 20 * time.Minute
 	ensureInstalledRunning(t, "postgres", installTimeout)
@@ -174,7 +174,6 @@ func TestPostgresExtensions_SearchContribWired(t *testing.T) {
 
 // TestPostgresExtensions_WireWithClickHouse installs postgres + clickhouse
 // (if needed), ensures extensions, and asserts pg_clickhouse becomes ready.
-// Compiling pg_clickhouse can take several minutes.
 func TestPostgresExtensions_WireWithClickHouse(t *testing.T) {
 	const installTimeout = 20 * time.Minute
 
@@ -194,7 +193,7 @@ func TestPostgresExtensions_WireWithClickHouse(t *testing.T) {
 
 	ensureInstalledRunning(t, "clickhouse", installTimeout)
 
-	// ensure builds pg_clickhouse if missing and wires template1.
+	// ensure installs pg_clickhouse if missing and wires template1.
 	t.Log("POST /api/postgres/extensions/ensure")
 	ensureBody, status := httpPost(t, "/api/postgres/extensions/ensure", nil)
 	if status != http.StatusOK {

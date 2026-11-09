@@ -6,31 +6,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/danielgormly/devctl/internal/runuser"
 )
 
-// TimescaleDB Community Edition is shipped as PostgreSQL extension files
-// extracted from packagecloud .deb packages — no APT, no install scripts.
-// Community (TSL) includes compression, continuous aggregates, and other
-// features not present in the Apache 2 OSS builds.
-//
-// Package source: https://packagecloud.io/timescale/timescaledb
-// We pin jammy (ubuntu22.04) builds; they run on newer Ubuntu with libc6 ≥ 2.17.
-// The -1804 build tag means the packages were compiled against PostgreSQL 18.4;
-// postgresVersion must be ≥ 18.4.
-const (
-	timescaledbVersion = "2.28.3"
-	// timescaledbPkgTag is the packagecloud version suffix: ~ubuntu22.04-1804
-	timescaledbPkgTag = "2.28.3~ubuntu22.04-1804"
-	// timescaledbDist is the packagecloud dist path segment under ubuntu/pool/.
-	timescaledbDist = "jammy"
-)
+// TimescaleDB Community Edition (with the TSL library: compression,
+// continuous aggregates) comes from the devctl pg-extensions bundle.
+const timescaledbVersion = "2.28.3"
 
 // isTimescaleInstalled reports whether the Community Edition files are present
-// (loader + versioned core .so + TSL .so + control file).
+// (loader + versioned core library + TSL library + control file).
 func isTimescaleInstalled(pgDir string) bool {
 	lib := pgLibDir(pgDir)
 	ext := pgShareExtDir(pgDir)
@@ -41,207 +27,23 @@ func isTimescaleInstalled(pgDir string) bool {
 		fileExists(filepath.Join(lib, "timescaledb-tsl-"+timescaledbVersion+sh))
 }
 
-// timescaleDebArch maps GOARCH to Debian package arch.
-func timescaleDebArch() string {
-	if runtime.GOARCH == "arm64" {
-		return "arm64"
-	}
-	return "amd64"
-}
-
-// timescaleLoaderDebName is the loader package basename (curl-shim cache key).
-func timescaleLoaderDebName() string {
-	return fmt.Sprintf("timescaledb-2-loader-postgresql-%s_%s_%s.deb",
-		postgresMajor, timescaledbPkgTag, timescaleDebArch())
-}
-
-// timescaleCommunityDebName is the Community Edition package basename.
-func timescaleCommunityDebName() string {
-	return fmt.Sprintf("timescaledb-2-%s-postgresql-%s_%s_%s.deb",
-		timescaledbVersion, postgresMajor, timescaledbPkgTag, timescaleDebArch())
-}
-
-// timescaleLoaderDebURL returns the packagecloud pool URL for the loader deb.
-// Provides timescaledb.so + timescaledb.control.
-func timescaleLoaderDebURL() string {
-	return fmt.Sprintf(
-		"https://packagecloud.io/timescale/timescaledb/ubuntu/pool/%s/main/t/timescaledb-2-%s-postgresql-%s/%s",
-		timescaledbDist, timescaledbVersion, postgresMajor, timescaleLoaderDebName(),
-	)
-}
-
-// timescaleCommunityDebURL returns the packagecloud pool URL for the Community
-// Edition extension deb (single-version package — not the multi-version meta package).
-// Includes timescaledb-<ver>.so and timescaledb-tsl-<ver>.so.
-func timescaleCommunityDebURL() string {
-	return fmt.Sprintf(
-		"https://packagecloud.io/timescale/timescaledb/ubuntu/pool/%s/main/t/timescaledb-2-%s-postgresql-%s/%s",
-		timescaledbDist, timescaledbVersion, postgresMajor, timescaleCommunityDebName(),
-	)
-}
-
-func timescaleDebs() []struct {
-	url  string
-	name string
-	desc string
-} {
-	return []struct {
-		url  string
-		name string
-		desc string
-	}{
-		{timescaleLoaderDebURL(), timescaleLoaderDebName(), "TimescaleDB loader"},
-		{timescaleCommunityDebURL(), timescaleCommunityDebName(), "TimescaleDB Community"},
-	}
-}
-
-// installTimescale downloads and extracts TimescaleDB Community Edition into
-// the Percona PostgreSQL tree, then enables shared_preload_libraries.
+// installTimescale installs the bundle when TimescaleDB is missing, then
+// enables shared_preload_libraries.
 func installTimescale(ctx context.Context, w io.Writer, pgDir string) error {
 	if isTimescaleInstalled(pgDir) {
 		fmt.Fprintln(w, "postgres: TimescaleDB already installed")
-		if err := ensureTimescalePreload(pgDir); err != nil {
-			return err
-		}
-		return nil
-	}
-	if runtime.GOOS == "darwin" {
-		return installTimescaleFromSource(ctx, w, pgDir)
-	}
-
-	libDir := filepath.Join(pgDir, "lib")
-	extDir := filepath.Join(pgDir, "share", "extension")
-	if err := os.MkdirAll(libDir, 0755); err != nil {
-		return fmt.Errorf("postgres: timescale lib dir: %w", err)
-	}
-	if err := os.MkdirAll(extDir, 0755); err != nil {
-		return fmt.Errorf("postgres: timescale extension dir: %w", err)
-	}
-
-	for _, d := range timescaleDebs() {
-		tmpDeb := filepath.Join(os.TempDir(), d.name)
-		// Basename of DEST must match scripts/download-artifacts.sh so the
-		// test curl shim can serve cached packages.
-		fmt.Fprintf(w, "postgres: downloading %s...\n", d.desc)
-		if err := curlDownloadW(ctx, w, d.url, tmpDeb); err != nil {
-			os.Remove(tmpDeb)
-			return fmt.Errorf("postgres: download %s: %w", d.desc, err)
-		}
-		fmt.Fprintf(w, "postgres: extracting %s...\n", d.desc)
-		if err := extractTimescaleDeb(tmpDeb, libDir, extDir); err != nil {
-			os.Remove(tmpDeb)
-			return fmt.Errorf("postgres: extract %s: %w", d.desc, err)
-		}
-		os.Remove(tmpDeb)
-	}
-
-	if err := ensureTimescalePreload(pgDir); err != nil {
+	} else if err := installPgExtensionsBundle(ctx, w, pgDir); err != nil {
 		return err
 	}
-
-	fmt.Fprintf(w, "postgres: TimescaleDB %s (Community Edition) installed\n", timescaledbVersion)
-	return nil
+	return ensureTimescalePreload(pgDir)
 }
 
-// updateTimescale re-downloads and extracts TimescaleDB Community Edition over
-// an existing Postgres install. Safe when Timescale was not previously installed
-// (including upgrades from Apache OSS builds that lack the TSL library).
+// updateTimescale reinstalls the bundle unless it is current.
 func updateTimescale(ctx context.Context, w io.Writer, pgDir string) error {
-	if runtime.GOOS == "darwin" {
-		lib := pgLibDir(pgDir)
-		sh := pgShlibExt()
-		_ = os.Remove(filepath.Join(lib, "timescaledb-"+timescaledbVersion+sh))
-		_ = os.Remove(filepath.Join(lib, "timescaledb-tsl-"+timescaledbVersion+sh))
-		return installTimescaleFromSource(ctx, w, pgDir)
-	}
-	// Force re-extract of versioned libraries (core + TSL).
-	libDir := filepath.Join(pgDir, "lib")
-	_ = os.Remove(filepath.Join(libDir, "timescaledb-"+timescaledbVersion+".so"))
-	_ = os.Remove(filepath.Join(libDir, "timescaledb-tsl-"+timescaledbVersion+".so"))
-
-	extDir := filepath.Join(pgDir, "share", "extension")
-	if err := os.MkdirAll(libDir, 0755); err != nil {
-		return fmt.Errorf("postgres: timescale lib dir: %w", err)
-	}
-	if err := os.MkdirAll(extDir, 0755); err != nil {
-		return fmt.Errorf("postgres: timescale extension dir: %w", err)
-	}
-
-	for _, d := range timescaleDebs() {
-		tmpDeb := filepath.Join(os.TempDir(), d.name)
-		fmt.Fprintf(w, "postgres: downloading %s...\n", d.desc)
-		if err := curlDownloadW(ctx, w, d.url, tmpDeb); err != nil {
-			os.Remove(tmpDeb)
-			return fmt.Errorf("postgres: update download %s: %w", d.desc, err)
-		}
-		fmt.Fprintf(w, "postgres: extracting %s...\n", d.desc)
-		if err := extractTimescaleDeb(tmpDeb, libDir, extDir); err != nil {
-			os.Remove(tmpDeb)
-			return fmt.Errorf("postgres: update extract %s: %w", d.desc, err)
-		}
-		os.Remove(tmpDeb)
-	}
-
-	if err := ensureTimescalePreload(pgDir); err != nil {
+	if err := installPgExtensionsBundle(ctx, w, pgDir); err != nil {
 		return err
 	}
-
-	fmt.Fprintf(w, "postgres: TimescaleDB updated to %s (Community Edition)\n", timescaledbVersion)
-	return nil
-}
-
-// extractTimescaleDeb unpacks a TimescaleDB .deb and copies:
-//   - usr/lib/postgresql/<major>/lib/*          → libDir
-//   - usr/share/postgresql/<major>/extension/*  → extDir
-func extractTimescaleDeb(debPath, libDir, extDir string) error {
-	tmpDir, err := os.MkdirTemp("", "timescale-deb-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpDir)
-
-	ctx := context.Background()
-	if out, err := runShell(ctx, fmt.Sprintf("dpkg-deb --extract %s %s", debPath, tmpDir)); err != nil {
-		return fmt.Errorf("dpkg-deb extract: %w\n%s", err, out)
-	}
-
-	srcLib := filepath.Join(tmpDir, "usr", "lib", "postgresql", postgresMajor, "lib")
-	srcExt := filepath.Join(tmpDir, "usr", "share", "postgresql", postgresMajor, "extension")
-
-	if err := os.MkdirAll(libDir, 0755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(extDir, 0755); err != nil {
-		return err
-	}
-
-	if entries, err := os.ReadDir(srcLib); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			src := filepath.Join(srcLib, e.Name())
-			dst := filepath.Join(libDir, e.Name())
-			if err := copyFile(src, dst); err != nil {
-				return fmt.Errorf("copy %s: %w", e.Name(), err)
-			}
-		}
-	}
-
-	if entries, err := os.ReadDir(srcExt); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			src := filepath.Join(srcExt, e.Name())
-			dst := filepath.Join(extDir, e.Name())
-			if err := copyFile(src, dst); err != nil {
-				return fmt.Errorf("copy %s: %w", e.Name(), err)
-			}
-		}
-	}
-
-	return nil
+	return ensureTimescalePreload(pgDir)
 }
 
 // ensureTimescalePreload sets shared_preload_libraries to include timescaledb

@@ -6,80 +6,37 @@ import (
 	"testing"
 )
 
-func TestIsPgvectorPortable_RequiresStampAndFiles(t *testing.T) {
+func TestIsPgvectorPortable_RequiresBundleStampAndFiles(t *testing.T) {
 	pgDir := t.TempDir()
 	libDir := filepath.Join(pgDir, "lib")
 	extDir := filepath.Join(pgDir, "share", "extension")
-	if err := os.MkdirAll(libDir, 0755); err != nil {
+	for _, d := range []string{libDir, extDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(libDir, "vector"+pgShlibExt()), []byte("fake"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(extDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	if isPgvectorPortable(pgDir) {
-		t.Fatal("expected false with no files")
-	}
-
-	if err := os.WriteFile(filepath.Join(libDir, "vector.so"), []byte("fake"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if isPgvectorPortable(pgDir) {
-		t.Fatal("expected false without control + stamp")
-	}
-
 	if err := os.WriteFile(filepath.Join(extDir, "vector.control"), []byte("default_version = '0.8.2'\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if isPgvectorPortable(pgDir) {
-		t.Fatal("expected false without portable stamp")
+		t.Fatal("vendor vector library without the bundle stamp must not count as portable")
 	}
 
-	if err := os.WriteFile(pgvectorPortableStampPath(pgDir), []byte("0.7.0\n"), 0644); err != nil {
+	if err := os.WriteFile(pgExtensionsStampPath(pgDir), []byte("pg-extensions-20200101.1/old.tar.gz\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if isPgvectorPortable(pgDir) {
-		t.Fatal("expected false with wrong stamp version")
+		t.Fatal("an older bundle stamp must not count as portable")
 	}
 
-	if err := writePgvectorPortableStamp(pgDir); err != nil {
+	if err := os.WriteFile(pgExtensionsStampPath(pgDir), []byte(pgExtensionsStamp()+"\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if !isPgvectorPortable(pgDir) {
-		t.Fatal("expected true with matching stamp + files")
-	}
-}
-
-func TestPgvectorExtension_InstallFilesIdempotent(t *testing.T) {
-	pgDir := t.TempDir()
-	libDir := filepath.Join(pgDir, "lib")
-	extDir := filepath.Join(pgDir, "share", "extension")
-	if err := os.MkdirAll(libDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(extDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(libDir, "vector.so"), []byte("fake"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(extDir, "vector.control"), []byte("default_version = '0.8.2'\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := writePgvectorPortableStamp(pgDir); err != nil {
-		t.Fatal(err)
-	}
-
-	ext := pgvectorExtension{}
-	if err := ext.InstallFiles(t.Context(), os.Stdout, pgDir); err != nil {
-		t.Fatalf("InstallFiles should no-op when portable: %v", err)
-	}
-}
-
-func TestPgvectorSourceURL(t *testing.T) {
-	want := "https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.2.tar.gz"
-	if got := pgvectorSourceURL(); got != want {
-		t.Fatalf("got %q want %q", got, want)
+		t.Fatal("current bundle stamp plus files must count as portable")
 	}
 }
 

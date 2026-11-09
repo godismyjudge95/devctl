@@ -241,38 +241,21 @@ download "ClickHouse ${CLICKHOUSE_VERSION} (update artifact)" \
   "clickhouse-common-static-update.tgz"
 
 # ─── PostgreSQL (Percona) ─────────────────────────────────────────────────────
-# Must be ≥ 18.4 for TimescaleDB packages built against PG 18.4 (-1804).
 POSTGRES_VERSION="18.4"
 POSTGRES_MAJOR="18"
 download "PostgreSQL ${POSTGRES_VERSION} (Percona tarball)" \
   "https://downloads.percona.com/downloads/postgresql-distribution-${POSTGRES_MAJOR}/${POSTGRES_VERSION}/binary/tarball/percona-postgresql-${POSTGRES_VERSION}-ssl3-linux-x86_64.tar.gz" \
   "percona-postgresql-${POSTGRES_VERSION}-ssl3-linux-x86_64.tar.gz"
 
-# ─── TimescaleDB Community Edition (extension debs for Postgres) ──────────────
-# Extracted into {serverRoot}/postgres/{lib,share/extension}/ — not installed via APT.
-# Filenames match the /tmp DEST basenames used by install/timescaledb.go so the
-# curl shim in the test container can serve them from cache.
-TS_VERSION="2.28.3"
-TS_PKG_TAG="2.28.3~ubuntu22.04-1804"
-TS_ARCH="amd64"
-TS_LOADER="timescaledb-2-loader-postgresql-${POSTGRES_MAJOR}_${TS_PKG_TAG}_${TS_ARCH}.deb"
-TS_COMMUNITY="timescaledb-2-${TS_VERSION}-postgresql-${POSTGRES_MAJOR}_${TS_PKG_TAG}_${TS_ARCH}.deb"
-TS_BASE="https://packagecloud.io/timescale/timescaledb/ubuntu/pool/jammy/main/t"
-download "TimescaleDB loader ${TS_VERSION}" \
-  "${TS_BASE}/timescaledb-2-${TS_VERSION}-postgresql-${POSTGRES_MAJOR}/${TS_LOADER}" \
-  "${TS_LOADER}"
-download "TimescaleDB Community ${TS_VERSION}" \
-  "${TS_BASE}/timescaledb-2-${TS_VERSION}-postgresql-${POSTGRES_MAJOR}/${TS_COMMUNITY}" \
-  "${TS_COMMUNITY}"
-
-# ─── pg_clickhouse (prebuilt deb extracted into Percona tree) ─────────────────
-# Basename must match install/pg_clickhouse.go curl DEST for the test shim.
-# Debs are published under the rolling customer-testdeb tag (pg18/amd64).
-PG_CLICKHOUSE_VERSION="0.2.0"
-PG_CLICKHOUSE_DEB="pg-clickhouse-${PG_CLICKHOUSE_VERSION}-pg${POSTGRES_MAJOR}-amd64.deb"
-download "pg_clickhouse ${PG_CLICKHOUSE_VERSION}" \
-  "https://github.com/ClickHouse/pg_clickhouse/releases/download/customer-testdeb/${PG_CLICKHOUSE_DEB}" \
-  "${PG_CLICKHOUSE_DEB}"
+# ─── Postgres extensions (TimescaleDB, pgvector, pg_clickhouse) ──────────────
+# One devctl release asset, built by build-pg-extensions.yml. The tag must
+# match pgExtensionsReleaseTag in install/pg_extensions_bundle.go. The basename
+# matches the curl DEST so the test shim can serve it from cache.
+PG_EXTENSIONS_TAG="pg-extensions-20261108.1"
+PG_EXTENSIONS_ASSET="pg-extensions-pg${POSTGRES_VERSION}-linux-x86_64.tar.gz"
+download "Postgres extensions ${PG_EXTENSIONS_TAG}" \
+  "https://github.com/godismyjudge95/devctl/releases/download/${PG_EXTENSIONS_TAG}/${PG_EXTENSIONS_ASSET}" \
+  "${PG_EXTENSIONS_ASSET}"
 
 # ─── MySQL 8.4 (.deb packages) ────────────────────────────────────────────────
 # The MySQL installer downloads to /tmp/mysql-{pkg}-{version}.deb (e.g.
