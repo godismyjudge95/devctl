@@ -167,7 +167,9 @@ shlib=so
 # Each library may only link the OS, or libraries next to PostgreSQL.
 for lib in "$STAGE"/lib/*."$shlib"; do
   if [ "$OS" = darwin ]; then
+    self="$(otool -D "$lib" | tail -n +2)"
     for dep in $(otool -L "$lib" | tail -n +2 | awk '{print $1}'); do
+      [ "$dep" = "$self" ] && continue
       case "$dep" in
         */*) ;;
         *) continue ;;
@@ -191,10 +193,15 @@ for lib in "$STAGE"/lib/*."$shlib"; do
     # pg_clickhouse needs libcurl.so.4. Percona ships it next to the
     # extensions, so a minimal system without libcurl still loads it.
     patchelf --set-rpath '$ORIGIN' "$lib"
+    # Ubuntu links with --as-needed. pg_clickhouse puts -luuid before its
+    # objects, so the linker drops it and uuid_unparse stays unresolved.
+    if [ "$(basename "$lib")" = pg_clickhouse.so ] && ! readelf -d "$lib" | grep -q 'libuuid.so.1'; then
+      patchelf --add-needed libuuid.so.1 "$lib"
+    fi
     readelf -d "$lib" | grep -E 'NEEDED|RUNPATH'
     for dep in $(readelf -d "$lib" | awk '/NEEDED/ {gsub(/[\[\]]/, "", $5); print $5}'); do
       case "$dep" in
-        libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | libgcc_s.so.* | libstdc++.so.*) ;;
+        ld-linux-*.so.* | libc.so.* | libm.so.* | libpthread.so.* | libdl.so.* | librt.so.* | libgcc_s.so.* | libstdc++.so.*) ;;
         libssl.so.3 | libcrypto.so.3 | liblz4.so.1 | libzstd.so.1 | libuuid.so.1 | libz.so.1) ;;
         *)
           [ -e "$BUILD_PG/lib/$dep" ] || { echo "$lib needs $dep, which is not in the allowed list" >&2; exit 1; }
