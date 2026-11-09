@@ -26,7 +26,7 @@ jobs:
       - name: Install Incus
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends incus jq
+          sudo apt-get install -y --no-install-recommends incus dnsmasq-base jq
           sudo incus admin init --minimal
           # Docker sets the FORWARD policy to DROP, which cuts the Incus bridge off.
           sudo iptables -P FORWARD ACCEPT
