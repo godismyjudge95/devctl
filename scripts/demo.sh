@@ -70,6 +70,7 @@ else
   info "Cached image not found — falling back to images:ubuntu/24.04..."
   incus launch images:ubuntu/24.04 "$CONTAINER"
   success "Container launched."
+  PLAIN_IMAGE=1
 fi
 
 # ─── Wait for systemd ─────────────────────────────────────────────────────────
@@ -81,6 +82,14 @@ while true; do
   [[ $ELAPSED -ge $TIMEOUT ]] && { error "Timed out waiting for systemd."; exit 1; }
   sleep 1; ELAPSED=$((ELAPSED + 1))
 done
+
+if [[ -n "${PLAIN_IMAGE:-}" ]]; then
+  # The base image (make test-env-setup) has these. A plain Ubuntu image does not.
+  info "Installing curl, jq, python3, and service runtime libraries..."
+  incus exec "$CONTAINER" -- bash -c "for i in 1 2 3 4 5 6 7 8 9 10; do apt-get update -qq && break; sleep 3; done
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq python3 libnuma1 libaio1t64 libreadline-dev >/dev/null"
+  success "Packages installed."
+fi
 success "Systemd ready."
 
 # ─── Push binary ──────────────────────────────────────────────────────────────
